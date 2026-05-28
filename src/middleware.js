@@ -2,13 +2,17 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { NextResponse } from 'next/server'
 
 const PUBLIC_ROUTES = ['/login', '/signup', '/reset-password', '/auth/callback']
-const ADMIN_ROUTES = ['/admin']
+
+const DEMO_MODE =
+  !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')
 
 export async function middleware(request) {
+  if (DEMO_MODE) return NextResponse.next()
+
   const { pathname } = request.nextUrl
   const { response, user } = await updateSession(request)
 
-  // Redirect to login if accessing protected route without auth
   const isPublic = PUBLIC_ROUTES.some(r => pathname.startsWith(r))
   if (!user && !isPublic && pathname !== '/') {
     const url = request.nextUrl.clone()
@@ -17,14 +21,12 @@ export async function middleware(request) {
     return NextResponse.redirect(url)
   }
 
-  // Redirect away from login/signup if already authenticated
   if (user && (pathname === '/login' || pathname === '/signup')) {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
   }
 
-  // Admin routes are checked again in the page itself (defense in depth)
   return response
 }
 

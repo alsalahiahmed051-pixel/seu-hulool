@@ -1,3 +1,4 @@
+'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
@@ -472,16 +473,12 @@ function AIChat({ subject, t, onChat }) {
     onChat?.();
     try {
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 800,
-          system: `أنت مساعد أكاديمي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية. أجب بشكل واضح ومفيد باللغة العربية. قدم نصائح عملية. استخدم التنسيق الجيد (قوائم، عناوين) عند الحاجة.`,
-          messages: history,
-        })
+        body: JSON.stringify({ subject, messages: history }),
       });
       const d = await res.json();
-      setMsgs(m => [...m, { r: "a", text: d.content?.[0]?.text || "عذراً، حدث خطأ. حاول مجدداً." }]);
+      setMsgs(m => [...m, { r: "a", text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً." }]);
     } catch {
       setMsgs(m => [...m, { r: "a", text: "⚠️ تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة." }]);
     }
