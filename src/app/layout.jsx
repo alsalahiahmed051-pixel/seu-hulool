@@ -2,7 +2,14 @@ export const metadata = {
   title: 'حلول | SEU',
   description: 'بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية',
   manifest: '/manifest.json',
+}
+
+export const viewport = {
   themeColor: '#001f5a',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }) {

@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import AuthShell, { Input, SubmitBtn, ErrorBox } from '@/components/AuthShell'
 import Link from 'next/link'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
   const search = useSearchParams()
   const next = search.get('next') || '/'
@@ -67,22 +67,12 @@ export default function LoginPage() {
         onClick={handleGoogle}
         type="button"
         style={{
-          width: '100%',
-          padding: '11px 16px',
-          borderRadius: 12,
-          border: '1.5px solid #1c2e48',
-          background: '#0f1c33',
-          color: '#e4ecf8',
-          fontSize: 14,
-          fontWeight: 700,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          marginBottom: 18,
-          transition: 'all .2s',
+          width: '100%', padding: '11px 16px', borderRadius: 12,
+          border: '1.5px solid #1c2e48', background: '#0f1c33',
+          color: '#e4ecf8', fontSize: 14, fontWeight: 700,
+          fontFamily: 'inherit', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 10, marginBottom: 18, transition: 'all .2s',
         }}
         onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#1a56db')}
         onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1c2e48')}
@@ -96,14 +86,7 @@ export default function LoginPage() {
         المتابعة عبر جوجل
       </button>
 
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        marginBottom: 18,
-        fontSize: 11,
-        color: '#3a5270',
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, fontSize: 11, color: '#3a5270' }}>
         <div style={{ flex: 1, height: 1, background: '#1c2e48' }} />
         أو
         <div style={{ flex: 1, height: 1, background: '#1c2e48' }} />
@@ -112,34 +95,32 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit}>
         <Input
           label="البريد الإلكتروني"
-          type="email"
-          required
-          value={email}
+          type="email" required value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="[email protected]"
-          dir="ltr"
+          placeholder="[email protected]" dir="ltr"
           style={{ textAlign: 'left' }}
         />
         <Input
           label="كلمة المرور"
-          type="password"
-          required
-          value={password}
+          type="password" required value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••"
-          minLength={8}
+          placeholder="••••••••" minLength={8}
         />
-
         <div style={{ textAlign: 'left', marginBottom: 18 }}>
           <Link href="/reset-password" style={{ fontSize: 12, color: '#7d97b8', textDecoration: 'none' }}>
             نسيت كلمة المرور؟
           </Link>
         </div>
-
-        <SubmitBtn loading={loading} type="submit">
-          تسجيل الدخول
-        </SubmitBtn>
+        <SubmitBtn loading={loading} type="submit">تسجيل الدخول</SubmitBtn>
       </form>
     </AuthShell>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh', background: '#050a16' }} />}>
+      <LoginForm />
+    </Suspense>
   )
 }
