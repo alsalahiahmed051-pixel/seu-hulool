@@ -10,7 +10,9 @@ import {
   Heart, Clock, Layers, Activity, Wifi, Settings, User,
   Volume2, VolumeX, Flame, Edit3, Check, Trash2, Save,
   Sparkles, Lock, Send, ChevronLeft, Share2, History,
-  PenLine, Compass, Lightbulb, Shield, ArrowUpRight, Hash
+  PenLine, Compass, Lightbulb, Shield, ArrowUpRight, Hash,
+  ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
+  CreditCard, HelpCircle, Newspaper, Radio, Building2
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -1887,6 +1889,176 @@ function Onboarding({ onClose, t }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   SEU LINKS PAGE
+   ══════════════════════════════════════════════════════════════ */
+const SEU_LINKS = [
+  {
+    group: "البوابات الأساسية",
+    color: P.blue2,
+    items: [
+      { label: "نظام التعلم الإلكتروني (Blackboard)", desc: "المقررات والواجبات والدرجات", url: "https://lms.seu.edu.sa", Icon: Monitor, color: "#1d4ed8" },
+      { label: "بوابة الطالب (Edugate)", desc: "الجداول والسجلات والخدمات", url: "https://edugate.seu.edu.sa", Icon: GraduationCap, color: "#6d28d9" },
+      { label: "الموقع الرسمي للجامعة", desc: "الأخبار والإعلانات الرسمية", url: "https://www.seu.edu.sa", Icon: Building2, color: "#065f46" },
+    ],
+  },
+  {
+    group: "الخدمات الأكاديمية",
+    color: P.purple,
+    items: [
+      { label: "المكتبة الرقمية", desc: "الكتب والمراجع والأبحاث", url: "https://library.seu.edu.sa", Icon: BookOpen, color: "#be123c" },
+      { label: "البريد الإلكتروني الجامعي", desc: "بريد الطالب الرسمي", url: "https://outlook.office365.com", Icon: Mail, color: "#0369a1" },
+      { label: "نظام التوجيه والإرشاد", desc: "المرشد الأكاديمي والدعم", url: "https://edugate.seu.edu.sa", Icon: Compass, color: "#d97706" },
+    ],
+  },
+  {
+    group: "الخدمات المالية والإدارية",
+    color: P.green,
+    items: [
+      { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://edugate.seu.edu.sa", Icon: CreditCard, color: "#059669" },
+      { label: "خدمات القبول والتسجيل", desc: "التسجيل في المقررات", url: "https://edugate.seu.edu.sa", Icon: CheckCircle, color: "#0891b2" },
+      { label: "نظام النور (شهادات وخدمات)", desc: "طلب الشهادات والوثائق الرسمية", url: "https://www.seu.edu.sa", Icon: Award, color: "#c8a84b" },
+    ],
+  },
+  {
+    group: "الدعم والتواصل",
+    color: "#be123c",
+    items: [
+      { label: "مركز الدعم الفني", desc: "الهاتف الموحد: 920033555", url: "tel:920033555", Icon: Phone, color: "#be123c" },
+      { label: "بوابة الشكاوى والمقترحات", desc: "تقديم الشكاوى ومتابعتها", url: "https://www.seu.edu.sa", Icon: HelpCircle, color: "#ea580c" },
+      { label: "حساب الجامعة في تويتر X", desc: "@SEU_SA", url: "https://twitter.com/SEU_SA", Icon: Radio, color: "#1d4ed8" },
+    ],
+  },
+];
+
+function SEULinksPage({ t }) {
+  const [copied, setCopied] = useState(null);
+
+  const openLink = (url, label) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const copyPhone = (e) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText("920033555").then(() => {
+      setCopied("phone");
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  return (
+    <div style={{ animation: "fadeUp .4s ease" }}>
+      {/* Header */}
+      <div style={{
+        background: `linear-gradient(135deg, #001030 0%, #002470 45%, #1a1f7a 100%)`,
+        borderRadius: 22, padding: "22px 20px", marginBottom: 20,
+        position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,.03)" }} />
+        <div style={{ position: "absolute", bottom: -20, left: -10, width: 100, height: 100, borderRadius: "50%", background: `${P.gold}10` }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+          <div style={{
+            width: 52, height: 52, borderRadius: 16,
+            background: "linear-gradient(135deg,#001f5a,#0038b8)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 6px 20px ${P.blue}50`,
+          }}>
+            <GraduationCap size={24} color="#fff" />
+          </div>
+          <div>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900, lineHeight: 1.2 }}>روابط الجامعة السعودية الإلكترونية</div>
+            <div style={{ color: P.gold, fontSize: 11, marginTop: 4 }}>Saudi Electronic University — SEU</div>
+          </div>
+        </div>
+        <div style={{
+          marginTop: 16, background: "rgba(255,255,255,.07)", borderRadius: 12,
+          padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 8px #4ade80", flexShrink: 0 }} />
+          <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12, lineHeight: 1.6 }}>
+            جميع الروابط تفتح الموقع الرسمي — تأكد من تسجيل دخولك بالحساب الجامعي
+          </div>
+        </div>
+      </div>
+
+      {/* Quick access numbers */}
+      <div style={{
+        background: t.s1, borderRadius: 16, padding: 14, marginBottom: 16,
+        border: `1px solid ${t.bd}`, display: "flex", gap: 10,
+      }}>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>الدعم الفني</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>920033555</div>
+        </div>
+        <div style={{ width: 1, background: t.bd }} />
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>ساعات الدعم</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>8 ص – 8 م</div>
+        </div>
+        <div style={{ width: 1, background: t.bd }} />
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>أيام العمل</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>الأحد – الخميس</div>
+        </div>
+      </div>
+
+      {/* Link groups */}
+      {SEU_LINKS.map((group, gi) => (
+        <div key={gi} style={{ marginBottom: 18 }}>
+          <div style={{
+            fontSize: 12, fontWeight: 800, color: group.color,
+            marginBottom: 10, paddingRight: 4,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <div style={{ width: 3, height: 14, borderRadius: 2, background: group.color }} />
+            {group.group}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {group.items.map((item, ii) => (
+              <button key={ii} onClick={() => openLink(item.url, item.label)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  padding: "13px 14px", background: t.s1, borderRadius: 14,
+                  border: `1px solid ${t.bd}`, cursor: "pointer", width: "100%",
+                  textAlign: "right", fontFamily: "inherit",
+                  transition: "all .2s",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = item.color + "60"; e.currentTarget.style.background = item.color + "08"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.background = t.s1; }}
+              >
+                <div style={{
+                  width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+                  background: item.color + "18",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <item.Icon size={18} color={item.color} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2 }}>{item.label}</div>
+                  <div style={{ fontSize: 11, color: t.mu }}>{item.desc}</div>
+                </div>
+                <ExternalLink size={14} color={t.dim} style={{ flexShrink: 0 }} />
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Footer note */}
+      <div style={{
+        background: `${P.blue2}10`, border: `1px solid ${P.blue2}25`,
+        borderRadius: 12, padding: "12px 14px", marginBottom: 8,
+        display: "flex", gap: 10, alignItems: "flex-start",
+      }}>
+        <Shield size={16} color={P.blue2} style={{ flexShrink: 0, marginTop: 1 }} />
+        <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.7 }}>
+          هذه الروابط تأخذك للمواقع الرسمية للجامعة السعودية الإلكترونية. لا تشارك كلمة مرورك مع أي طرف آخر.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    MAIN APP
    ══════════════════════════════════════════════════════════════ */
 export default function App() {
@@ -1970,6 +2142,7 @@ export default function App() {
     { id: "home", Icon: Home, label: "الرئيسية" },
     { id: "explore", Icon: Compass, label: "استكشاف" },
     { id: "fav", Icon: Star, label: "المفضلة" },
+    { id: "links", Icon: Link2, label: "روابط SEU" },
     { id: "timer", Icon: AlarmClock, label: "مؤقت" },
     { id: "profile", Icon: User, label: "حسابي" },
   ];
@@ -2021,6 +2194,14 @@ export default function App() {
         }}>
           <Search size={16} />
         </button>
+        <button onClick={() => setDark(d => !d)} title={dark ? "الوضع النهاري" : "الوضع الليلي"} style={{
+          background: dark ? `${P.gold}18` : `${P.blue2}15`,
+          border: `1px solid ${dark ? P.gold + "40" : P.blue2 + "40"}`,
+          borderRadius: 10, padding: 8, cursor: "pointer", display: "flex",
+          color: dark ? P.gold : P.blue2, transition: "all .25s",
+        }}>
+          {dark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
         <button onClick={() => setNotifOpen(true)} style={{
           position: "relative", background: t.s2, border: `1px solid ${t.bd}`,
           borderRadius: 10, padding: 8, cursor: "pointer", display: "flex", color: t.mu,
@@ -2051,6 +2232,8 @@ export default function App() {
           onBack={() => { setCourse(null); setTab("explore"); }} />}
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
+
+        {tab === "links" && <SEULinksPage t={t} />}
 
         {tab === "gpa" && (
           <div style={{ animation: "fadeUp .4s ease" }}>
