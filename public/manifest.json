@@ -1,12 +1,12 @@
 {
-  "name": "حلول | الجامعة السعودية الإلكترونية",
+  "name": "حلول SEU — بوابة الطالب الذكية",
   "short_name": "حلول",
-  "description": "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية",
+  "description": "تجميعات، خطط دراسية، حاسبة المعدل، مؤقت بومودورو، ومساعد ذكاء اصطناعي — كل ما يحتاجه طالب الجامعة السعودية الإلكترونية",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#050a16",
-  "theme_color": "#001f5a",
+  "theme_color": "#0038b8",
   "dir": "rtl",
   "lang": "ar",
   "categories": ["education", "productivity"],
@@ -27,13 +27,37 @@
   "shortcuts": [
     {
       "name": "حاسبة المعدل",
+      "short_name": "GPA",
+      "description": "احسب معدلك الفصلي والتراكمي",
       "url": "/?tab=gpa",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "مؤقت الدراسة",
+      "short_name": "مؤقت",
+      "description": "تقنية بومودورو لجلسات مذاكرة فعّالة",
       "url": "/?tab=timer",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "روابط SEU",
+      "short_name": "روابط",
+      "description": "جميع روابط الجامعة السعودية الإلكترونية",
+      "url": "/?tab=links",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "استكشاف المواد",
+      "short_name": "المواد",
+      "description": "تصفح جميع المواد والبرامج",
+      "url": "/?tab=explore",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "label": "الصفحة الرئيسية",
+      "form_factor": "narrow"
     }
   ]
 }

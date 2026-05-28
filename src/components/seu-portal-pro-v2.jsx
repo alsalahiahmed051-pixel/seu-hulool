@@ -191,7 +191,8 @@ const SECTIONS = [
   { id: "plans", Icon: Calendar, label: "الخطط الدراسية", color: "#6d28d9", desc: "الخطة الكاملة وجدول الوحدات والتوصيف" },
   { id: "curriculum", Icon: Layers, label: "المقررات الدراسية", color: "#065f46", desc: "المحتوى الكامل والواجبات والمشاريع" },
   { id: "programs", Icon: Award, label: "البرامج والتخصصات", color: "#b45309", desc: "نظرة عامة وشروط القبول والرسوم" },
-  { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#0891b2", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
+  { id: "flashcards", Icon: Hash, label: "بطاقات تعليمية", color: "#0891b2", desc: "أنشئ بطاقات سؤال وجواب للمراجعة" },
+  { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
   { id: "ai", Icon: Sparkles, label: "اسأل الذكاء الاصطناعي", color: P.blue2, desc: "مساعد ذكي يجيب عن أي سؤال" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
 ];
@@ -963,11 +964,163 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
 /* ══════════════════════════════════════════════════════════════
    COURSE PAGE
    ══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   REAL FILE ITEM (uploaded via admin)
+   ══════════════════════════════════════════════════════════════ */
+function RealFileItem({ file, t, onToast }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      window.open(file.url, "_blank", "noopener,noreferrer");
+      onToast?.({ msg: "جارٍ فتح الملف...", icon: "✓" });
+    } finally {
+      setTimeout(() => setDownloading(false), 1200);
+    }
+  };
+
+  return (
+    <div style={{
+      background: `${P.blue2}08`, border: `1.5px solid ${P.blue2}30`,
+      borderRadius: 14, padding: "12px 14px",
+      display: "flex", alignItems: "center", gap: 12,
+    }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: `${P.blue2}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <FileText size={18} color={P.blue2} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+          <span style={{ background: P.blue2, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 4, padding: "1px 5px" }}>جديد</span>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+        </div>
+        <div style={{ fontSize: 11, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
+      </div>
+      <button onClick={handleDownload} style={{
+        background: `linear-gradient(135deg,${P.blue},${P.blue2})`,
+        border: "none", borderRadius: 9, padding: "7px 12px",
+        cursor: "pointer", color: "#fff", fontSize: 11, fontWeight: 700,
+        fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+      }}>
+        <Download size={12} /> {downloading ? "جارٍ..." : "فتح"}
+      </button>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FLASHCARDS COMPONENT
+   ══════════════════════════════════════════════════════════════ */
+function FlashCards({ subject, t }) {
+  const key = `fc_${subject}`;
+  const [cards, setCards] = useStored(key, []);
+  const [mode, setMode] = useState("list"); // list | add | review
+  const [q, setQ] = useState(""); const [a, setA] = useState("");
+  const [idx, setIdx] = useState(0); const [flipped, setFlipped] = useState(false);
+
+  const addCard = () => {
+    if (!q.trim() || !a.trim()) return;
+    setCards(c => [...c, { id: Date.now(), q: q.trim(), a: a.trim() }]);
+    setQ(""); setA("");
+  };
+  const del = (id) => setCards(c => c.filter(x => x.id !== id));
+  const next = () => { setFlipped(false); setIdx(i => (i + 1) % cards.length); };
+  const prev = () => { setFlipped(false); setIdx(i => (i - 1 + cards.length) % cards.length); };
+
+  if (mode === "review" && cards.length > 0) {
+    const card = cards[idx];
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <button onClick={() => { setMode("list"); setIdx(0); setFlipped(false); }}
+            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 12, fontFamily: "inherit" }}>
+            ← رجوع
+          </button>
+          <span style={{ fontSize: 12, color: t.mu }}>{idx + 1} / {cards.length}</span>
+        </div>
+        <div onClick={() => setFlipped(f => !f)} style={{
+          background: flipped ? `${P.green}12` : t.s2, border: `2px solid ${flipped ? P.green : t.bd}`,
+          borderRadius: 18, padding: 28, textAlign: "center", cursor: "pointer",
+          minHeight: 140, display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", transition: "all .3s", marginBottom: 14,
+        }}>
+          <div style={{ fontSize: 10, color: t.mu, marginBottom: 8 }}>{flipped ? "الجواب" : "السؤال"} — اضغط للقلب</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: t.tx, lineHeight: 1.6 }}>
+            {flipped ? card.a : card.q}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={prev} style={{ flex: 1, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: 10, cursor: "pointer", color: t.tx, fontSize: 13, fontFamily: "inherit" }}>السابق</button>
+          <button onClick={next} style={{ flex: 1, background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>التالي</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {mode === "add" ? (
+        <div>
+          <button onClick={() => setMode("list")} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 12, fontFamily: "inherit", marginBottom: 14 }}>← رجوع</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <textarea placeholder="السؤال..." value={q} onChange={e => setQ(e.target.value)} rows={2}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 10, padding: 10, fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+            <textarea placeholder="الجواب..." value={a} onChange={e => setA(e.target.value)} rows={2}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 10, padding: 10, fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+            <button onClick={addCard} disabled={!q.trim() || !a.trim()}
+              style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 10, padding: "10px", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!q.trim() || !a.trim()) ? .5 : 1 }}>
+              إضافة البطاقة
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button onClick={() => setMode("add")} style={{ flex: 1, background: `${P.blue2}15`, border: `1px solid ${P.blue2}40`, borderRadius: 10, padding: 9, cursor: "pointer", color: P.blue2, fontSize: 12, fontFamily: "inherit", fontWeight: 700 }}>+ بطاقة جديدة</button>
+            {cards.length > 0 && <button onClick={() => { setIdx(0); setFlipped(false); setMode("review"); }} style={{ flex: 1, background: `${P.green}15`, border: `1px solid ${P.green}40`, borderRadius: 10, padding: 9, cursor: "pointer", color: P.green, fontSize: 12, fontFamily: "inherit", fontWeight: 700 }}>▶ مراجعة ({cards.length})</button>}
+          </div>
+          {cards.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "20px 0", color: t.mu, fontSize: 13 }}>لا توجد بطاقات بعد — أضف سؤالاً وجواباً</div>
+          ) : (
+            cards.map(c => (
+              <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}`, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>س: {c.q}</div>
+                  <div style={{ fontSize: 12, color: t.tx }}>ج: {c.a}</div>
+                </div>
+                <button onClick={() => del(c.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.red, display: "flex" }}><X size={12} /></button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast }) {
   const [open, setOpen] = useState(null);
+  const [realFiles, setRealFiles] = useState({});
+  const [realLoading, setRealLoading] = useState(true);
   const Icon = getIcon(subject);
   const isFav = favorites.includes(subject);
   const hasNotes = !!(notes[subject] && notes[subject].trim());
+
+  useEffect(() => {
+    setRealLoading(true);
+    fetch(`/api/files?course=${encodeURIComponent(subject)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.files) {
+          const grouped = { collections: [], plans: [], curriculum: [], programs: [] };
+          data.files.forEach(f => { if (grouped[f.category]) grouped[f.category].push(f); });
+          setRealFiles(grouped);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRealLoading(false));
+  }, [subject]);
+
   const fileData = {
     collections: FILES.collections(subject), plans: FILES.plans(subject),
     curriculum: FILES.curriculum(subject), programs: FILES.programs(subject),
@@ -1044,16 +1197,18 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                   <div style={{ height: 1, background: t.bd, marginBottom: 14 }} />
                   {sec.id === "ai" && <AIChat subject={subject} t={t} onChat={onChat} />}
                   {sec.id === "notes" && <NotesEditor subject={subject} notes={notes} setNotes={setNotes} t={t} onToast={onToast} />}
+                  {sec.id === "flashcards" && <FlashCards subject={subject} t={t} />}
                   {sec.id === "support" && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {[
-                        { Icon: Phone, label: "الهاتف الموحد", val: "920033555", color: "#059669" },
-                        { Icon: MessageCircle, label: "دردشة مباشرة", val: "ابدأ المحادثة", color: P.blue2 },
-                        { Icon: Globe, label: "البوابة الرسمية", val: "www.seu.edu.sa", color: P.purple },
+                        { Icon: Phone, label: "الهاتف الموحد", val: "920033555", color: "#059669", href: "tel:920033555" },
+                        { Icon: MessageCircle, label: "دردشة مباشرة", val: "ابدأ المحادثة", color: P.blue2, href: "https://www.seu.edu.sa" },
+                        { Icon: Globe, label: "البوابة الرسمية", val: "www.seu.edu.sa", color: P.purple, href: "https://www.seu.edu.sa" },
                       ].map((item, i) => (
-                        <div key={i} style={{
+                        <a key={i} href={item.href} target="_blank" rel="noopener noreferrer" style={{
                           display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
                           background: t.s2, borderRadius: 12, border: `1px solid ${t.bd}`, cursor: "pointer",
+                          textDecoration: "none",
                         }}>
                           <div style={{ width: 36, height: 36, borderRadius: 10, background: `${item.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
                             <item.Icon size={16} color={item.color} />
@@ -1062,12 +1217,20 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                             <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{item.label}</div>
                             <div style={{ fontSize: 12, color: item.color }}>{item.val}</div>
                           </div>
-                        </div>
+                        </a>
                       ))}
                     </div>
                   )}
                   {["collections", "plans", "curriculum", "programs"].includes(sec.id) && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {(realFiles[sec.id] || []).map((f, i) => (
+                        <RealFileItem key={`real-${i}`} file={f} t={t} onToast={onToast} />
+                      ))}
+                      {(realFiles[sec.id] || []).length === 0 && !realLoading && (
+                        <div style={{ fontSize: 12, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
+                          لا توجد ملفات حقيقية بعد
+                        </div>
+                      )}
                       {fileData[sec.id].map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
                     </div>
                   )}
@@ -1084,13 +1247,61 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
 /* ══════════════════════════════════════════════════════════════
    HOME PAGE
    ══════════════════════════════════════════════════════════════ */
-function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements }) {
+const SEU_CALENDAR = [
+  { label: "بداية الفصل الثاني 1446", date: "2026-02-01", color: P.blue2, icon: "🎓" },
+  { label: "اختبارات الميدترم", date: "2026-04-05", color: P.gold, icon: "📝" },
+  { label: "آخر يوم لحذف المقرر", date: "2026-04-20", color: "#ea580c", icon: "⚠️" },
+  { label: "الاختبارات النهائية", date: "2026-06-07", color: P.red, icon: "🔥" },
+  { label: "نتائج الفصل الثاني", date: "2026-06-28", color: P.green, icon: "🏆" },
+  { label: "التسجيل للفصل الأول 1447", date: "2026-07-15", color: P.purple, icon: "📋" },
+];
+
+function AcademicCalendar({ t }) {
+  const now = new Date();
+  const upcoming = SEU_CALENDAR
+    .map(e => ({ ...e, days: Math.ceil((new Date(e.date) - now) / 86400000) }))
+    .filter(e => e.days > -7)
+    .slice(0, 4);
+
+  return (
+    <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي 1446/1447
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {upcoming.map((e, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>{e.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.label}</div>
+              <div style={{ fontSize: 11, color: t.mu }}>{new Date(e.date).toLocaleDateString("ar-SA", { month: "long", day: "numeric" })}</div>
+            </div>
+            <div style={{
+              background: e.days <= 0 ? `${P.green}20` : e.days <= 14 ? `${P.red}20` : `${e.color}15`,
+              color: e.days <= 0 ? P.green : e.days <= 14 ? P.red : e.color,
+              borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800, flexShrink: 0,
+            }}>
+              {e.days <= 0 ? "انتهى" : e.days === 1 ? "غداً" : `${e.days} يوم`}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
   const tip = TIPS[Math.floor(Date.now() / 86400000) % TIPS.length];
-  const examDays = Math.ceil((new Date("2026-06-15") - new Date()) / (1000 * 60 * 60 * 24));
+  const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
   const unlocked = ACHIEVEMENTS.filter(a => a.check(achievements));
   const goalPct = Math.min(100, Math.round((weekProgress / Math.max(1, weeklyGoal)) * 100));
+  const weekMins = (sessionLog || []).filter(s => {
+    const d = new Date(); d.setDate(d.getDate() - 6);
+    return new Date(s.date || s.completed_at || Date.now()) >= d;
+  }).reduce((a, s) => a + (s.dur || s.duration_minutes || s.duration || 25), 0);
+  const lastGpa = semesters?.length ? semesters[semesters.length - 1]?.gpa : null;
 
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
@@ -1187,27 +1398,24 @@ function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, wee
         </div>
       )}
 
+      {/* Quick Stats Bar */}
       <div style={{
-        background: t.s1, borderRadius: 18, padding: "16px", marginBottom: 16,
-        border: `1px solid ${t.bd}`, display: "flex", alignItems: "center", gap: 14,
+        display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16,
       }}>
-        <div style={{
-          width: 52, height: 52, borderRadius: 16, background: `${P.red}15`, display: "flex",
-          flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0,
-        }}>
-          <div style={{ fontSize: 18, fontWeight: 900, color: P.red, lineHeight: 1 }}>{examDays}</div>
-          <div style={{ fontSize: 9, color: P.red, fontWeight: 600 }}>يوم</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>الاختبارات النهائية</div>
-          <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>الفصل الثاني — 15 يونيو 2026</div>
-        </div>
-        <div style={{ marginRight: "auto" }}>
-          <Btn size="sm" variant="ghost" onClick={() => setActiveTab("timer")}>
-            <AlarmClock size={12} /> استعد
-          </Btn>
-        </div>
+        {[
+          { label: "دقائق هذا الأسبوع", value: weekMins || 0, color: P.blue2, suffix: "د" },
+          { label: "يوم للاختبارات", value: Math.max(0, examDays), color: examDays <= 14 ? P.red : P.gold, suffix: "" },
+          { label: "آخر معدل", value: lastGpa ? lastGpa.toFixed(2) : "—", color: P.green, suffix: "" },
+        ].map(({ label, value, color, suffix }) => (
+          <div key={label} style={{ background: t.s1, borderRadius: 14, padding: "12px 10px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value}{suffix}</div>
+            <div style={{ fontSize: 10, color: t.mu, marginTop: 3, lineHeight: 1.3 }}>{label}</div>
+          </div>
+        ))}
       </div>
+
+      {/* Academic Calendar */}
+      <AcademicCalendar t={t} />
 
       <div style={{
         background: `linear-gradient(135deg,${P.goldLight},#fef9f0)`, borderRadius: 18,
@@ -2107,6 +2315,15 @@ export default function App() {
     return count;
   }, [sessionLog]);
 
+  const prevStreakRef = useRef(null);
+  useEffect(() => {
+    if (prevStreakRef.current === null) { prevStreakRef.current = streak; return; }
+    const prev = prevStreakRef.current;
+    prevStreakRef.current = streak;
+    const milestones = { 3: "🔥 3 أيام متواصلة! استمر!", 7: "⚡ أسبوع كامل! أنت رائع!", 14: "💪 أسبوعان! إنجاز حقيقي!", 30: "🏆 شهر كامل! أسطوري!" };
+    if (streak > prev && milestones[streak]) toasts.push(milestones[streak], "success");
+  }, [streak]);
+
   const weekProgress = useMemo(() => {
     const days = last7Days();
     return sessionLog.filter(s => days.includes(s.date)).length;
@@ -2165,6 +2382,7 @@ export default function App() {
         ::-webkit-scrollbar { width:5px; height:5px }
         ::-webkit-scrollbar-thumb { background:${P.blue}40; border-radius:3px }
         ::-webkit-scrollbar-track { background:transparent }
+        #bottom-nav::-webkit-scrollbar { display:none }
         input[type=range] { -webkit-appearance:none; height:5px; border-radius:3px; background:${t.bd}; outline:none }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; cursor:pointer; background:${P.blue2}; box-shadow:0 2px 6px rgba(0,0,0,.3) }
       `}</style>
@@ -2221,7 +2439,7 @@ export default function App() {
           setActiveTab={(t) => { setTab(t); setCourse(null); }}
           openCourse={openCourse} t={t} recent={recent} streak={streak}
           activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
-          achievements={achievementsState} />}
+          achievements={achievementsState} sessionLog={sessionLog} semesters={semesters} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} />}
 
@@ -2264,12 +2482,14 @@ export default function App() {
       </div>
 
       {/* BOTTOM NAV */}
-      <div style={{
+      <div id="bottom-nav" style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
         background: dark ? "rgba(7,16,31,.95)" : "rgba(255,255,255,.95)",
         backdropFilter: "blur(20px)", borderTop: `1px solid ${t.bd}`,
-        display: "flex", justifyContent: "space-around", alignItems: "center", padding: "8px 4px 12px",
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        scrollbarWidth: "none", padding: "8px 8px 12px",
       }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
           return (
@@ -2277,7 +2497,7 @@ export default function App() {
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
                 background: "none", border: "none", cursor: "pointer", padding: "4px 10px",
-                transition: "all .2s", fontFamily: "inherit",
+                transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
               }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 12,
@@ -2287,10 +2507,11 @@ export default function App() {
               }}>
                 <Icon size={18} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
               </div>
-              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? P.blue2 : t.dim }}>{label}</span>
+              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
+        </div>
       </div>
 
       {/* PANELS / MODALS */}
