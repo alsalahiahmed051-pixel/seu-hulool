@@ -108,29 +108,29 @@ const getIcon = (name) => ICON_MAP[name] || BookOpen;
 
 const TREE = {
   preparatory: {
-    label: "السنة التحضيرية", icon: GraduationCap, color: P.blue2,
+    label: "السنة الأولى المشتركة (CFY)", icon: GraduationCap, color: P.blue2,
     plans: {
-      a: { label: "الخطة (أ)", subjects: ["حاسب", "مهارات أكاديمية", "إنجليزي"] },
-      b: { label: "الخطة (ب)", subjects: ["رياضيات", "مهارات اتصال", "إنجليزي"] },
+      a: { label: "الفصل الأول", subjects: ["مهارات اللغة الإنجليزية 1", "مهارات الحاسب", "مهارات أكاديمية"] },
+      b: { label: "الفصل الثاني", subjects: ["مهارات اللغة الإنجليزية 2", "الرياضيات", "مهارات الاتصال والتواصل"] },
     },
   },
   bachelor: {
     label: "بكالوريوس", icon: Award, color: P.purple,
     colleges: [
-      { id: "admin", label: "العلوم الإدارية والمالية", icon: Briefcase, color: "#1d4ed8", programs: ["إدارة أعمال", "محاسبة", "مالية", "تجارة إلكترونية"] },
-      { id: "theory", label: "العلوم والدراسات النظرية", icon: BookOpen, color: "#0369a1", programs: ["إعلام إلكتروني", "قانون", "لغة إنجليزية وترجمة", "علوم إنسانية", "علوم أساسية"] },
-      { id: "health", label: "العلوم الصحية", icon: Heart, color: "#be123c", programs: ["معلوماتية صحية", "صحة عامة", "إدارة رعاية صحية", "ماجستير تنفيذي"] },
-      { id: "cs", label: "الحوسبة والمعلوماتية", icon: Code, color: "#065f46", programs: ["تقنية معلومات", "علوم حاسب"] },
-      { id: "applied", label: "الكلية التطبيقية", icon: Layers, color: "#92400e", programs: ["برامج تطبيقية متنوعة"] },
+      { id: "admin", label: "العلوم الإدارية والمالية", icon: Briefcase, color: "#1d4ed8", programs: ["إدارة أعمال", "محاسبة", "تمويل", "تجارة إلكترونية"] },
+      { id: "theory", label: "العلوم والدراسات النظرية", icon: BookOpen, color: "#0369a1", programs: ["إعلام رقمي", "قانون", "لغة إنجليزية وترجمة"] },
+      { id: "health", label: "العلوم الصحية", icon: Heart, color: "#be123c", programs: ["معلوماتية صحية", "صحة عامة"] },
+      { id: "cs", label: "الحوسبة والمعلوماتية", icon: Code, color: "#065f46", programs: ["تقنية معلومات", "علوم حاسب", "علوم البيانات"] },
+      { id: "applied", label: "الكلية التطبيقية", icon: Layers, color: "#92400e", programs: ["برامج الكلية التطبيقية"] },
     ],
   },
   diploma: {
     label: "دبلوم", icon: FileText, color: P.green,
-    programs: ["دبلوم التسويق والمبيعات", "دبلوم المحاسبة التطبيقي", "دبلوم تقنية المعلومات", "دبلوم الإدارة المكتبية", "دبلوم اللغة الإنجليزية للأعمال", "دبلوم السكرتارية التنفيذية"],
+    programs: ["دبلوم إدارة الأعمال", "دبلوم المحاسبة", "دبلوم تقنية المعلومات", "دبلوم اللغة الإنجليزية للأعمال"],
   },
   graduate: {
     label: "دراسات عليا", icon: Trophy, color: P.gold,
-    programs: ["ماجستير إدارة الأعمال (MBA)", "ماجستير المحاسبة المهنية", "ماجستير القانون", "ماجستير تقنية المعلومات", "ماجستير علوم الحاسب", "ماجستير المعلوماتية الصحية", "ماجستير الصحة العامة", "ماجستير تنفيذي في الجودة", "ماجستير الإعلام الإلكتروني"],
+    programs: ["ماجستير إدارة الأعمال (MBA)", "ماجستير المحاسبة المهنية", "ماجستير القانون", "ماجستير تقنية المعلومات", "ماجستير علوم الحاسب", "ماجستير المعلوماتية الصحية", "ماجستير الصحة العامة", "ماجستير الإعلام الرقمي"],
   },
 };
 
@@ -155,10 +155,10 @@ const TIPS = [
 ];
 
 const NOTIFS_SEED = [
-  { id: 1, title: "تجميعات جديدة", text: "رُفعت تجميعات فاينل لمادة الحاسب 1445", time: "منذ 5 دقائق", read: false, Icon: Book },
-  { id: 2, title: "تحديث الخطة الدراسية", text: "تم تحديث خطة السنة التحضيرية للفصل الثاني", time: "منذ ساعة", read: false, Icon: FileText },
-  { id: 3, title: "إعلان الاختبارات", text: "جداول الاختبارات النهائية ف2 1445 متاحة", time: "منذ يومين", read: true, Icon: Calendar },
-  { id: 4, title: "ملخص شامل", text: "ملخص وحدات 1-6 لمادة مهارات الاتصال", time: "منذ 3 أيام", read: true, Icon: Star },
+  { id: 1, title: "تجميعات جديدة", text: "رُفعت تجميعات فاينل لمادة إدارة الأعمال ف2 1447", time: "منذ 5 دقائق", read: false, Icon: Book },
+  { id: 2, title: "تحديث الخطة الدراسية", text: "تم تحديث خطة السنة الأولى المشتركة (CFY) للفصل الثاني", time: "منذ ساعة", read: false, Icon: FileText },
+  { id: 3, title: "إعلان الاختبارات", text: "جداول الاختبارات النهائية ف2 1447 متاحة على Blackboard", time: "منذ يومين", read: true, Icon: Calendar },
+  { id: 4, title: "ملخص شامل", text: "ملخص وحدات 1-6 لمادة مهارات الاتصال والتواصل", time: "منذ 3 أيام", read: true, Icon: Star },
 ];
 
 const FILES = {
@@ -1201,9 +1201,9 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                   {sec.id === "support" && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {[
-                        { Icon: Phone, label: "الهاتف الموحد", val: "920033555", color: "#059669", href: "tel:920033555" },
-                        { Icon: MessageCircle, label: "دردشة مباشرة", val: "ابدأ المحادثة", color: P.blue2, href: "https://www.seu.edu.sa" },
-                        { Icon: Globe, label: "البوابة الرسمية", val: "www.seu.edu.sa", color: P.purple, href: "https://www.seu.edu.sa" },
+                        { Icon: Phone, label: "الهاتف الموحد", val: "011-2613500", color: "#059669", href: "tel:0112613500" },
+                        { Icon: MessageCircle, label: "Blackboard", val: "lms.seu.edu.sa", color: P.blue2, href: "https://lms.seu.edu.sa" },
+                        { Icon: Globe, label: "البوابة الأكاديمية", val: "erpgate.seu.edu.sa", color: P.purple, href: "https://erpgate.seu.edu.sa" },
                       ].map((item, i) => (
                         <a key={i} href={item.href} target="_blank" rel="noopener noreferrer" style={{
                           display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
@@ -1248,12 +1248,12 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
    HOME PAGE
    ══════════════════════════════════════════════════════════════ */
 const SEU_CALENDAR = [
-  { label: "بداية الفصل الثاني 1446", date: "2026-02-01", color: P.blue2, icon: "🎓" },
-  { label: "اختبارات الميدترم", date: "2026-04-05", color: P.gold, icon: "📝" },
-  { label: "آخر يوم لحذف المقرر", date: "2026-04-20", color: "#ea580c", icon: "⚠️" },
-  { label: "الاختبارات النهائية", date: "2026-06-07", color: P.red, icon: "🔥" },
-  { label: "نتائج الفصل الثاني", date: "2026-06-28", color: P.green, icon: "🏆" },
-  { label: "التسجيل للفصل الأول 1447", date: "2026-07-15", color: P.purple, icon: "📋" },
+  { label: "الاختبارات النهائية — الفصل الثاني 1447", date: "2026-06-07", color: P.red, icon: "🔥" },
+  { label: "نتائج الفصل الثاني 1447", date: "2026-06-28", color: P.green, icon: "🏆" },
+  { label: "التسجيل للفصل الأول 1448", date: "2026-07-20", color: P.purple, icon: "📋" },
+  { label: "بداية الفصل الأول 1448", date: "2026-09-06", color: P.blue2, icon: "🎓" },
+  { label: "اختبارات الميدترم — الفصل الأول 1448", date: "2026-10-25", color: P.gold, icon: "📝" },
+  { label: "الاختبارات النهائية — الفصل الأول 1448", date: "2026-12-13", color: P.red, icon: "🔥" },
 ];
 
 function AcademicCalendar({ t }) {
@@ -1266,7 +1266,7 @@ function AcademicCalendar({ t }) {
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16 }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي 1446/1447
+        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي 1447/1448
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {upcoming.map((e, i) => (
@@ -1584,15 +1584,15 @@ function ExplorePage({ onCourse, t }) {
       {step === "root" && <>
         <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>اختر مسارك</h2>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <PCard Icon={TREE.preparatory.icon} label={TREE.preparatory.label} sub="خطة أ وخطة ب" color={TREE.preparatory.color} onClick={() => { setPath("preparatory"); setStep("level2"); }} />
+          <PCard Icon={TREE.preparatory.icon} label={TREE.preparatory.label} sub="الفصل الأول والثاني" color={TREE.preparatory.color} onClick={() => { setPath("preparatory"); setStep("level2"); }} />
           <PCard Icon={TREE.bachelor.icon} label={TREE.bachelor.label} sub="5 كليات" color={TREE.bachelor.color} onClick={() => { setPath("bachelor"); setStep("level2"); }} />
-          <PCard Icon={TREE.diploma.icon} label={TREE.diploma.label} sub="6 دبلومات" color={TREE.diploma.color} onClick={() => { setPath("diploma"); setStep("level2"); }} />
-          <PCard Icon={TREE.graduate.icon} label={TREE.graduate.label} sub="9 برامج ماجستير" color={TREE.graduate.color} onClick={() => { setPath("graduate"); setStep("level2"); }} />
+          <PCard Icon={TREE.diploma.icon} label={TREE.diploma.label} sub="4 برامج" color={TREE.diploma.color} onClick={() => { setPath("diploma"); setStep("level2"); }} />
+          <PCard Icon={TREE.graduate.icon} label={TREE.graduate.label} sub="8 برامج ماجستير" color={TREE.graduate.color} onClick={() => { setPath("graduate"); setStep("level2"); }} />
         </div>
       </>}
 
       {step === "level2" && path === "preparatory" && <>
-        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>السنة التحضيرية</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>السنة الأولى المشتركة (CFY)</h2>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <PCard Icon={BookOpen} label="الخطة (أ)" sub="حاسب • مهارات أكاديمية • إنجليزي" color={P.blue2} onClick={() => { setSub("a"); setStep("level3"); }} />
           <PCard Icon={BookOpen} label="الخطة (ب)" sub="رياضيات • مهارات اتصال • إنجليزي" color={P.purple} onClick={() => { setSub("b"); setStep("level3"); }} />
@@ -1637,7 +1637,7 @@ function ExplorePage({ onCourse, t }) {
 
       {step === "level3" && path === "preparatory" && <>
         <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
-          {sub === "a" ? "مواد الخطة (أ)" : "مواد الخطة (ب)"}
+          {sub === "a" ? "مواد الفصل الأول" : "مواد الفصل الثاني"}
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           {TREE.preparatory.plans[sub].subjects.map((s, i) => {
@@ -2105,35 +2105,38 @@ const SEU_LINKS = [
     color: P.blue2,
     items: [
       { label: "نظام التعلم الإلكتروني (Blackboard)", desc: "المقررات والواجبات والدرجات", url: "https://lms.seu.edu.sa", Icon: Monitor, color: "#1d4ed8" },
-      { label: "بوابة الطالب (Edugate)", desc: "الجداول والسجلات والخدمات", url: "https://edugate.seu.edu.sa", Icon: GraduationCap, color: "#6d28d9" },
-      { label: "الموقع الرسمي للجامعة", desc: "الأخبار والإعلانات الرسمية", url: "https://www.seu.edu.sa", Icon: Building2, color: "#065f46" },
+      { label: "بوابة الطالب (ERP Gate)", desc: "الجداول والسجلات والخدمات الأكاديمية", url: "https://erpgate.seu.edu.sa", Icon: GraduationCap, color: "#6d28d9" },
+      { label: "تسجيل الدخول الموحد (SSO)", desc: "الدخول لجميع أنظمة الجامعة", url: "https://sso.seu.edu.sa/SEUSSO/pages/login.jsp", Icon: Building2, color: "#065f46" },
+      { label: "الموقع الرسمي للجامعة", desc: "الأخبار والإعلانات الرسمية", url: "https://www.seu.edu.sa", Icon: Globe, color: "#0369a1" },
     ],
   },
   {
     group: "الخدمات الأكاديمية",
     color: P.purple,
     items: [
-      { label: "المكتبة الرقمية", desc: "الكتب والمراجع والأبحاث", url: "https://library.seu.edu.sa", Icon: BookOpen, color: "#be123c" },
-      { label: "البريد الإلكتروني الجامعي", desc: "بريد الطالب الرسمي", url: "https://outlook.office365.com", Icon: Mail, color: "#0369a1" },
-      { label: "نظام التوجيه والإرشاد", desc: "المرشد الأكاديمي والدعم", url: "https://edugate.seu.edu.sa", Icon: Compass, color: "#d97706" },
+      { label: "المكتبة الرقمية السعودية (SDL)", desc: "الكتب والمراجع والأبحاث الأكاديمية", url: "https://sdl.edu.sa/SDLPortal/ar/login.aspx", Icon: BookOpen, color: "#be123c" },
+      { label: "البريد الإلكتروني الجامعي", desc: "بريد @seu.edu.sa عبر Office 365", url: "https://sso.seu.edu.sa/SEUOffice365SSO/pages/login.jsp", Icon: Mail, color: "#0369a1" },
+      { label: "بوابة القبول والتسجيل", desc: "التسجيل وقبول الطلاب الجدد", url: "https://admission.seu.edu.sa", Icon: CheckCircle, color: "#0891b2" },
+      { label: "التقويم الأكاديمي", desc: "مواعيد الفصول والاختبارات والتسجيل", url: "https://www.seu.edu.sa/en/academic-calendar/1448/", Icon: Calendar, color: "#d97706" },
     ],
   },
   {
     group: "الخدمات المالية والإدارية",
     color: P.green,
     items: [
-      { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://edugate.seu.edu.sa", Icon: CreditCard, color: "#059669" },
-      { label: "خدمات القبول والتسجيل", desc: "التسجيل في المقررات", url: "https://edugate.seu.edu.sa", Icon: CheckCircle, color: "#0891b2" },
-      { label: "نظام النور (شهادات وخدمات)", desc: "طلب الشهادات والوثائق الرسمية", url: "https://www.seu.edu.sa", Icon: Award, color: "#c8a84b" },
+      { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://erpgate.seu.edu.sa", Icon: CreditCard, color: "#059669" },
+      { label: "خدمات وحدة التسجيل", desc: "إضافة/حذف/اعتراض على المقررات", url: "https://www.seu.edu.sa/aasa/ar/registeration/", Icon: FileText, color: "#c8a84b" },
+      { label: "الكلية التطبيقية", desc: "بوابة طلاب الكلية التطبيقية", url: "https://ac.seu.edu.sa/ar/login", Icon: Award, color: "#92400e" },
     ],
   },
   {
     group: "الدعم والتواصل",
     color: "#be123c",
     items: [
-      { label: "مركز الدعم الفني", desc: "الهاتف الموحد: 920033555", url: "tel:920033555", Icon: Phone, color: "#be123c" },
-      { label: "بوابة الشكاوى والمقترحات", desc: "تقديم الشكاوى ومتابعتها", url: "https://www.seu.edu.sa", Icon: HelpCircle, color: "#ea580c" },
-      { label: "حساب الجامعة في تويتر X", desc: "@SEU_SA", url: "https://twitter.com/SEU_SA", Icon: Radio, color: "#1d4ed8" },
+      { label: "مركز الدعم الفني", desc: "هاتف: 011-2613500", url: "tel:0112613500", Icon: Phone, color: "#be123c" },
+      { label: "الأسئلة الشائعة (FAQ)", desc: "إجابات على أبرز الاستفسارات", url: "https://www.seu.edu.sa/ar/faqs/", Icon: HelpCircle, color: "#ea580c" },
+      { label: "حساب الجامعة في X", desc: "@Saudi_EUni", url: "https://x.com/Saudi_EUni", Icon: Radio, color: "#1d4ed8" },
+      { label: "تطبيق SEU على المتجر", desc: "تحميل تطبيق الجوال الرسمي", url: "https://play.google.com/store/apps/details?id=com.seu.services", Icon: Newspaper, color: "#065f46" },
     ],
   },
 ];
@@ -2147,7 +2150,7 @@ function SEULinksPage({ t }) {
 
   const copyPhone = (e) => {
     e.stopPropagation();
-    navigator.clipboard?.writeText("920033555").then(() => {
+    navigator.clipboard?.writeText("0112613500").then(() => {
       setCopied("phone");
       setTimeout(() => setCopied(null), 2000);
     });
@@ -2195,7 +2198,7 @@ function SEULinksPage({ t }) {
       }}>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>الدعم الفني</div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>920033555</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>011-2613500</div>
         </div>
         <div style={{ width: 1, background: t.bd }} />
         <div style={{ flex: 1, textAlign: "center" }}>
