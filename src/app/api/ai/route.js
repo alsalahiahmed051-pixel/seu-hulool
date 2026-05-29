@@ -2,6 +2,7 @@ export const runtime = 'nodejs'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY
+const GROQ_KEY = process.env.GROQ_API_KEY
 
 async function callAnthropic(subject, messages) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
@@ -13,6 +14,28 @@ async function callAnthropic(subject, messages) {
     messages,
   })
   return res.content[0]?.text
+}
+
+async function callGroq(subject, messages) {
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${GROQ_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      messages: [
+        { role: 'system', content: buildSystem(subject) },
+        ...messages,
+      ],
+      max_tokens: 1024,
+      temperature: 0.7,
+    }),
+  })
+  const data = await r.json()
+  if (!r.ok) throw new Error(data.error?.message || 'Groq error')
+  return data.choices?.[0]?.message?.content
 }
 
 async function callGemini(subject, messages) {
@@ -52,18 +75,24 @@ export async function POST(request) {
   const { subject, messages } = await request.json()
 
   const hasAnthropic = ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')
+  const hasGroq = GROQ_KEY && !GROQ_KEY.includes('placeholder')
   const hasGemini = GEMINI_KEY && !GEMINI_KEY.includes('placeholder')
 
-  if (!hasAnthropic && !hasGemini) {
+  if (!hasAnthropic && !hasGroq && !hasGemini) {
     return Response.json({
-      text: `المساعد الذكي غير مفعّل بعد.\n\nللتفعيل المجاني:\n١. افتح aistudio.google.com\n٢. احصل على مفتاح API مجاني\n٣. أضف GEMINI_API_KEY في Vercel → Settings → Environment Variables`,
+      text: `المساعد الذكي غير مفعّل بعد.\n\nللتفعيل المجاني (الأسرع):\n١. افتح console.groq.com\n٢. سجّل دخولك بحساب Google\n٣. اضغط "API Keys" ← "Create API Key"\n٤. أضف GROQ_API_KEY في Vercel → Settings → Environment Variables`,
     })
   }
 
   try {
-    const text = hasAnthropic
-      ? await callAnthropic(subject, messages)
-      : await callGemini(subject, messages)
+    let text
+    if (hasAnthropic) {
+      text = await callAnthropic(subject, messages)
+    } else if (hasGroq) {
+      text = await callGroq(subject, messages)
+    } else {
+      text = await callGemini(subject, messages)
+    }
     return Response.json({ text })
   } catch (err) {
     return Response.json(
