@@ -13,7 +13,7 @@ import {
   PenLine, Compass, Lightbulb, Shield, ArrowUpRight, Hash,
   ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
-  AlertTriangle, PartyPopper, Zap as Lightning
+  AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -349,6 +349,16 @@ function StatCard({ Icon, value, suffix = "", label, color, t }) {
 
 function FileItem({ name, sz, views, dl, date, r, t, onToast }) {
   const [dlAnim, setDlAnim] = useState(false);
+  const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[name] || 0));
+  const [hoverRating, setHoverRating] = useState(0);
+  const rateFile = (star) => {
+    const ratings = storage.get("ratings", {});
+    ratings[name] = star;
+    storage.set("ratings", ratings);
+    setMyRating(star);
+    onToast?.(`قيّمت بـ ${star} نجوم`, "success");
+  };
+  const displayRating = myRating > 0 ? ((r + myRating) / 2) : r;
   return (
     <div style={{
       background: t.s2, borderRadius: 12, padding: "12px 14px", border: `1px solid ${t.bd}`,
@@ -368,8 +378,14 @@ function FileItem({ name, sz, views, dl, date, r, t, onToast }) {
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: t.mu }}><Eye size={11} /> {fmt(views)}</span>
         <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: t.mu }}><Download size={11} /> {fmt(dl)}</span>
-        <div style={{ display: "flex", gap: 2, marginRight: "auto" }}>
-          {[1, 2, 3, 4, 5].map(i => <span key={i} style={{ fontSize: 10, color: i <= Math.round(r) ? P.gold : "#ccc" }}>★</span>)}
+        <div style={{ display: "flex", gap: 2, marginRight: "auto", alignItems: "center" }}>
+          {[1, 2, 3, 4, 5].map(i => (
+            <span key={i}
+              onClick={() => rateFile(i)}
+              onMouseEnter={() => setHoverRating(i)}
+              onMouseLeave={() => setHoverRating(0)}
+              style={{ fontSize: 12, color: i <= (hoverRating || Math.round(myRating > 0 ? displayRating : r)) ? P.gold : "#ccc", cursor: "pointer", transition: "color .1s" }}>★</span>
+          ))}
         </div>
         <button
           onClick={() => { setDlAnim(true); onToast?.("بدأ التحميل…", "success"); setTimeout(() => setDlAnim(false), 1500); }}
@@ -459,12 +475,18 @@ function StreakWeek({ activeDays, t }) {
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
 function AIChat({ subject, t, onChat }) {
-  const [msgs, setMsgs] = useState([
-    { r: "a", text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، المعدل، المحاضرات، أو أي شيء آخر.` }
-  ]);
+  const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
+  const defaultMsg = { r: "a", text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، المعدل، المحاضرات، أو أي شيء آخر.` };
+  const [msgs, setMsgs] = useState(() => {
+    const stored = storage.get(histKey, null);
+    return (stored && stored.length > 0) ? stored : [defaultMsg];
+  });
   const [inp, setInp] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
+  useEffect(() => {
+    if (msgs.length > 1) storage.set(histKey, msgs.slice(-20));
+  }, [msgs]);
 
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
 
@@ -505,7 +527,7 @@ function AIChat({ subject, t, onChat }) {
             متصل الآن
           </div>
         </div>
-        <div style={{ background: "rgba(255,255,255,.1)", borderRadius: 8, padding: "4px 10px", fontSize: 10, color: "rgba(255,255,255,.7)" }}>Claude AI</div>
+        <button onClick={() => { storage.set(histKey, null); setMsgs([defaultMsg]); }} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 10, color: "rgba(255,255,255,.7)", cursor: "pointer", fontFamily: "inherit" }}>مسح</button>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12, background: t.s1 }}>
@@ -966,6 +988,305 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
 }
 
 /* ══════════════════════════════════════════════════════════════
+   GRADE CALC (per course)
+   ══════════════════════════════════════════════════════════════ */
+function GradeCalc({ subject, t }) {
+  const key = `grades_${subject}`;
+  const [grades, setGrades] = useStored(key, { activity: "", homework: "", midterm: "", final: "" });
+  const fields = [
+    { id: "activity", label: "نشاط", pct: "15%", w: 0.15 },
+    { id: "homework", label: "واجبات", pct: "15%", w: 0.15 },
+    { id: "midterm", label: "ميدترم", pct: "30%", w: 0.30 },
+    { id: "final", label: "نهائي", pct: "40%", w: 0.40 },
+  ];
+  const vals = {};
+  fields.forEach(f => { vals[f.id] = parseFloat(grades[f.id]) || 0; });
+  const filledCount = fields.filter(f => grades[f.id] !== "").length;
+  const withoutFinal = vals.activity * 0.15 + vals.homework * 0.15 + vals.midterm * 0.30;
+  const total = withoutFinal + vals.final * 0.40;
+  const n90 = grades.final === "" ? (90 - withoutFinal) / 0.40 : null;
+  const n60 = grades.final === "" ? (60 - withoutFinal) / 0.40 : null;
+  const totalColor = total >= 90 ? P.green : total >= 60 ? P.orange : P.red;
+  return (
+    <div style={{ background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`, marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+        <Calculator size={13} color={P.gold} /> حاسبة الدرجات
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: filledCount > 0 ? 10 : 0 }}>
+        {fields.map(f => (
+          <div key={f.id}>
+            <div style={{ fontSize: 10, color: t.mu, marginBottom: 3 }}>{f.label} ({f.pct})</div>
+            <input type="number" min="0" max="100" step="0.5" placeholder="—"
+              value={grades[f.id]}
+              onChange={e => setGrades(g => ({ ...g, [f.id]: e.target.value }))}
+              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          </div>
+        ))}
+      </div>
+      {filledCount > 0 && (
+        <div style={{ background: `${totalColor}12`, borderRadius: 10, padding: "10px 12px", border: `1px solid ${totalColor}30` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: t.mu }}>المجموع الحالي</span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: totalColor }}>{total.toFixed(1)}</span>
+          </div>
+          {n90 !== null && (
+            <div style={{ fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>
+              {n90 <= 100 && n90 >= 0
+                ? <span style={{ color: P.blue2 }}>تحتاج <strong>{n90.toFixed(1)}</strong> في النهائي للممتاز (90+)</span>
+                : n90 < 0 ? <span style={{ color: P.green }}>ممتاز مضمون حتى بدون النهائي!</span>
+                : <span style={{ color: P.red }}>لا يمكن الممتاز حتى بنهائي كامل</span>}
+            </div>
+          )}
+          {n60 !== null && n60 > 0 && n60 <= 100 && (
+            <div style={{ fontSize: 11, color: P.orange, marginTop: 3 }}>
+              تحتاج على الأقل <strong>{n60.toFixed(1)}</strong> في النهائي للنجاح
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TASK TRACKER
+   ══════════════════════════════════════════════════════════════ */
+function TaskTracker({ t, tasks, setTasks, onToast }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newTask, setNewTask] = useState({ title: "", subject: "", dueDate: "", priority: "متوسط" });
+  const today = todayKey();
+  const addTask = () => {
+    if (!newTask.title.trim()) return;
+    setTasks(ts => [...ts, { ...newTask, id: Date.now(), done: false }]);
+    setNewTask({ title: "", subject: "", dueDate: "", priority: "متوسط" });
+    setShowAdd(false);
+    onToast?.("تم إضافة المهمة", "success");
+  };
+  const toggle = (id) => setTasks(ts => ts.map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
+  const remove = (id) => setTasks(ts => ts.filter(tk => tk.id !== id));
+  const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
+  const sorted = [...tasks].sort((a, b) => {
+    if (a.done !== b.done) return a.done ? 1 : -1;
+    return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+  });
+  return (
+    <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+          <CheckCircle size={15} color={P.blue2} /> مهامي القادمة
+        </div>
+        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.blue2}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+          <Plus size={12} /> مهمة
+        </button>
+      </div>
+      {showAdd && (
+        <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input placeholder="عنوان المهمة *" value={newTask.title} onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input placeholder="المادة" value={newTask.subject} onChange={e => setNewTask(p => ({ ...p, subject: e.target.value }))}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+              <input type="date" value={newTask.dueDate} onChange={e => setNewTask(p => ({ ...p, dueDate: e.target.value }))}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["عالي", "متوسط", "منخفض"].map(p => (
+                <button key={p} onClick={() => setNewTask(nt => ({ ...nt, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${newTask.priority === p ? prioColor[p] : t.bd}`, background: newTask.priority === p ? `${prioColor[p]}15` : t.s1, color: newTask.priority === p ? prioColor[p] : t.mu, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
+              <Btn variant="primary" size="sm" onClick={addTask} style={{ flex: 2 }} disabled={!newTask.title.trim()}>
+                <Plus size={14} /> إضافة
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+      {sorted.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "12px 0", color: t.dim, fontSize: 12 }}>لا مهام بعد — أضف مهمتك الأولى!</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+          {sorted.slice(0, 6).map(task => {
+            const isOverdue = !task.done && task.dueDate && task.dueDate < today;
+            const overdueDays = isOverdue ? Math.ceil((new Date(today) - new Date(task.dueDate)) / 86400000) : 0;
+            const pc = prioColor[task.priority] || P.orange;
+            return (
+              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: isOverdue && !task.done ? `${P.red}08` : t.s2, borderRadius: 10, border: `1px solid ${isOverdue && !task.done ? P.red + "40" : t.bd}`, opacity: task.done ? 0.55 : 1 }}>
+                <button onClick={() => toggle(task.id)} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {task.done && <Check size={12} color={P.green} />}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
+                  <div style={{ fontSize: 10, color: t.mu, display: "flex", gap: 6, marginTop: 1 }}>
+                    {task.subject && <span>{task.subject}</span>}
+                    {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</span>}
+                    {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
+                  </div>
+                </div>
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} />
+                <button onClick={() => remove(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
+                  <X size={11} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DAILY PROGRESS BAR
+   ══════════════════════════════════════════════════════════════ */
+function DailyProgress({ sessionLog, weeklyGoal, t }) {
+  const todayMins = sessionLog.filter(s => s.date === todayKey()).reduce((a, s) => a + (s.dur || 25), 0);
+  const goalMins = Math.max(1, Math.round(weeklyGoal * 25 / 5));
+  const pct = Math.min(100, Math.round((todayMins / goalMins) * 100));
+  const barColor = pct < 30 ? P.red : pct < 70 ? P.orange : P.green;
+  return (
+    <div style={{ background: t.s1, borderRadius: 18, padding: 14, marginBottom: 14, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+          <Activity size={14} color={barColor} /> إنجاز اليوم
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{pct}%</span>
+      </div>
+      <div style={{ height: 8, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 5 }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barColor},${barColor}cc)`, borderRadius: 4, transition: "width .6s ease" }} />
+      </div>
+      <div style={{ fontSize: 11, color: t.mu }}>{todayMins} دقيقة من {goalMins} دقيقة</div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SEMESTER CHART
+   ══════════════════════════════════════════════════════════════ */
+function SemesterChart({ semesters, t }) {
+  if (!semesters || semesters.length < 2) return null;
+  const gpas = semesters.map(s => parseFloat(s.gpa) || 0);
+  const maxGpa = Math.max(...gpas, 1);
+  return (
+    <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginTop: 16, border: `1px solid ${t.bd}` }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 14, display: "flex", alignItems: "center", gap: 6 }}>
+        <BarChart2 size={15} color={P.blue2} /> مقارنة الفصول
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 130 }}>
+        {semesters.map((sem, i) => {
+          const gpa = parseFloat(sem.gpa) || 0;
+          const barH = Math.max(8, (gpa / maxGpa) * 90);
+          const bc = gpa < 2 ? P.red : gpa < 3 ? P.orange : gpa < 3.5 ? P.gold : P.green;
+          const prev = i > 0 ? parseFloat(semesters[i - 1].gpa) : null;
+          const trend = prev === null ? null : gpa > prev + 0.05 ? "↑" : gpa < prev - 0.05 ? "↓" : "→";
+          const tc = trend === "↑" ? P.green : trend === "↓" ? P.red : t.mu;
+          return (
+            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+              <span style={{ fontSize: 11, color: tc, fontWeight: 700, height: 16 }}>{trend || ""}</span>
+              <span style={{ fontSize: 10, color: bc, fontWeight: 700 }}>{gpa.toFixed(2)}</span>
+              <div style={{ width: "100%", height: `${barH}%`, borderRadius: "6px 6px 0 0", background: `linear-gradient(180deg,${bc},${bc}88)`, transition: "height .8s ease", minHeight: 8, boxShadow: `0 4px 12px ${bc}30` }} />
+              <div style={{ fontSize: 9, color: t.mu, textAlign: "center", lineHeight: 1.3, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sem.name}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SCHEDULE PAGE
+   ══════════════════════════════════════════════════════════════ */
+function SchedulePage({ t, schedule, setSchedule, onToast }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newLec, setNewLec] = useState({ course: "", day: "الأحد", time: "08:00", room: "" });
+  const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+  const DAY_COLORS = { "الأحد": P.blue2, "الاثنين": P.purple, "الثلاثاء": P.green, "الأربعاء": P.orange, "الخميس": P.red };
+  const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
+  const addLecture = () => {
+    if (!newLec.course.trim()) return;
+    setSchedule(s => [...s, { ...newLec, id: Date.now() }]);
+    setNewLec({ course: "", day: "الأحد", time: "08:00", room: "" });
+    setShowAdd(false);
+    onToast?.("تم إضافة المحاضرة", "success");
+  };
+  const removeLecture = (id) => setSchedule(s => s.filter(l => l.id !== id));
+  return (
+    <div style={{ animation: "fadeUp .4s ease" }}>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+        <CalendarDays size={20} color={P.blue2} /> جدولي الأسبوعي
+      </h2>
+      {DAYS.map(day => {
+        const dayLecs = schedule.filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
+        const isToday = day === todayAr;
+        const dc = DAY_COLORS[day];
+        return (
+          <div key={day} style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ width: 3, height: 16, borderRadius: 2, background: dc }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? dc : t.tx }}>{day}</span>
+              {isToday && <span style={{ background: `${dc}20`, color: dc, borderRadius: 6, padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>اليوم</span>}
+              <span style={{ fontSize: 11, color: t.mu }}>({dayLecs.length})</span>
+            </div>
+            {dayLecs.length === 0 ? (
+              <div style={{ fontSize: 11, color: t.dim, padding: "7px 12px", background: t.s2, borderRadius: 8, border: `1px dashed ${t.bd}` }}>لا محاضرات</div>
+            ) : (
+              dayLecs.map(lec => (
+                <div key={lec.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: isToday ? `${dc}10` : t.s1, borderRadius: 10, border: `1px solid ${isToday ? dc + "40" : t.bd}`, marginBottom: 5 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: `${dc}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Clock size={13} color={dc} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{lec.course}</div>
+                    <div style={{ fontSize: 11, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
+                  </div>
+                  <button onClick={() => removeLecture(lec.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 5, cursor: "pointer", color: P.red, display: "flex" }}>
+                    <X size={12} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        );
+      })}
+      {showAdd ? (
+        <div style={{ background: t.s1, borderRadius: 16, padding: 14, border: `1px solid ${t.bd}`, marginTop: 8, animation: "fadeUp .3s ease" }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>إضافة محاضرة جديدة</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input placeholder="اسم المادة *" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <select value={newLec.day} onChange={e => setNewLec(p => ({ ...p, day: e.target.value }))}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none" }}>
+                {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+              <input type="time" value={newLec.time} onChange={e => setNewLec(p => ({ ...p, time: e.target.value }))}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+            </div>
+            <input placeholder="القاعة / الرابط (اختياري)" value={newLec.room} onChange={e => setNewLec(p => ({ ...p, room: e.target.value }))}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
+              <Btn variant="primary" size="sm" onClick={addLecture} style={{ flex: 2 }} disabled={!newLec.course.trim()}>
+                <Plus size={14} /> إضافة
+              </Btn>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <Btn variant="gold" style={{ width: "100%", marginTop: 8 }} onClick={() => setShowAdd(true)}>
+          <Plus size={15} /> إضافة محاضرة
+        </Btn>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    COURSE PAGE
    ══════════════════════════════════════════════════════════════ */
 /* ══════════════════════════════════════════════════════════════
@@ -992,10 +1313,27 @@ function PDFViewer({ file, onClose }) {
   );
 }
 
-function RealFileItem({ file, t }) {
+function RealFileItem({ file, t, onToast }) {
   const [viewing, setViewing] = useState(false);
   const blobSrc = file.blobUrl || file.url || "";
   const dlUrl = `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
+
+  const shareFile = () => {
+    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/api/download?url=${encodeURIComponent(blobSrc)}`;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(() => onToast?.("تم نسخ رابط الملف", "success")).catch(() => onToast?.("تعذّر النسخ", "error"));
+    } else {
+      try {
+        const el = document.createElement("textarea");
+        el.value = url;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+        onToast?.("تم نسخ رابط الملف", "success");
+      } catch { onToast?.("تعذّر النسخ", "error"); }
+    }
+  };
 
   if (viewing) return <PDFViewer file={file} onClose={() => setViewing(false)} />;
 
@@ -1012,6 +1350,9 @@ function RealFileItem({ file, t }) {
         <div style={{ fontSize: 11, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
       </div>
       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <button onClick={shareFile} style={{ background: `${P.purple}15`, border: `1px solid ${P.purple}30`, borderRadius: 8, padding: "7px 8px", cursor: "pointer", color: P.purple, fontSize: 11, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
+          <Share2 size={12} />
+        </button>
         <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}18`, border: `1px solid ${P.blue2}40`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
           <Eye size={12} /> قراءة
         </button>
@@ -1165,6 +1506,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
   const [realLoading, setRealLoading] = useState(true);
+  const [fileFilter, setFileFilter] = useState({});
   const Icon = getIcon(subject);
   const isFav = favorites.includes(subject);
   const hasNotes = !!(notes[subject] && notes[subject].trim());
@@ -1229,6 +1571,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
       </div>
 
       <CourseProgress subject={subject} t={t} />
+      <GradeCalc subject={subject} t={t} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {SECTIONS.map((sec) => {
@@ -1286,19 +1629,41 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                       ))}
                     </div>
                   )}
-                  {["collections", "plans", "curriculum", "programs"].includes(sec.id) && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {(realFiles[sec.id] || []).map((f, i) => (
-                        <RealFileItem key={`real-${i}`} file={f} t={t} onToast={onToast} />
-                      ))}
-                      {(realFiles[sec.id] || []).length === 0 && !realLoading && (
-                        <div style={{ fontSize: 12, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
-                          لا توجد ملفات حقيقية بعد
+                  {["collections", "plans", "curriculum", "programs"].includes(sec.id) && (() => {
+                    const fq = (fileFilter[sec.id] || "").toLowerCase();
+                    const filteredReal = (realFiles[sec.id] || []).filter(f => !fq || f.name.toLowerCase().includes(fq));
+                    const filteredMock = fileData[sec.id].filter(f => !fq || f.name.toLowerCase().includes(fq));
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s2, borderRadius: 10, padding: "6px 12px", border: `1px solid ${t.bd}` }}>
+                          <Search size={13} color={t.mu} />
+                          <input
+                            placeholder="ابحث في الملفات..."
+                            value={fileFilter[sec.id] || ""}
+                            onChange={e => setFileFilter(prev => ({ ...prev, [sec.id]: e.target.value }))}
+                            style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 12, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
+                          />
+                          {fileFilter[sec.id] && (
+                            <button onClick={() => setFileFilter(prev => ({ ...prev, [sec.id]: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: t.mu, display: "flex", padding: 2 }}>
+                              <X size={12} />
+                            </button>
+                          )}
                         </div>
-                      )}
-                      {fileData[sec.id].map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
-                    </div>
-                  )}
+                        {filteredReal.map((f, i) => (
+                          <RealFileItem key={`real-${i}`} file={f} t={t} onToast={onToast} />
+                        ))}
+                        {(realFiles[sec.id] || []).length === 0 && !realLoading && !fq && (
+                          <div style={{ fontSize: 12, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
+                            لا توجد ملفات حقيقية بعد
+                          </div>
+                        )}
+                        {filteredMock.map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
+                        {fq && filteredReal.length === 0 && filteredMock.length === 0 && (
+                          <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 12 }}>لا نتائج لـ "{fileFilter[sec.id]}"</div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -1361,10 +1726,12 @@ function AcademicCalendar({ t }) {
   );
 }
 
-function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters }) {
+function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
   const tip = TIPS[Math.floor(Date.now() / 86400000) % TIPS.length];
+  const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
+  const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
   const unlocked = ACHIEVEMENTS.filter(a => a.check(achievements));
   const goalPct = Math.min(100, Math.round((weekProgress / Math.max(1, weeklyGoal)) * 100));
@@ -1406,6 +1773,42 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           </button>
         </div>
       </div>
+
+      {/* Today's Lectures */}
+      <div style={{ background: t.s1, borderRadius: 18, padding: 14, marginBottom: 14, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+            <CalendarDays size={14} color={P.blue2} /> محاضرات اليوم
+            <span style={{ fontSize: 11, color: t.mu, fontWeight: 500 }}>({todayAr})</span>
+          </div>
+          <button onClick={() => setActiveTab("schedule")} style={{ background: "none", border: "none", cursor: "pointer", color: P.blue2, fontSize: 11, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3, fontWeight: 700 }}>
+            الجدول <ChevronLeft size={11} />
+          </button>
+        </div>
+        {todayLectures.length === 0 ? (
+          <div style={{ fontSize: 12, color: t.dim }}>لا محاضرات اليوم</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {todayLectures.map(lec => (
+              <div key={lec.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: `${P.blue2}08`, borderRadius: 9, border: `1px solid ${P.blue2}20` }}>
+                <div style={{ width: 26, height: 26, borderRadius: 7, background: `${P.blue2}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Clock size={12} color={P.blue2} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{lec.course}</div>
+                  <div style={{ fontSize: 10, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Daily Progress */}
+      <DailyProgress sessionLog={sessionLog} weeklyGoal={weeklyGoal} t={t} />
+
+      {/* Task Tracker */}
+      <TaskTracker t={t} tasks={tasks} setTasks={setTasks} onToast={onToast} />
 
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -2525,6 +2928,9 @@ export default function App() {
   const [soundOn, setSoundOn] = useStored("soundOn", true);
   const [weeklyGoal, setWeeklyGoal] = useStored("weeklyGoal", 15);
   const [seen, setSeen] = useStored("onboarded", false);
+  const [tasks, setTasks] = useStored("tasks", []);
+  const [schedule, setSchedule] = useStored("schedule", []);
+  const [aiSubject, setAiSubject] = useState("عام");
   const [notifOpen, setNotifOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -2534,6 +2940,10 @@ export default function App() {
   const t = T(dark);
   const toasts = useToasts();
   const unread = notifs.filter(n => !n.read).length;
+  const overdueTasks = useMemo(() => {
+    const today = todayKey();
+    return tasks.filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
+  }, [tasks]);
 
   const activeDays = useMemo(() => {
     const dates = new Set(sessionLog.map(s => s.date));
@@ -2570,6 +2980,10 @@ export default function App() {
     return sessionLog.filter(s => days.includes(s.date)).length;
   }, [sessionLog]);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [tab]);
+
   const openCourse = (s) => {
     setCourse(s);
     setTab("course");
@@ -2587,6 +3001,7 @@ export default function App() {
     setDark(true); setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
     setTotalSessions(0); setSessionLog([]); setGpaCalcs(0); setAiChats(0); setSemesters([]);
     setSoundOn(true); setWeeklyGoal(15); setSeen(false);
+    setTasks([]); setSchedule([]);
     setTab("home"); setCourse(null);
   };
 
@@ -2597,10 +3012,11 @@ export default function App() {
   const TABS = [
     { id: "home", Icon: Home, label: "الرئيسية" },
     { id: "explore", Icon: Compass, label: "استكشاف" },
+    { id: "schedule", Icon: CalendarDays, label: "جدولي" },
     { id: "fav", Icon: Star, label: "المفضلة" },
     { id: "links", Icon: Link2, label: "روابط SEU" },
     { id: "timer", Icon: AlarmClock, label: "مؤقت" },
-    { id: "profile", Icon: User, label: "حسابي" },
+    { id: "profile", Icon: CircleUser, label: "حسابي" },
   ];
 
   return (
@@ -2678,12 +3094,15 @@ export default function App() {
       {/* MAIN */}
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px" }}>
         {tab === "home" && <HomePage
-          setActiveTab={(t) => { setTab(t); setCourse(null); }}
+          setActiveTab={(id) => { setTab(id); setCourse(null); }}
           openCourse={openCourse} onOpenAI={() => setShowAI(true)} t={t} recent={recent} streak={streak}
           activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
-          achievements={achievementsState} sessionLog={sessionLog} semesters={semesters} />}
+          achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
+          schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} />}
+
+        {tab === "schedule" && <SchedulePage t={t} schedule={schedule} setSchedule={setSchedule} onToast={toasts.push} />}
 
         {tab === "course" && course && <CoursePage
           subject={course} favorites={favorites} toggleFav={toggleFav}
@@ -2702,6 +3121,7 @@ export default function App() {
             </h2>
             <GPACalc t={t} onCalc={() => setGpaCalcs(c => c + 1)}
               semesters={semesters} setSemesters={setSemesters} onToast={toasts.push} />
+            <SemesterChart semesters={semesters} t={t} />
           </div>
         )}
 
@@ -2735,6 +3155,7 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
+          const badge = id === "home" ? overdueTasks : 0;
           return (
             <button key={id} onClick={() => { setTab(id); setCourse(null); }}
               style={{
@@ -2743,13 +3164,14 @@ export default function App() {
                 transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
               }}>
               <div style={{
-                width: 40, height: 32, borderRadius: 12,
+                width: 40, height: 32, borderRadius: 12, position: "relative",
                 background: active ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "all .25s",
                 boxShadow: active ? `0 3px 12px ${P.blue}55` : "none",
               }}>
                 <Icon size={17} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
+                {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 8, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
               </div>
               <span style={{ fontSize: 10, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
             </button>
@@ -2773,13 +3195,14 @@ export default function App() {
             <button onClick={() => setShowAI(false)} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "7px 13px", color: t.tx, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 12, fontWeight: 700 }}>
               <ArrowLeft size={14} /> رجوع
             </button>
-            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
-              <Sparkles size={16} color={P.gold} />
-              <span style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>المساعد الذكي</span>
-            </div>
+            <Sparkles size={15} color={P.gold} />
+            <select value={aiSubject} onChange={e => setAiSubject(e.target.value)} style={{ flex: 1, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+              <option value="عام">عام — مساعد SEU</option>
+              {ALL_COURSES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           <div style={{ flex: 1, overflow: "hidden", padding: 12 }}>
-            <AIChat subject="الجامعة السعودية الإلكترونية" t={t} onChat={() => setAiChats(c => c + 1)} />
+            <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} />
           </div>
         </div>
       )}
