@@ -2136,13 +2136,13 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
 /* ══════════════════════════════════════════════════════════════
    ONBOARDING
    ══════════════════════════════════════════════════════════════ */
-function Onboarding({ onClose, t }) {
+function Onboarding({ onClose, skipWalkthrough, t }) {
   const [phase, setPhase] = useState(0); // 0=splash, 1-3=walkthrough
   const [step, setStep] = useState(0);
 
   useEffect(() => {
     if (phase === 0) {
-      const timer = setTimeout(() => setPhase(1), 3200);
+      const timer = setTimeout(() => skipWalkthrough ? onClose() : setPhase(1), 3200);
       return () => clearTimeout(timer);
     }
   }, [phase]);
@@ -2511,7 +2511,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showOnboard, setShowOnboard] = useState(!seen);
+  const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark);
   const toasts = useToasts();
   const unread = notifs.filter(n => !n.read).length;
@@ -2747,7 +2747,7 @@ export default function App() {
         onReset={resetAll} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
-      {showOnboard && <Onboarding onClose={finishOnboard} t={t} />}
+      {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
       <ToastStack list={toasts.list} />
     </div>
   );
