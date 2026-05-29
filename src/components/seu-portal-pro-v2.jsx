@@ -156,11 +156,13 @@ const TIPS = [
   "خصّص مكاناً ثابتاً للدراسة — يساعد دماغك على الدخول في وضع التركيز سريعاً",
 ];
 
+const NOTIF_ICONS = { book: Book, file: FileText, calendar: Calendar, star: Star, bell: Bell };
+
 const NOTIFS_SEED = [
-  { id: 1, title: "تجميعات جديدة", text: "رُفعت تجميعات فاينل لمادة إدارة الأعمال ف2 1447", time: "منذ 5 دقائق", read: false, Icon: Book },
-  { id: 2, title: "تحديث الخطة الدراسية", text: "تم تحديث خطة السنة الأولى المشتركة (CFY) للفصل الثاني", time: "منذ ساعة", read: false, Icon: FileText },
-  { id: 3, title: "إعلان الاختبارات", text: "جداول الاختبارات النهائية ف2 1447 متاحة على Blackboard", time: "منذ يومين", read: true, Icon: Calendar },
-  { id: 4, title: "ملخص شامل", text: "ملخص وحدات 1-6 لمادة مهارات الاتصال والتواصل", time: "منذ 3 أيام", read: true, Icon: Star },
+  { id: 1, title: "تجميعات جديدة", text: "رُفعت تجميعات فاينل لمادة إدارة الأعمال ف2 1447", time: "منذ 5 دقائق", read: false, iconKey: "book" },
+  { id: 2, title: "تحديث الخطة الدراسية", text: "تم تحديث خطة السنة الأولى المشتركة (CFY) للفصل الثاني", time: "منذ ساعة", read: false, iconKey: "file" },
+  { id: 3, title: "إعلان الاختبارات", text: "جداول الاختبارات النهائية ف2 1447 متاحة على Blackboard", time: "منذ يومين", read: true, iconKey: "calendar" },
+  { id: 4, title: "ملخص شامل", text: "ملخص وحدات 1-6 لمادة مهارات الاتصال والتواصل", time: "منذ 3 أيام", read: true, iconKey: "star" },
 ];
 
 const FILES = {
@@ -1998,13 +2000,15 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
             }}><X size={16} /></button>
           </div>
         </div>
-        {notifs.map(n => (
+        {notifs.map(n => {
+          const NIcon = NOTIF_ICONS[n.iconKey] || (n.Icon && typeof n.Icon !== "string" ? n.Icon : Bell);
+          return (
           <div key={n.id} onClick={() => setNotifs(ns => ns.map(x => x.id === n.id ? { ...x, read: true } : x))} style={{
             display: "flex", gap: 12, padding: "12px", borderRadius: 14, marginBottom: 8, cursor: "pointer",
             background: n.read ? t.s1 : t.s2, border: `1px solid ${n.read ? t.bd : P.blue2 + "30"}`, transition: "all .2s",
           }}>
             <div style={{ width: 38, height: 38, borderRadius: 10, background: `${P.blue}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <n.Icon size={16} color={P.blue2} />
+              <NIcon size={16} color={P.blue2} />
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
@@ -2014,7 +2018,8 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
               <div style={{ fontSize: 10, color: t.dim, marginTop: 4 }}>{n.time}</div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -2488,6 +2493,10 @@ export default function App() {
   const [course, setCourse] = useState(null);
   const [favorites, setFavorites] = useStored("favorites", []);
   const [notifs, setNotifs] = useStored("notifs", NOTIFS_SEED);
+  // migrate old notifs that stored Icon as React component (breaks JSON serialization)
+  useEffect(() => {
+    setNotifs(prev => prev.map(n => n.Icon ? { ...n, iconKey: n.iconKey || "bell", Icon: undefined } : n));
+  }, []);
   const [notes, setNotes] = useStored("notes", {});
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
@@ -2549,11 +2558,9 @@ export default function App() {
   };
 
   const toggleFav = (s) => {
-    setFavorites(prev => {
-      const exists = prev.includes(s);
-      toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
-      return exists ? prev.filter(x => x !== s) : [...prev, s];
-    });
+    const exists = favorites.includes(s);
+    toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
+    setFavorites(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
 
   const resetAll = () => {
