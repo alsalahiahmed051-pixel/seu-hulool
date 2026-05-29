@@ -971,20 +971,35 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
 /* ══════════════════════════════════════════════════════════════
    REAL FILE ITEM (uploaded via admin)
    ══════════════════════════════════════════════════════════════ */
-function RealFileItem({ file, t, onToast }) {
-  const [downloading, setDownloading] = useState(false);
+function PDFViewer({ file, onClose }) {
+  const proxyUrl = `/api/download?url=${encodeURIComponent(file.blobUrl || file.url || "")}`;
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "#050a16", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#0a1426", borderBottom: "1px solid #1c2e48", flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+          <ArrowLeft size={14} /> رجوع
+        </button>
+        <div style={{ flex: 1, color: "#e4ecf8", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+        <a href={proxyUrl} download={file.name} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+          <Download size={12} /> تحميل
+        </a>
+      </div>
+      {/* PDF iframe */}
+      <iframe
+        src={proxyUrl}
+        style={{ flex: 1, border: "none", width: "100%", background: "#fff" }}
+        title={file.name}
+      />
+    </div>
+  );
+}
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const src = file.blobUrl || file.url;
-      const href = src ? `/api/download?url=${encodeURIComponent(src)}` : null;
-      if (href) window.open(href, "_blank", "noopener,noreferrer");
-      onToast?.({ msg: "جارٍ فتح الملف...", icon: "✓" });
-    } finally {
-      setTimeout(() => setDownloading(false), 1200);
-    }
-  };
+function RealFileItem({ file, t }) {
+  const [viewing, setViewing] = useState(false);
+  const proxyUrl = `/api/download?url=${encodeURIComponent(file.blobUrl || file.url || "")}`;
+
+  if (viewing) return <PDFViewer file={file} onClose={() => setViewing(false)} />;
 
   return (
     <div style={{
@@ -1002,14 +1017,14 @@ function RealFileItem({ file, t, onToast }) {
         </div>
         <div style={{ fontSize: 11, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
       </div>
-      <button onClick={handleDownload} style={{
-        background: `linear-gradient(135deg,${P.blue},${P.blue2})`,
-        border: "none", borderRadius: 9, padding: "7px 12px",
-        cursor: "pointer", color: "#fff", fontSize: 11, fontWeight: 700,
-        fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
-      }}>
-        <Download size={12} /> {downloading ? "جارٍ..." : "فتح"}
-      </button>
+      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+        <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}18`, border: `1px solid ${P.blue2}40`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
+          <Eye size={12} /> قراءة
+        </button>
+        <a href={proxyUrl} download={file.name} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "7px 10px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+          <Download size={12} /> تحميل
+        </a>
+      </div>
     </div>
   );
 }
