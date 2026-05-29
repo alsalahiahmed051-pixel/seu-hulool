@@ -1,28 +1,34 @@
-import { list, del, head, put } from '@vercel/blob'
+import { list, del, put } from '@vercel/blob'
 
 export const runtime = 'nodejs'
 
 const BLOB_ENABLED = !!process.env.BLOB_READ_WRITE_TOKEN &&
   !process.env.BLOB_READ_WRITE_TOKEN.includes('placeholder')
 
-const META_KEY = 'hulool-files-db.json'
+const META_PREFIX = 'hulool-files-db'
 
 async function readMeta() {
   if (!BLOB_ENABLED) return []
   try {
-    const { blobs } = await list({ prefix: META_KEY })
+    const { blobs } = await list({ prefix: META_PREFIX })
     if (!blobs.length) return []
-    const res = await fetch(blobs[0].url)
+    const latest = blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0]
+    const res = await fetch(latest.url, {
+      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
+    })
     return await res.json()
   } catch { return [] }
 }
 
 async function writeMeta(records) {
-  const body = JSON.stringify(records)
-  await put(META_KEY, body, {
-    access: 'public',
+  try {
+    const { blobs } = await list({ prefix: META_PREFIX })
+    if (blobs.length) await del(blobs.map(b => b.url))
+  } catch { /* ignore */ }
+  await put(`${META_PREFIX}-${Date.now()}.json`, JSON.stringify(records), {
+    access: 'private',
     contentType: 'application/json',
-    allowOverwrite: true,
+    addRandomSuffix: false,
   })
 }
 
@@ -31,9 +37,7 @@ export async function GET(request) {
   const course = searchParams.get('course')
   const category = searchParams.get('category')
 
-  if (!BLOB_ENABLED) {
-    return Response.json({ files: [], blobEnabled: false })
-  }
+  if (!BLOB_ENABLED) return Response.json({ files: [], blobEnabled: false })
 
   const all = await readMeta()
   let files = all
@@ -45,24 +49,17 @@ export async function GET(request) {
 
 export async function DELETE(request) {
   const secret = request.headers.get('x-admin-secret')
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!secret || secret !== process.env.ADMIN_SECRET)
     return Response.json({ error: 'غير مصرح' }, { status: 401 })
-  }
-
-  if (!BLOB_ENABLED) {
+  if (!BLOB_ENABLED)
     return Response.json({ error: 'Blob not configured' }, { status: 503 })
-  }
 
   const { id, blobUrl } = await request.json()
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-  try {
-    if (blobUrl) await del(blobUrl)
-  } catch { /* ignore if already deleted */ }
+  try { if (blobUrl) await del(blobUrl) } catch { /* ignore */ }
 
   const all = await readMeta()
-  const updated = all.filter(f => f.id !== id)
-  await writeMeta(updated)
-
+  await writeMeta(all.filter(f => f.id !== id))
   return Response.json({ ok: true })
 }

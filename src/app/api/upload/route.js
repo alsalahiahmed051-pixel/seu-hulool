@@ -13,22 +13,22 @@ async function readMeta() {
   try {
     const { blobs } = await list({ prefix: META_PREFIX })
     if (!blobs.length) return []
-    // pick the most recently uploaded metadata file
     const latest = blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0]
-    const res = await fetch(latest.url)
+    const res = await fetch(latest.url, {
+      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
+    })
     return await res.json()
   } catch { return [] }
 }
 
 async function writeMeta(records) {
-  // delete old metadata blobs first
   try {
     const { blobs } = await list({ prefix: META_PREFIX })
     if (blobs.length) await del(blobs.map(b => b.url))
   } catch { /* ignore */ }
 
   await put(`${META_PREFIX}-${Date.now()}.json`, JSON.stringify(records), {
-    access: 'public',
+    access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
   })
@@ -39,7 +39,6 @@ export async function POST(request) {
   if (!secret || secret !== process.env.ADMIN_SECRET) {
     return Response.json({ error: 'غير مصرح' }, { status: 401 })
   }
-
   if (!BLOB_ENABLED) {
     return Response.json({ error: 'BLOB_READ_WRITE_TOKEN غير مضبوط' }, { status: 503 })
   }
@@ -51,35 +50,30 @@ export async function POST(request) {
     const category = formData.get('category')
     const displayName = formData.get('displayName') || file?.name || 'ملف'
 
-    if (!file || !courseName || !category) {
+    if (!file || !courseName || !category)
       return Response.json({ error: 'البيانات ناقصة' }, { status: 400 })
-    }
-
-    if (file.size > MAX_SIZE) {
+    if (file.size > MAX_SIZE)
       return Response.json({ error: 'حجم الملف يتجاوز 20 ميجابايت' }, { status: 400 })
-    }
 
     const allowedExts = ['.pdf', '.PDF']
-    const hasAllowedExt = allowedExts.some(ext => file.name.endsWith(ext))
-    if (!hasAllowedExt && file.type !== 'application/pdf') {
+    if (!allowedExts.some(e => file.name.endsWith(e)) && file.type !== 'application/pdf')
       return Response.json({ error: 'فقط ملفات PDF مسموحة' }, { status: 400 })
-    }
 
     const safeName = file.name.replace(/[^a-zA-Z0-9.؀-ۿ_-]/g, '_')
     const blob = await put(`files/${Date.now()}-${safeName}`, file, {
-      access: 'public',
+      access: 'private',
       contentType: 'application/pdf',
       addRandomSuffix: false,
     })
 
+    const id = crypto.randomUUID()
     const record = {
-      id: crypto.randomUUID(),
+      id,
       name: displayName,
       courseName,
       category,
       size: file.size,
       sizeLabel: formatSize(file.size),
-      url: blob.url,
       blobUrl: blob.url,
       uploadedAt: new Date().toISOString(),
       downloads: 0,
