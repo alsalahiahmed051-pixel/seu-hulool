@@ -14,9 +14,15 @@ export async function POST(request) {
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 800,
-      system: `أنت مساعد أكاديمي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية. أجب بشكل واضح ومفيد باللغة العربية. قدم نصائح عملية. استخدم التنسيق الجيد عند الحاجة.`,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: `أنت مساعد أكاديمي ذكي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية (SEU).
+مهمتك مساعدة الطلاب في: شرح المفاهيم، تلخيص الوحدات، حل الأسئلة، وتقديم نصائح دراسية.
+قواعد:
+- أجب دائماً باللغة العربية الفصيحة البسيطة
+- كن موجزاً ودقيقاً ومفيداً
+- استخدم النقاط والعناوين لتنظيم الإجابة عند الحاجة
+- إذا سُئلت عن موضوع خارج المادة فوجّه الطالب بلطف`,
       messages,
     })
     return Response.json({ text: response.content[0]?.text })
