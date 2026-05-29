@@ -337,7 +337,7 @@ function StatCard({ Icon, value, suffix = "", label, color, t }) {
       background: t.s1, borderRadius: 16, padding: "16px 14px", border: `1px solid ${t.bd}`,
       boxShadow: t.shSm, textAlign: "center", position: "relative", overflow: "hidden",
     }}>
-      <div style={{ position: "absolute", top: -20, right: -20, width: 60, height: 60, borderRadius: "50%", background: `${color}10` }} />
+      <div style={{ position: "absolute", top: -20, right: -20, width: 60, height: 60, borderRadius: "50%", background: `${color}10`, pointerEvents: "none" }} />
       <div style={{ width: 40, height: 40, borderRadius: 12, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", position: "relative" }}>
         <Icon size={20} color={color} strokeWidth={2.5} />
       </div>
@@ -1184,8 +1184,8 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
         background: t.hero, borderRadius: 22, padding: "24px", marginBottom: 20,
         position: "relative", overflow: "hidden",
       }}>
-        <div style={{ position: "absolute", top: -40, left: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,.03)" }} />
-        <div style={{ position: "absolute", bottom: -20, right: 40, width: 100, height: 100, borderRadius: "50%", background: `${P.gold}12` }} />
+        <div style={{ position: "absolute", top: -40, left: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: -20, right: 40, width: 100, height: 100, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
         <button onClick={onBack} style={{
           background: "rgba(255,255,255,.12)", border: "none", color: "rgba(255,255,255,.8)",
           padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12,
@@ -1366,8 +1366,8 @@ function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, wee
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
       <div style={{ background: t.hero, borderRadius: 22, padding: "22px", marginBottom: 16, position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,.03)" }} />
-        <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}10` }} />
+        <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}10`, pointerEvents: "none" }} />
         <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 4 }}>{greeting} 👋</div>
         <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, margin: "0 0 6px", lineHeight: 1.3 }}>
           مرحباً في <span style={{ color: P.gold }}>حلول</span>
@@ -1853,7 +1853,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
         background: t.hero, borderRadius: 22, padding: 24, marginBottom: 16,
         position: "relative", overflow: "hidden",
       }}>
-        <div style={{ position: "absolute", top: -50, right: -50, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,.04)" }} />
+        <div style={{ position: "absolute", top: -50, right: -50, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,.04)", pointerEvents: "none" }} />
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{
             width: 64, height: 64, borderRadius: 20, background: `linear-gradient(135deg,${P.gold},#e8bf5c)`,
@@ -2379,8 +2379,8 @@ function SEULinksPage({ t }) {
         borderRadius: 22, padding: "22px 20px", marginBottom: 20,
         position: "relative", overflow: "hidden",
       }}>
-        <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,.03)" }} />
-        <div style={{ position: "absolute", bottom: -20, left: -10, width: 100, height: 100, borderRadius: "50%", background: `${P.gold}10` }} />
+        <div style={{ position: "absolute", top: -40, right: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: -20, left: -10, width: 100, height: 100, borderRadius: "50%", background: `${P.gold}10`, pointerEvents: "none" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
           <div style={{
             width: 52, height: 52, borderRadius: 16,
