@@ -641,9 +641,13 @@ function NotesEditor({ subject, notes, setNotes, t, onToast }) {
    GPA CALCULATOR (with saved semesters + target calculator)
    ══════════════════════════════════════════════════════════════ */
 function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
-  const [courses, setCourses] = useState(() => storage.get("gpaCourses", [
+  const COURSES_DEFAULT = [
     { name: "مادة 1", score: 85, hrs: 3 }, { name: "مادة 2", score: 90, hrs: 3 }, { name: "مادة 3", score: 75, hrs: 2 },
-  ]));
+  ];
+  const [courses, setCourses] = useState(() => {
+    const stored = storage.get("gpaCourses", null);
+    return Array.isArray(stored) ? stored : COURSES_DEFAULT;
+  });
   const [showTarget, setShowTarget] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [targetGPA, setTargetGPA] = useState(4.5);
@@ -666,13 +670,14 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
   const neededGrade = GRADE_SCALE.find(g => g.pts <= neededAvgPoint) || GRADE_SCALE[0];
   const achievable = neededAvgPoint <= 5.00 && neededAvgPoint >= 0;
 
+  const safeSemesters = semesters || [];
   const saveSemester = () => {
-    const name = `الفصل ${semesters.length + 1}`;
-    setSemesters([...semesters, { name, courses, gpa, totalHrs, date: new Date().toLocaleDateString("ar-SA") }]);
+    const name = `الفصل ${safeSemesters.length + 1}`;
+    setSemesters([...safeSemesters, { name, courses, gpa, totalHrs, date: new Date().toLocaleDateString("ar-SA") }]);
     onToast?.(`تم حفظ ${name}`, "success");
   };
-  const loadSemester = (sem) => { setCourses(sem.courses); setShowSaved(false); onToast?.(`تم تحميل ${sem.name}`, "info"); };
-  const deleteSemester = (i) => setSemesters(s => s.filter((_, j) => j !== i));
+  const loadSemester = (sem) => { setCourses(Array.isArray(sem.courses) ? sem.courses : COURSES_DEFAULT); setShowSaved(false); onToast?.(`تم تحميل ${sem.name}`, "info"); };
+  const deleteSemester = (i) => setSemesters(s => (s || []).filter((_, j) => j !== i));
 
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
@@ -703,7 +708,7 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
           <Save size={13} /> حفظ الفصل
         </Btn>
         <Btn variant="soft" size="sm" onClick={() => setShowSaved(s => !s)} style={{ flex: 1 }}>
-          <History size={13} /> محفوظ ({semesters.length})
+          <History size={13} /> محفوظ ({safeSemesters.length})
         </Btn>
       </div>
 
@@ -756,11 +761,11 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
 
       {showSaved && (
         <div style={{ background: t.s1, borderRadius: 16, padding: 12, marginBottom: 16, border: `1px solid ${t.bd}`, animation: "fadeUp .3s ease" }}>
-          {semesters.length === 0 ? (
+          {safeSemesters.length === 0 ? (
             <div style={{ textAlign: "center", padding: "20px 10px", color: t.mu, fontSize: 13 }}>
               لا توجد فصول محفوظة بعد
             </div>
-          ) : semesters.map((sem, i) => (
+          ) : safeSemesters.map((sem, i) => (
             <div key={i} style={{
               display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
               borderRadius: 10, background: t.s2, marginBottom: 6,
@@ -992,7 +997,8 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
    ══════════════════════════════════════════════════════════════ */
 function GradeCalc({ subject, t }) {
   const key = `grades_${subject}`;
-  const [grades, setGrades] = useStored(key, { activity: "", homework: "", midterm: "", final: "" });
+  const [gradesRaw, setGrades] = useStored(key, { activity: "", homework: "", midterm: "", final: "" });
+  const grades = gradesRaw && typeof gradesRaw === "object" ? gradesRaw : { activity: "", homework: "", midterm: "", final: "" };
   const fields = [
     { id: "activity", label: "نشاط", pct: "15%", w: 0.15 },
     { id: "homework", label: "واجبات", pct: "15%", w: 0.15 },
@@ -1057,15 +1063,15 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
   const today = todayKey();
   const addTask = () => {
     if (!newTask.title.trim()) return;
-    setTasks(ts => [...ts, { ...newTask, id: Date.now(), done: false }]);
+    setTasks(ts => [...(ts || []), { ...newTask, id: Date.now(), done: false }]);
     setNewTask({ title: "", subject: "", dueDate: "", priority: "متوسط" });
     setShowAdd(false);
     onToast?.("تم إضافة المهمة", "success");
   };
-  const toggle = (id) => setTasks(ts => ts.map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
-  const remove = (id) => setTasks(ts => ts.filter(tk => tk.id !== id));
+  const toggle = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
+  const remove = (id) => setTasks(ts => (ts || []).filter(tk => tk.id !== id));
   const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
-  const sorted = [...tasks].sort((a, b) => {
+  const sorted = [...(tasks || [])].sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
   });
@@ -1144,7 +1150,7 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
    DAILY PROGRESS BAR
    ══════════════════════════════════════════════════════════════ */
 function DailyProgress({ sessionLog, weeklyGoal, t }) {
-  const todayMins = sessionLog.filter(s => s.date === todayKey()).reduce((a, s) => a + (s.dur || 25), 0);
+  const todayMins = (sessionLog || []).filter(s => s.date === todayKey()).reduce((a, s) => a + (s.dur || 25), 0);
   const goalMins = Math.max(1, Math.round(weeklyGoal * 25 / 5));
   const pct = Math.min(100, Math.round((todayMins / goalMins) * 100));
   const barColor = pct < 30 ? P.red : pct < 70 ? P.orange : P.green;
@@ -1209,19 +1215,19 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const addLecture = () => {
     if (!newLec.course.trim()) return;
-    setSchedule(s => [...s, { ...newLec, id: Date.now() }]);
+    setSchedule(s => [...(s || []), { ...newLec, id: Date.now() }]);
     setNewLec({ course: "", day: "الأحد", time: "08:00", room: "" });
     setShowAdd(false);
     onToast?.("تم إضافة المحاضرة", "success");
   };
-  const removeLecture = (id) => setSchedule(s => s.filter(l => l.id !== id));
+  const removeLecture = (id) => setSchedule(s => (s || []).filter(l => l.id !== id));
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
       <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
         <CalendarDays size={20} color={P.blue2} /> جدولي الأسبوعي
       </h2>
       {DAYS.map(day => {
-        const dayLecs = schedule.filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
+        const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
         const isToday = day === todayAr;
         const dc = DAY_COLORS[day];
         return (
@@ -1508,7 +1514,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
   const [realLoading, setRealLoading] = useState(true);
   const [fileFilter, setFileFilter] = useState({});
   const Icon = getIcon(subject);
-  const isFav = favorites.includes(subject);
+  const isFav = (favorites || []).includes(subject);
   const hasNotes = !!(notes[subject] && notes[subject].trim());
 
   useEffect(() => {
@@ -2939,19 +2945,19 @@ export default function App() {
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark);
   const toasts = useToasts();
-  const unread = notifs.filter(n => !n.read).length;
+  const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
-    return tasks.filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
+    return (tasks || []).filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
   }, [tasks]);
 
   const activeDays = useMemo(() => {
-    const dates = new Set(sessionLog.map(s => s.date));
+    const dates = new Set((sessionLog || []).map(s => s.date));
     return [...dates];
   }, [sessionLog]);
 
   const streak = useMemo(() => {
-    const dates = new Set(sessionLog.map(s => s.date));
+    const dates = new Set((sessionLog || []).map(s => s.date));
     let count = 0;
     const d = new Date();
     while (true) {
@@ -2977,7 +2983,7 @@ export default function App() {
 
   const weekProgress = useMemo(() => {
     const days = last7Days();
-    return sessionLog.filter(s => days.includes(s.date)).length;
+    return (sessionLog || []).filter(s => days.includes(s.date)).length;
   }, [sessionLog]);
 
   useEffect(() => {
@@ -2987,13 +2993,13 @@ export default function App() {
   const openCourse = (s) => {
     setCourse(s);
     setTab("course");
-    setRecent(prev => [s, ...prev.filter(x => x !== s)].slice(0, 12));
+    setRecent(prev => [s, ...(prev || []).filter(x => x !== s)].slice(0, 12));
   };
 
   const toggleFav = (s) => {
     const exists = favorites.includes(s);
     toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
-    setFavorites(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+    setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
   };
 
   const resetAll = () => {
