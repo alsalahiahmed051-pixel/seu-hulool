@@ -29,8 +29,8 @@ async function callOpenRouter(subject, messages) {
     body: JSON.stringify({
       models: [
         'deepseek/deepseek-chat-v3-0324:free',
-        'google/gemini-2.0-flash-exp:free',
-        'meta-llama/llama-3.1-8b-instruct:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+        'microsoft/phi-4-reasoning-plus:free',
       ],
       route: 'fallback',
       messages: [

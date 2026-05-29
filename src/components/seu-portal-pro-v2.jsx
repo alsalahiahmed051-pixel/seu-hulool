@@ -1361,7 +1361,7 @@ function AcademicCalendar({ t }) {
   );
 }
 
-function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters }) {
+function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
   const tip = TIPS[Math.floor(Date.now() / 86400000) % TIPS.length];
@@ -1396,6 +1396,13 @@ function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, wee
             fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
           }}>
             <Calculator size={12} /> احسب معدلك
+          </button>
+          <button onClick={onOpenAI} style={{
+            background: `linear-gradient(135deg,${P.gold}22,${P.gold}44)`, border: `1px solid ${P.gold}60`,
+            borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 12,
+            color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
+          }}>
+            <Sparkles size={12} /> المساعد الذكي
           </button>
         </div>
       </div>
@@ -2522,6 +2529,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showAI, setShowAI] = useState(false);
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark);
   const toasts = useToasts();
@@ -2671,7 +2679,7 @@ export default function App() {
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px" }}>
         {tab === "home" && <HomePage
           setActiveTab={(t) => { setTab(t); setCourse(null); }}
-          openCourse={openCourse} t={t} recent={recent} streak={streak}
+          openCourse={openCourse} onOpenAI={() => setShowAI(true)} t={t} recent={recent} streak={streak}
           activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
           achievements={achievementsState} sessionLog={sessionLog} semesters={semesters} />}
 
@@ -2759,6 +2767,22 @@ export default function App() {
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
+      {showAI && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 500, background: t.bg, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: t.s1, borderBottom: `1px solid ${t.bd}`, flexShrink: 0 }}>
+            <button onClick={() => setShowAI(false)} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "7px 13px", color: t.tx, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 12, fontWeight: 700 }}>
+              <ArrowLeft size={14} /> رجوع
+            </button>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+              <Sparkles size={16} color={P.gold} />
+              <span style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>المساعد الذكي</span>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: "hidden", padding: 12 }}>
+            <AIChat subject="الجامعة السعودية الإلكترونية" t={t} onChat={() => setAiChats(c => c + 1)} />
+          </div>
+        </div>
+      )}
       <ToastStack list={toasts.list} />
     </div>
   );
