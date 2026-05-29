@@ -43,6 +43,7 @@ function formatDate(iso) {
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false)
+  const [secret, setSecret] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState(null)
   const [files, setFiles] = useState([])
@@ -56,10 +57,9 @@ export default function AdminPage() {
   const [selectedFile, setSelectedFile] = useState(null)
   const fileRef = useRef(null)
 
-  const secret = typeof window !== 'undefined' ? sessionStorage.getItem('admin_secret') : null
-
   useEffect(() => {
-    if (secret) { setAuthed(true); loadFiles(secret) }
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('admin_secret') : null
+    if (saved) { setSecret(saved); setAuthed(true); loadFiles(saved) }
   }, [])
 
   async function handleLogin(e) {
@@ -69,6 +69,7 @@ export default function AdminPage() {
     if (res.status === 401) { setAuthError('كلمة المرور غير صحيحة'); return }
     const data = await res.json()
     sessionStorage.setItem('admin_secret', password)
+    setSecret(password)
     setAuthed(true)
     setFiles(data.files || [])
     setBlobEnabled(data.blobEnabled)
