@@ -12,7 +12,8 @@ import {
   Sparkles, Lock, Send, ChevronLeft, Share2, History,
   PenLine, Compass, Lightbulb, Shield, ArrowUpRight, Hash,
   ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
-  CreditCard, HelpCircle, Newspaper, Radio, Building2
+  CreditCard, HelpCircle, Newspaper, Radio, Building2,
+  AlertTriangle, PartyPopper, Zap as Lightning
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -72,24 +73,25 @@ const P = {
 };
 
 const T = (d) => ({
-  bg: d ? "#050a16" : "#eef3ff",
+  bg: d ? "#070d1b" : "#eef3ff",
   bgMesh: d
-    ? "radial-gradient(ellipse 70% 50% at 50% -10%, rgba(26,86,219,0.20) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 0% 100%, rgba(200,168,75,0.08) 0%, transparent 50%), radial-gradient(ellipse 50% 40% at 100% 60%, rgba(109,40,217,0.06) 0%, transparent 50%), #050a16"
+    ? "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(37,99,235,0.22) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(124,58,237,0.07) 0%, transparent 45%), #070d1b"
     : "radial-gradient(ellipse 70% 50% at 50% -10%, rgba(26,86,219,0.12) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.08) 0%, transparent 50%), #eef3ff",
-  s1: d ? "#0a1426" : "#ffffff",
-  s2: d ? "#0f1c33" : "#f5f8ff",
-  s3: d ? "#15243f" : "#eaf0ff",
-  s4: d ? "#1e3055" : "#dde6f7",
-  bd: d ? "#1c2e48" : "#d8e3f5",
-  tx: d ? "#e4ecf8" : "#0a1428",
-  mu: d ? "#7d97b8" : "#5a6e8a",
-  dim: d ? "#3a5270" : "#9aaac0",
-  sh: d ? "0 8px 40px rgba(0,0,0,.55), 0 2px 10px rgba(0,0,0,.3)" : "0 8px 40px rgba(0,50,140,.10), 0 2px 10px rgba(0,50,140,.05)",
-  shSm: d ? "0 4px 16px rgba(0,0,0,.4)" : "0 4px 16px rgba(0,50,140,.07)",
-  grad: d ? `linear-gradient(135deg,#0c1829,#162540)` : `linear-gradient(135deg,#f5f8ff,#eaf0ff)`,
+  s1: d ? "#0e1828" : "#ffffff",
+  s2: d ? "#162136" : "#f5f8ff",
+  s3: d ? "#1e2e47" : "#eaf0ff",
+  s4: d ? "#283d5e" : "#dde6f7",
+  bd: d ? "rgba(99,130,175,0.16)" : "#d8e3f5",
+  tx: d ? "#f0f4ff" : "#0a1428",
+  mu: d ? "#8599bf" : "#5a6e8a",
+  dim: d ? "#485d80" : "#9aaac0",
+  sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,50,140,.10), 0 2px 10px rgba(0,50,140,.05)",
+  shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,50,140,.07)",
+  grad: d ? `linear-gradient(135deg,#0e1828,#162136)` : `linear-gradient(135deg,#f5f8ff,#eaf0ff)`,
   hero: d
-    ? `linear-gradient(135deg, #001030 0%, #002470 45%, #1a1f7a 100%)`
+    ? `linear-gradient(135deg, #060c1a 0%, #0b1e42 45%, #142257 100%)`
     : `linear-gradient(135deg, #001f5a 0%, #003299 55%, #1a56db 100%)`,
+  inp: d ? "#0e1828" : "#ffffff",
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -483,7 +485,7 @@ function AIChat({ subject, t, onChat }) {
       const d = await res.json();
       setMsgs(m => [...m, { r: "a", text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً." }]);
     } catch {
-      setMsgs(m => [...m, { r: "a", text: "⚠️ تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة." }]);
+      setMsgs(m => [...m, { r: "a", text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة." }]);
     }
     setLoading(false);
   };
@@ -718,7 +720,7 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
               </>
             ) : (
               <>
-                <div style={{ fontSize: 12, color: P.red, fontWeight: 700, marginBottom: 4 }}>⚠️ غير قابل للتحقيق</div>
+                <div style={{ fontSize: 12, color: P.red, fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} /> غير قابل للتحقيق</div>
                 <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.6 }}>
                   جرّب رفع عدد الساعات أو خفّض المعدل المستهدف
                 </div>
@@ -823,7 +825,7 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
           if (mode === "work") {
             setTotalSessions(n => n + 1);
             setSessionLog(l => [...l, { date: todayKey(), dur: customWork, subject, t: Date.now() }]);
-            onToast?.("🎉 جلسة دراسة مكتملة!", "success");
+            onToast?.("جلسة دراسة مكتملة!", "success");
           } else {
             onToast?.("⏰ انتهى وقت الراحة", "info");
           }
@@ -1098,6 +1100,54 @@ function FlashCards({ subject, t }) {
   );
 }
 
+function CourseProgress({ subject, t }) {
+  const UNITS = 6;
+  const key = `progress_${subject}`;
+  const [done, setDone] = useStored(key, []);
+  const pct = Math.round((done.length / UNITS) * 100);
+  const toggle = (u) => setDone(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]);
+  return (
+    <div style={{
+      background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`,
+      marginBottom: 10,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+          <Activity size={13} color={P.blue2} /> تقدم الدراسة
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 900, color: pct === 100 ? P.green : P.blue2 }}>
+          {pct}%
+        </div>
+      </div>
+      <div style={{ height: 5, background: t.s3, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
+        <div style={{
+          height: "100%", width: `${pct}%`, borderRadius: 3, transition: "width .4s ease",
+          background: pct === 100 ? `linear-gradient(90deg,${P.green},#34d399)` : `linear-gradient(90deg,${P.blue},${P.blue2})`,
+        }} />
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        {Array.from({ length: UNITS }, (_, i) => {
+          const u = i + 1;
+          const checked = done.includes(u);
+          return (
+            <button key={u} onClick={() => toggle(u)} style={{
+              flex: 1, height: 30, borderRadius: 8,
+              background: checked ? `${P.blue2}22` : t.s2,
+              border: `1.5px solid ${checked ? P.blue2 : t.bd}`,
+              cursor: "pointer", transition: "all .2s",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {checked
+                ? <CheckCircle size={13} color={P.blue2} />
+                : <span style={{ fontSize: 10, fontWeight: 700, color: t.dim }}>{u}</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast }) {
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
@@ -1164,6 +1214,8 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
           </button>
         </div>
       </div>
+
+      <CourseProgress subject={subject} t={t} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {SECTIONS.map((sec) => {
@@ -1248,12 +1300,12 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
    HOME PAGE
    ══════════════════════════════════════════════════════════════ */
 const SEU_CALENDAR = [
-  { label: "الاختبارات النهائية — الفصل الثاني 1447", date: "2026-06-07", color: P.red, icon: "🔥" },
-  { label: "نتائج الفصل الثاني 1447", date: "2026-06-28", color: P.green, icon: "🏆" },
-  { label: "التسجيل للفصل الأول 1448", date: "2026-07-20", color: P.purple, icon: "📋" },
-  { label: "بداية الفصل الأول 1448", date: "2026-09-06", color: P.blue2, icon: "🎓" },
-  { label: "اختبارات الميدترم — الفصل الأول 1448", date: "2026-10-25", color: P.gold, icon: "📝" },
-  { label: "الاختبارات النهائية — الفصل الأول 1448", date: "2026-12-13", color: P.red, icon: "🔥" },
+  { label: "الاختبارات النهائية — الفصل الثاني 1447", date: "2026-06-07", color: P.red, CIcon: Flame },
+  { label: "نتائج الفصل الثاني 1447", date: "2026-06-28", color: P.green, CIcon: Trophy },
+  { label: "التسجيل للفصل الأول 1448", date: "2026-07-20", color: P.purple, CIcon: FileText },
+  { label: "بداية الفصل الأول 1448", date: "2026-09-06", color: P.blue2, CIcon: GraduationCap },
+  { label: "اختبارات الميدترم — الفصل الأول 1448", date: "2026-10-25", color: P.gold, CIcon: PenLine },
+  { label: "الاختبارات النهائية — الفصل الأول 1448", date: "2026-12-13", color: P.red, CIcon: Flame },
 ];
 
 function AcademicCalendar({ t }) {
@@ -1271,7 +1323,13 @@ function AcademicCalendar({ t }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {upcoming.map((e, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>{e.icon}</span>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+              background: `${e.color}18`, display: "flex", alignItems: "center", justifyContent: "center",
+              border: `1px solid ${e.color}30`,
+            }}>
+              <e.CIcon size={16} color={e.color} strokeWidth={2} />
+            </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.label}</div>
               <div style={{ fontSize: 11, color: t.mu }}>{new Date(e.date).toLocaleDateString("ar-SA", { month: "long", day: "numeric" })}</div>
@@ -1336,7 +1394,7 @@ function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, wee
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>سلسلة الدراسة</div>
-            <div style={{ fontSize: 11, color: t.mu }}>{streak > 0 ? `${streak} يوم متواصل! استمر 🔥` : "ابدأ سلسلتك اليوم"}</div>
+            <div style={{ fontSize: 11, color: t.mu }}>{streak > 0 ? `${streak} يوم متواصل! استمر` : "ابدأ سلسلتك اليوم"}</div>
           </div>
           <div style={{ fontSize: 24, fontWeight: 900, color: P.orange }}>{streak}</div>
         </div>
@@ -1357,7 +1415,7 @@ function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, wee
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>هدف الأسبوع</div>
           <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>{weekProgress} / {weeklyGoal} جلسة هذا الأسبوع</div>
           <div style={{ fontSize: 11, color: P.green, marginTop: 4, fontWeight: 700 }}>
-            {goalPct >= 100 ? "🎉 تم تحقيق الهدف!" : `يتبقى ${Math.max(0, weeklyGoal - weekProgress)} جلسة`}
+            {goalPct >= 100 ? "تم تحقيق الهدف الأسبوعي!" : `يتبقى ${Math.max(0, weeklyGoal - weekProgress)} جلسة`}
           </div>
         </div>
       </div>
@@ -1462,7 +1520,31 @@ function HomePage({ setActiveTab, openCourse, t, recent, streak, activeDays, wee
    ══════════════════════════════════════════════════════════════ */
 function SearchResults({ query, onCourse, onClose, t }) {
   const q = query.trim().toLowerCase();
-  const results = q ? ALL_COURSES.filter(c => c.toLowerCase().includes(q)) : [];
+  const groups = q ? (() => {
+    const out = [];
+    const cats = [
+      { key: "preparatory", label: "السنة الأولى المشتركة", color: P.blue2 },
+      { key: "bachelor", label: "بكالوريوس", color: P.purple },
+      { key: "diploma", label: "دبلوم", color: P.green },
+      { key: "graduate", label: "دراسات عليا", color: P.gold },
+    ];
+    cats.forEach(({ key, label, color }) => {
+      let items = [];
+      if (key === "preparatory") {
+        items = Object.values(TREE.preparatory.plans).flatMap(p => p.subjects).filter(s => s.toLowerCase().includes(q));
+      } else if (key === "bachelor") {
+        items = TREE.bachelor.colleges.flatMap(c => c.programs).filter(s => s.toLowerCase().includes(q));
+      } else if (key === "diploma") {
+        items = TREE.diploma.programs.filter(s => s.toLowerCase().includes(q));
+      } else {
+        items = TREE.graduate.programs.filter(s => s.toLowerCase().includes(q));
+      }
+      if (items.length) out.push({ label, color, items });
+    });
+    return out;
+  })() : [];
+  const total = groups.reduce((a, g) => a + g.items.length, 0);
+
   return (
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 200,
@@ -1478,35 +1560,44 @@ function SearchResults({ query, onCourse, onClose, t }) {
             <Search size={36} color={t.dim} style={{ margin: "0 auto 10px" }} />
             <div style={{ fontSize: 14, color: t.mu }}>ابحث عن مادة أو تخصص…</div>
           </div>
-        ) : results.length === 0 ? (
+        ) : groups.length === 0 ? (
           <div style={{ textAlign: "center", padding: 30 }}>
             <div style={{ fontSize: 14, color: t.mu }}>لا توجد نتائج لـ "{query}"</div>
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 12, color: t.mu, marginBottom: 12 }}>
-              {results.length} نتيجة
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {results.map((s, i) => {
-                const SIcon = getIcon(s);
-                return (
-                  <button key={i} onClick={() => { onCourse(s); onClose(); }} style={{
-                    background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 12,
-                    padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
-                    fontFamily: "inherit", textAlign: "right", transition: "all .2s",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.background = t.s2; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.background = t.s1; }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <SIcon size={16} color={P.blue2} />
-                    </div>
-                    <div style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: t.tx }}>{s}</div>
-                    <ChevronLeft size={15} color={t.dim} />
-                  </button>
-                );
-              })}
-            </div>
+            <div style={{ fontSize: 12, color: t.mu, marginBottom: 14 }}>{total} نتيجة</div>
+            {groups.map((g, gi) => (
+              <div key={gi} style={{ marginBottom: 14 }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 800, color: g.color, marginBottom: 6,
+                  display: "flex", alignItems: "center", gap: 5,
+                }}>
+                  <div style={{ width: 3, height: 12, borderRadius: 2, background: g.color }} />
+                  {g.label}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {g.items.map((s, i) => {
+                    const SIcon = getIcon(s);
+                    return (
+                      <button key={i} onClick={() => { onCourse(s); onClose(); }} style={{
+                        background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 12,
+                        padding: "11px 13px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                        fontFamily: "inherit", textAlign: "right", transition: "all .2s",
+                      }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = g.color + "60"; e.currentTarget.style.background = t.s2; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.background = t.s1; }}>
+                        <div style={{ width: 34, height: 34, borderRadius: 10, background: `${g.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <SIcon size={15} color={g.color} />
+                        </div>
+                        <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
+                        <ChevronLeft size={14} color={t.dim} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </>
         )}
       </div>
@@ -1698,7 +1789,7 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
     return <EmptyState
       Icon={Star}
       title="لا توجد مفضلة"
-      desc="أضف المواد التي تهمك بالضغط على أيقونة ⭐ في صفحة المادة"
+      desc="افتح أي مادة واضغط زر النجمة في أعلى الصفحة لإضافتها للمفضلة"
       t={t} />;
   }
   return (
@@ -2041,53 +2132,172 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
    ONBOARDING
    ══════════════════════════════════════════════════════════════ */
 function Onboarding({ onClose, t }) {
+  const [phase, setPhase] = useState(0); // 0=splash, 1-3=walkthrough
   const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    if (phase === 0) {
+      const timer = setTimeout(() => setPhase(1), 3200);
+      return () => clearTimeout(timer);
+    }
+  }, [phase]);
+
   const steps = [
-    { Icon: Sparkles, color: P.blue2, title: "مرحباً في حلول", desc: "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية. كل ما تحتاجه للدراسة في مكان واحد." },
-    { Icon: BookOpen, color: P.purple, title: "تجميعات وملخصات", desc: "ادخل إلى تجميعات الاختبارات، الخطط الدراسية، والملاحظات الشاملة لكل مادة." },
-    { Icon: Sparkles, color: P.gold, title: "مساعد ذكي", desc: "اسأل الذكاء الاصطناعي عن أي شيء يخص مادتك واحصل على إجابات فورية." },
-    { Icon: Trophy, color: P.orange, title: "تتبّع تقدّمك", desc: "احسب معدلك، استخدم مؤقت بومودورو، واجمع الإنجازات أثناء رحلتك الأكاديمية." },
+    { Icon: BookOpen, color: P.blue2, title: "تجميعات وملخصات", desc: "وصول فوري لتجميعات الاختبارات، الخطط الدراسية، وملاحظات شاملة لكل مادة وبرنامج." },
+    { Icon: Sparkles, color: P.gold, title: "مساعد ذكاء اصطناعي", desc: "اسأل المساعد الذكي عن أي شيء يخص مادتك — شرح، تلخيص، حل أمثلة — فوري ودقيق." },
+    { Icon: Trophy, color: P.orange, title: "تتبّع تقدّمك", desc: "احسب معدلك، استخدم مؤقت بومودورو، تتبّع إنجازاتك وحافظ على سلسلة دراسة يومية." },
   ];
+
+  if (phase === 0) {
+    const features = [
+      { Icon: Calculator, label: "حاسبة المعدل" },
+      { Icon: AlarmClock, label: "مؤقت بومودورو" },
+      { Icon: Sparkles, label: "ذكاء اصطناعي" },
+    ];
+    return (
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 400,
+        background: "linear-gradient(160deg, #04091a 0%, #06164a 40%, #0a2070 70%, #050d30 100%)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        padding: 28, animation: "fadeIn .4s ease", overflow: "hidden",
+      }}>
+        {/* Background orbs */}
+        <div style={{ position: "absolute", top: "10%", right: "15%", width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(26,86,219,.18) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: "15%", left: "10%", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(200,168,75,.10) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: "55%", right: "5%", width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,.08) 0%, transparent 70%)", pointerEvents: "none" }} />
+
+        {/* Logo */}
+        <div style={{
+          width: 96, height: 96, borderRadius: 28,
+          background: "linear-gradient(135deg, #0f2d7a, #1a56db)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 16px 60px rgba(26,86,219,.55), 0 4px 20px rgba(0,0,0,.5)",
+          marginBottom: 24, animation: "scaleIn .6s ease",
+          border: "1.5px solid rgba(255,255,255,.12)",
+        }}>
+          <GraduationCap size={50} color={P.gold} strokeWidth={1.6} />
+        </div>
+
+        <div style={{
+          fontSize: 58, fontWeight: 900, color: "#fff", lineHeight: 1,
+          marginBottom: 8, animation: "fadeUp .7s ease .1s backwards",
+          letterSpacing: -1, textShadow: "0 4px 30px rgba(26,86,219,.6)",
+        }}>
+          حلول
+        </div>
+        <div style={{
+          fontSize: 14, color: P.gold, fontWeight: 700, marginBottom: 6,
+          animation: "fadeUp .7s ease .2s backwards", letterSpacing: .5,
+        }}>
+          بوابة الطالب الذكية
+        </div>
+        <div style={{
+          fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 48,
+          animation: "fadeUp .7s ease .3s backwards",
+        }}>
+          الجامعة السعودية الإلكترونية — SEU
+        </div>
+
+        {/* Feature pills */}
+        <div style={{
+          display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center",
+          marginBottom: 48, animation: "fadeUp .7s ease .45s backwards",
+        }}>
+          {features.map(({ Icon: FIcon, label }, i) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 7,
+              background: "rgba(255,255,255,.06)", backdropFilter: "blur(8px)",
+              border: "1px solid rgba(255,255,255,.1)", borderRadius: 24,
+              padding: "8px 16px",
+            }}>
+              <FIcon size={14} color={P.gold} />
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,.8)", fontWeight: 600 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Loading bar */}
+        <div style={{
+          width: 180, height: 3, background: "rgba(255,255,255,.1)", borderRadius: 2, overflow: "hidden",
+          animation: "fadeUp .7s ease .5s backwards",
+        }}>
+          <div style={{
+            height: "100%", background: `linear-gradient(90deg, ${P.blue2}, ${P.gold})`,
+            borderRadius: 2, animation: "splashBar 3.2s ease forwards",
+          }} />
+        </div>
+
+        <button onClick={() => setPhase(1)} style={{
+          marginTop: 32, background: "none", border: "1px solid rgba(255,255,255,.2)",
+          borderRadius: 20, padding: "8px 22px", cursor: "pointer",
+          color: "rgba(255,255,255,.5)", fontSize: 12, fontFamily: "inherit",
+          animation: "fadeUp .7s ease .6s backwards",
+        }}>
+          تخطي ←
+        </button>
+      </div>
+    );
+  }
+
   const s = steps[step];
   const last = step === steps.length - 1;
   return (
     <div style={{
-      position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,.6)",
-      backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center",
-      padding: 20, animation: "fadeIn .3s ease",
+      position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,.65)",
+      backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center",
+      padding: 20, animation: "fadeIn .25s ease",
     }}>
       <div style={{
-        background: t.s1, borderRadius: 24, padding: 28, maxWidth: 380, width: "100%",
-        textAlign: "center", boxShadow: t.sh, border: `1px solid ${t.bd}`, animation: "scaleIn .35s ease",
+        background: t.s1, borderRadius: 26, padding: "30px 26px", maxWidth: 380, width: "100%",
+        textAlign: "center", boxShadow: t.sh, border: `1px solid ${t.bd}`, animation: "scaleIn .3s ease",
       }}>
-        <div style={{
-          width: 80, height: 80, borderRadius: 24, background: `linear-gradient(135deg,${s.color},${s.color}aa)`,
-          display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px",
-          boxShadow: `0 8px 28px ${s.color}40`,
-        }}>
-          <s.Icon size={40} color="#fff" strokeWidth={1.6} />
-        </div>
-        <h2 style={{ fontSize: 22, fontWeight: 900, color: t.tx, marginBottom: 10 }}>{s.title}</h2>
-        <p style={{ fontSize: 14, color: t.mu, lineHeight: 1.8, marginBottom: 22 }}>{s.desc}</p>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+        {/* Step progress dots */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 24 }}>
           {steps.map((_, i) => (
             <div key={i} style={{
-              width: i === step ? 24 : 8, height: 8, borderRadius: 4,
-              background: i === step ? s.color : t.s3, transition: "all .3s",
+              width: i === step ? 28 : 8, height: 8, borderRadius: 4,
+              background: i <= step ? s.color : t.s3, transition: "all .35s",
             }} />
           ))}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {step > 0 && <Btn variant="ghost" onClick={() => setStep(step - 1)} style={{ flex: 1 }}>
-            السابق
-          </Btn>}
-          <Btn variant="primary" onClick={() => last ? onClose() : setStep(step + 1)} style={{ flex: 1 }}>
-            {last ? <><CheckCircle size={15} /> ابدأ</> : <>التالي <ChevronLeft size={15} /></>}
-          </Btn>
+
+        <div style={{
+          width: 88, height: 88, borderRadius: 26,
+          background: `linear-gradient(135deg, ${s.color}dd, ${s.color}88)`,
+          display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px",
+          boxShadow: `0 10px 36px ${s.color}45`,
+          border: `1.5px solid ${s.color}40`,
+        }}>
+          <s.Icon size={44} color="#fff" strokeWidth={1.5} />
         </div>
+
+        <h2 style={{ fontSize: 22, fontWeight: 900, color: t.tx, marginBottom: 10, lineHeight: 1.3 }}>{s.title}</h2>
+        <p style={{ fontSize: 14, color: t.mu, lineHeight: 1.85, marginBottom: 26 }}>{s.desc}</p>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          {step > 0 && (
+            <button onClick={() => setStep(step - 1)} style={{
+              flex: 1, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 14,
+              padding: "12px 16px", cursor: "pointer", fontSize: 13, color: t.mu,
+              fontFamily: "inherit", fontWeight: 700,
+            }}>
+              السابق
+            </button>
+          )}
+          <button onClick={() => last ? onClose() : setStep(step + 1)} style={{
+            flex: 2, background: `linear-gradient(135deg, ${s.color}, ${s.color}cc)`,
+            border: "none", borderRadius: 14, padding: "12px 16px",
+            cursor: "pointer", fontSize: 14, color: "#fff", fontFamily: "inherit",
+            fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            boxShadow: `0 6px 20px ${s.color}40`,
+          }}>
+            {last ? <><CheckCircle size={16} /> ابدأ الآن</> : <>التالي <ChevronLeft size={15} /></>}
+          </button>
+        </div>
+
         <button onClick={onClose} style={{
           background: "none", border: "none", color: t.dim, fontSize: 12,
-          cursor: "pointer", marginTop: 16, fontFamily: "inherit",
+          cursor: "pointer", marginTop: 14, fontFamily: "inherit",
         }}>
           تخطي
         </button>
@@ -2323,7 +2533,7 @@ export default function App() {
     if (prevStreakRef.current === null) { prevStreakRef.current = streak; return; }
     const prev = prevStreakRef.current;
     prevStreakRef.current = streak;
-    const milestones = { 3: "🔥 3 أيام متواصلة! استمر!", 7: "⚡ أسبوع كامل! أنت رائع!", 14: "💪 أسبوعان! إنجاز حقيقي!", 30: "🏆 شهر كامل! أسطوري!" };
+    const milestones = { 3: "3 أيام متواصلة! استمر!", 7: "أسبوع كامل! أنت رائع!", 14: "أسبوعان! إنجاز حقيقي!", 30: "شهر كامل! أسطوري!" };
     if (streak > prev && milestones[streak]) toasts.push(milestones[streak], "success");
   }, [streak]);
 
@@ -2381,6 +2591,8 @@ export default function App() {
         @keyframes bounce { 0%,80%,100% { transform:translateY(0) } 40% { transform:translateY(-7px) } }
         @keyframes pulse { 0%,100% { opacity:.5 } 50% { opacity:.85 } }
         @keyframes toastIn { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes splashBar { from { width:0% } to { width:100% } }
+        @keyframes floatOrb { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-12px) } }
         * { box-sizing:border-box; margin:0; padding:0 }
         ::-webkit-scrollbar { width:5px; height:5px }
         ::-webkit-scrollbar-thumb { background:${P.blue}40; border-radius:3px }
@@ -2393,9 +2605,10 @@ export default function App() {
       {/* HEADER */}
       <div style={{
         position: "sticky", top: 0, zIndex: 100,
-        background: dark ? "rgba(7,16,31,.92)" : "rgba(238,243,255,.92)",
-        backdropFilter: "blur(16px)", borderBottom: `1px solid ${t.bd}`,
-        padding: "12px 16px", display: "flex", alignItems: "center", gap: 10,
+        background: dark ? "rgba(7,13,27,.93)" : "rgba(238,243,255,.93)",
+        backdropFilter: "blur(20px)", borderBottom: `1px solid ${t.bd}`,
+        padding: "13px 16px", display: "flex", alignItems: "center", gap: 10,
+        boxShadow: dark ? "0 1px 24px rgba(0,0,0,.45)" : "0 1px 16px rgba(0,50,140,.07)",
       }}>
         <div style={{
           width: 36, height: 36, borderRadius: 12,
@@ -2487,30 +2700,32 @@ export default function App() {
       {/* BOTTOM NAV */}
       <div id="bottom-nav" style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
-        background: dark ? "rgba(7,16,31,.95)" : "rgba(255,255,255,.95)",
-        backdropFilter: "blur(20px)", borderTop: `1px solid ${t.bd}`,
+        background: dark ? "rgba(7,13,27,.96)" : "rgba(255,255,255,.96)",
+        backdropFilter: "blur(24px)", borderTop: `1px solid ${t.bd}`,
         overflowX: "auto", WebkitOverflowScrolling: "touch",
-        scrollbarWidth: "none", padding: "8px 8px 12px",
+        scrollbarWidth: "none", padding: "6px 8px 14px",
+        boxShadow: dark ? "0 -1px 20px rgba(0,0,0,.5)" : "0 -1px 16px rgba(0,50,140,.08)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
           return (
-            <button key={id} onClick={() => { setTab(id); if (id !== "explore") setCourse(null); }}
+            <button key={id} onClick={() => { setTab(id); setCourse(null); }}
               style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                background: "none", border: "none", cursor: "pointer", padding: "4px 10px",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                background: "none", border: "none", cursor: "pointer", padding: "5px 10px",
                 transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
               }}>
               <div style={{
-                width: 36, height: 36, borderRadius: 12,
-                background: active ? `linear-gradient(135deg,${P.blue},${P.blue2})` : "transparent",
+                width: 40, height: 32, borderRadius: 12,
+                background: active ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all .25s", boxShadow: active ? `0 4px 14px ${P.blue}50` : "none",
+                transition: "all .25s",
+                boxShadow: active ? `0 3px 12px ${P.blue}55` : "none",
               }}>
-                <Icon size={18} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
+                <Icon size={17} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
               </div>
-              <span style={{ fontSize: 10, fontWeight: active ? 700 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 10, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
@@ -2585,37 +2800,57 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
               </div>
             ) : (() => {
               const q = query.trim().toLowerCase();
-              const results = ALL_COURSES.filter(c => c.toLowerCase().includes(q));
-              if (!results.length) return (
+              const cats = [
+                { key: "preparatory", label: "السنة الأولى المشتركة", color: P.blue2 },
+                { key: "bachelor", label: "بكالوريوس", color: P.purple },
+                { key: "diploma", label: "دبلوم", color: P.green },
+                { key: "graduate", label: "دراسات عليا", color: P.gold },
+              ];
+              const groups = cats.map(({ key, label, color }) => {
+                let items = [];
+                if (key === "preparatory") items = Object.values(TREE.preparatory.plans).flatMap(p => p.subjects).filter(s => s.toLowerCase().includes(q));
+                else if (key === "bachelor") items = TREE.bachelor.colleges.flatMap(c => c.programs).filter(s => s.toLowerCase().includes(q));
+                else if (key === "diploma") items = TREE.diploma.programs.filter(s => s.toLowerCase().includes(q));
+                else items = TREE.graduate.programs.filter(s => s.toLowerCase().includes(q));
+                return { label, color, items };
+              }).filter(g => g.items.length);
+              const total = groups.reduce((a, g) => a + g.items.length, 0);
+              if (!total) return (
                 <div style={{ textAlign: "center", padding: 30, color: t.mu, fontSize: 13 }}>
                   لا توجد نتائج لـ "{query}"
                 </div>
               );
               return (
                 <>
-                  <div style={{ fontSize: 11, color: t.mu, marginBottom: 8, padding: "0 4px" }}>
-                    {results.length} نتيجة
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {results.map((s, i) => {
-                      const SIcon = getIcon(s);
-                      return (
-                        <button key={i} onClick={() => { onCourse(s); onClose(); }} style={{
-                          background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
-                          padding: "11px 13px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
-                          fontFamily: "inherit", textAlign: "right", transition: "all .2s",
-                        }}
-                          onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; }}
-                          onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; }}>
-                          <div style={{ width: 34, height: 34, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <SIcon size={15} color={P.blue2} />
-                          </div>
-                          <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
-                          <ChevronLeft size={14} color={t.dim} />
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <div style={{ fontSize: 11, color: t.mu, marginBottom: 10, padding: "0 4px" }}>{total} نتيجة</div>
+                  {groups.map((g, gi) => (
+                    <div key={gi} style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: g.color, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                        <div style={{ width: 3, height: 10, borderRadius: 2, background: g.color }} />
+                        {g.label}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        {g.items.map((s, i) => {
+                          const SIcon = getIcon(s);
+                          return (
+                            <button key={i} onClick={() => { onCourse(s); onClose(); }} style={{
+                              background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11,
+                              padding: "10px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                              fontFamily: "inherit", textAlign: "right", transition: "all .2s",
+                            }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = g.color + "60"; }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; }}>
+                              <div style={{ width: 32, height: 32, borderRadius: 9, background: `${g.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <SIcon size={14} color={g.color} />
+                              </div>
+                              <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
+                              <ChevronLeft size={13} color={t.dim} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </>
               );
             })()}
