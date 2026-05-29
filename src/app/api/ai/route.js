@@ -28,9 +28,9 @@ async function callOpenRouter(subject, messages) {
     },
     body: JSON.stringify({
       models: [
-        'google/gemma-2-9b-it:free',
-        'qwen/qwen-2.5-7b-instruct:free',
-        'mistralai/mistral-7b-instruct:free',
+        'deepseek/deepseek-chat-v3-0324:free',
+        'google/gemini-2.0-flash-exp:free',
+        'meta-llama/llama-3.1-8b-instruct:free',
       ],
       route: 'fallback',
       messages: [
