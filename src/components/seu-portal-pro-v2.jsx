@@ -977,7 +977,9 @@ function RealFileItem({ file, t, onToast }) {
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      window.open(file.url, "_blank", "noopener,noreferrer");
+      const src = file.blobUrl || file.url;
+      const href = src ? `/api/download?url=${encodeURIComponent(src)}` : null;
+      if (href) window.open(href, "_blank", "noopener,noreferrer");
       onToast?.({ msg: "جارٍ فتح الملف...", icon: "✓" });
     } finally {
       setTimeout(() => setDownloading(false), 1200);
