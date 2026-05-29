@@ -27,7 +27,13 @@ async function callOpenRouter(subject, messages) {
       'X-Title': 'SEU Hulool',
     },
     body: JSON.stringify({
-      model: 'meta-llama/llama-3.2-3b-instruct:free',
+      models: [
+        'google/gemma-2-9b-it:free',
+        'meta-llama/llama-3.2-3b-instruct:free',
+        'qwen/qwen-2.5-7b-instruct:free',
+        'mistralai/mistral-7b-instruct:free',
+      ],
+      route: 'fallback',
       messages: [
         { role: 'system', content: buildSystem(subject) },
         ...messages,
