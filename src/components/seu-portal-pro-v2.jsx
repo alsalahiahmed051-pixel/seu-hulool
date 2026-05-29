@@ -490,21 +490,28 @@ function StreakWeek({ activeDays, t }) {
 /* ══════════════════════════════════════════════════════════════
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
-function AIChat({ subject, t, onChat }) {
+function AIChat({ subject, t, onChat, standalone = true }) {
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
-  const defaultMsg = { r: "a", text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، المعدل، المحاضرات، أو أي شيء آخر.` };
+  const makeDefault = () => ({ r: "a", text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
   const [msgs, setMsgs] = useState(() => {
     const stored = storage.get(histKey, null);
-    return (stored && stored.length > 0) ? stored : [defaultMsg];
+    return (stored && stored.length > 0) ? stored : [makeDefault()];
   });
   const [inp, setInp] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef(null);
+
   useEffect(() => {
     if (msgs.length > 1) storage.set(histKey, msgs.slice(-20));
   }, [msgs]);
-
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
+
+  const clearChat = () => { storage.set(histKey, null); setMsgs([makeDefault()]); };
+
+  const fmtTime = (ts) => {
+    if (!ts) return "";
+    return new Date(ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", hour12: true });
+  };
 
   const suggestions = ["كيف أستعد للاختبار النهائي؟", "ما هي الوحدات المهمة؟", "كيف يُحتسب المعدل؟", "ما نوع الأسئلة في الميدترم؟"];
 
@@ -512,7 +519,7 @@ function AIChat({ subject, t, onChat }) {
     const text = (q || inp).trim();
     if (!text || loading) return;
     setInp("");
-    const newMsgs = [...msgs, { r: "u", text }];
+    const newMsgs = [...msgs, { r: "u", text, ts: Date.now() }];
     setMsgs(newMsgs);
     setLoading(true);
     onChat?.();
@@ -523,82 +530,112 @@ function AIChat({ subject, t, onChat }) {
         body: JSON.stringify({ subject, messages: history }),
       });
       const d = await res.json();
-      setMsgs(m => [...m, { r: "a", text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً." }]);
+      setMsgs(m => [...m, { r: "a", text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً.", ts: Date.now() }]);
     } catch {
-      setMsgs(m => [...m, { r: "a", text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة." }]);
+      setMsgs(m => [...m, { r: "a", text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة.", ts: Date.now() }]);
     }
     setLoading(false);
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: 480, borderRadius: 20, overflow: "hidden", border: `1px solid ${t.bd}`, boxShadow: t.sh }}>
-      <div style={{ background: `linear-gradient(135deg,${P.navy},${P.blue})`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Sparkles size={20} color={P.gold} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>مساعد {subject} الذكي</div>
-          <div style={{ color: P.gold, fontSize: 11, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80", display: "inline-block" }} />
-            متصل الآن
-          </div>
-        </div>
-        <button onClick={() => { storage.set(histKey, null); setMsgs([defaultMsg]); }} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 10, color: "rgba(255,255,255,.7)", cursor: "pointer", fontFamily: "inherit" }}>مسح</button>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", height: standalone ? 480 : "100%", borderRadius: standalone ? 20 : 0, overflow: "hidden", border: standalone ? `1px solid ${t.bd}` : "none", boxShadow: standalone ? t.sh : "none" }}>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12, background: t.s1 }}>
-        {msgs.map((m, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: m.r === "u" ? "flex-start" : "flex-end", animation: "fadeUp .3s ease" }}>
-            {m.r === "a" && <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${P.blue}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginLeft: 8 }}>
-              <Sparkles size={13} color={P.blue2} /></div>}
-            <div style={{
-              maxWidth: "82%", padding: "10px 14px", lineHeight: 1.75, fontSize: 13.5,
-              borderRadius: m.r === "u" ? "18px 4px 18px 18px" : "4px 18px 18px 18px",
-              background: m.r === "u" ? `linear-gradient(135deg,${P.blue},${P.blue2})` : `${t.s3}`,
-              color: m.r === "u" ? "#fff" : t.tx, boxShadow: t.shSm, whiteSpace: "pre-wrap",
-              border: `1px solid ${m.r === "u" ? "transparent" : t.bd}`,
-            }}>
-              {m.text.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}
+      {standalone && (
+        <div style={{ background: `linear-gradient(135deg,${P.navy},${P.blue})`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid rgba(255,255,255,.25)" }}>
+            <Sparkles size={20} color={P.gold} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>مساعد {subject}</div>
+            <div style={{ color: "#4ade80", fontSize: 11, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
+              متصل الآن
             </div>
           </div>
-        ))}
-        {loading && <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <div style={{ background: t.s3, border: `1px solid ${t.bd}`, padding: "12px 16px", borderRadius: "4px 18px 18px 18px", display: "flex", gap: 5, alignItems: "center" }}>
-            {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
+          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>مسح المحادثة</button>
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 4, background: t.s1 }}>
+        {msgs.map((m, i) => {
+          const isUser = m.r === "u";
+          const prevSame = i > 0 && msgs[i - 1].r === m.r;
+          return (
+            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 2 : 10, animation: "fadeUp .3s ease" }}>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                {!isUser && (
+                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1 }}>
+                    <Sparkles size={14} color={P.gold} />
+                  </div>
+                )}
+                <div style={{
+                  maxWidth: "78%", padding: "10px 14px", lineHeight: 1.8, fontSize: 13.5,
+                  borderRadius: isUser ? "18px 18px 18px 4px" : "18px 18px 4px 18px",
+                  background: isUser ? t.s2 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
+                  color: isUser ? t.tx : "#fff",
+                  boxShadow: isUser ? `0 2px 8px rgba(0,0,0,.1)` : `0 4px 16px ${P.blue}40`,
+                  border: isUser ? `1px solid ${t.bd}` : "none",
+                  whiteSpace: "pre-wrap",
+                }}>
+                  {m.text.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}
+                </div>
+                {isUser && (
+                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: `${P.blue2}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <CircleUser size={16} color={P.blue2} />
+                  </div>
+                )}
+              </div>
+              <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingInline: isUser ? 0 : 38, paddingLeft: isUser ? 38 : 0 }}>
+                {fmtTime(m.ts)}
+                {isUser && <span style={{ marginRight: 4, color: P.blue2 }}>✓✓</span>}
+              </div>
+            </div>
+          );
+        })}
+        {loading && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Sparkles size={14} color={P.gold} />
+              </div>
+              <div style={{ background: t.s2, border: `1px solid ${t.bd}`, padding: "12px 16px", borderRadius: "18px 18px 4px 18px", display: "flex", gap: 5, alignItems: "center" }}>
+                {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
+              </div>
+            </div>
           </div>
-        </div>}
+        )}
         <div ref={endRef} />
       </div>
 
-      {msgs.length <= 2 && <div style={{ padding: "0 12px 10px", display: "flex", gap: 6, flexWrap: "wrap", background: t.s1 }}>
-        {suggestions.map((s, i) => (
-          <button key={i} onClick={() => send(s)} style={{
-            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20,
-            padding: "5px 12px", fontSize: 11, color: t.mu, cursor: "pointer",
-            fontFamily: "inherit", transition: "all .2s",
-          }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.color = P.blue2; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.color = t.mu; }}>
-            {s}
-          </button>
-        ))}
-      </div>}
+      {msgs.length <= 2 && !loading && (
+        <div style={{ padding: "8px 12px 4px", display: "flex", gap: 6, flexWrap: "wrap", background: t.s1, borderTop: `1px solid ${t.bd}` }}>
+          {suggestions.map((s, i) => (
+            <button key={i} onClick={() => send(s)} style={{
+              background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20,
+              padding: "5px 12px", fontSize: 11, color: t.mu, cursor: "pointer",
+              fontFamily: "inherit", transition: "all .2s",
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.color = P.blue2; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.color = t.mu; }}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div style={{ padding: 12, background: t.s1, borderTop: `1px solid ${t.bd}`, display: "flex", gap: 8, flexShrink: 0 }}>
-        <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
-          placeholder={`اسأل عن ${subject}...`} style={{
-            flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px",
-            fontSize: 13.5, outline: "none", direction: "rtl", fontFamily: "inherit",
-            color: t.tx, background: t.s2, transition: "border-color .2s",
-          }}
-          onFocus={e => e.target.style.borderColor = P.blue2} onBlur={e => e.target.style.borderColor = t.bd} />
+      <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
+          placeholder={`اسأل عن ${subject}...`}
+          style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s" }}
+          onFocus={e => e.target.style.borderColor = P.blue2}
+          onBlur={e => e.target.style.borderColor = t.bd} />
         <button onClick={() => send()} disabled={loading || !inp.trim()} style={{
-          background: loading || !inp.trim() ? "#ccc" : `linear-gradient(135deg,${P.blue},${P.blue2})`,
-          border: "none", borderRadius: 24, padding: "10px 18px", cursor: "pointer",
-          color: "#fff", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
-          fontSize: 13, fontWeight: 700, transition: "all .2s",
+          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || !inp.trim() ? "not-allowed" : "pointer",
+          background: loading || !inp.trim() ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          boxShadow: loading || !inp.trim() ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
         }}>
-          <Send size={16} />
+          <Send size={17} color={loading || !inp.trim() ? t.dim : "#fff"} />
         </button>
       </div>
     </div>
@@ -1337,8 +1374,19 @@ function PDFViewer({ file, onClose }) {
 
 function RealFileItem({ file, t, onToast }) {
   const [viewing, setViewing] = useState(false);
+  const ratingKey = `real_${file.id || file.name}`;
+  const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[ratingKey] || 0));
+  const [hoverRating, setHoverRating] = useState(0);
   const blobSrc = file.blobUrl || file.url || "";
   const dlUrl = `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
+
+  const rateFile = (star) => {
+    const ratings = storage.get("ratings", {});
+    ratings[ratingKey] = star;
+    storage.set("ratings", ratings);
+    setMyRating(star);
+    onToast?.(`قيّمت بـ ${star} نجوم`, "success");
+  };
 
   const shareFile = () => {
     const url = `${typeof window !== "undefined" ? window.location.origin : ""}/api/download?url=${encodeURIComponent(blobSrc)}`;
@@ -1360,27 +1408,41 @@ function RealFileItem({ file, t, onToast }) {
   if (viewing) return <PDFViewer file={file} onClose={() => setViewing(false)} />;
 
   return (
-    <div style={{ background: `${P.blue2}08`, border: `1.5px solid ${P.blue2}30`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
-      <div style={{ width: 40, height: 40, borderRadius: 10, background: `${P.blue2}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <FileText size={18} color={P.blue2} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-          <span style={{ background: P.blue2, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 4, padding: "1px 5px" }}>جديد</span>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+    <div style={{ background: `${P.blue2}06`, border: `1.5px solid ${P.blue2}25`, borderRadius: 14, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: `${P.blue2}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <FileText size={18} color={P.blue2} />
         </div>
-        <div style={{ fontSize: 11, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+            <span style={{ background: P.blue2, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>جديد</span>
+            <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+          </div>
+          <div style={{ fontSize: 11, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-        <button onClick={shareFile} style={{ background: `${P.purple}15`, border: `1px solid ${P.purple}30`, borderRadius: 8, padding: "7px 8px", cursor: "pointer", color: P.purple, fontSize: 11, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3 }}>
-          <Share2 size={12} />
-        </button>
-        <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}18`, border: `1px solid ${P.blue2}40`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
-          <Eye size={12} /> قراءة
-        </button>
-        <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "7px 10px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-          <Download size={12} /> تحميل
-        </a>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+          {[1, 2, 3, 4, 5].map(i => (
+            <span key={i}
+              onClick={() => rateFile(i)}
+              onMouseEnter={() => setHoverRating(i)}
+              onMouseLeave={() => setHoverRating(0)}
+              style={{ fontSize: 15, color: i <= (hoverRating || myRating) ? P.gold : t.dim, cursor: "pointer", transition: "color .1s", lineHeight: 1 }}>★</span>
+          ))}
+          {myRating > 0 && <span style={{ fontSize: 10, color: t.mu, marginRight: 4 }}>({myRating}/5)</span>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={shareFile} style={{ background: `${P.purple}12`, border: `1px solid ${P.purple}25`, borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: P.purple, display: "flex", alignItems: "center", gap: 3 }}>
+            <Share2 size={12} />
+          </button>
+          <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
+            <Eye size={12} /> قراءة
+          </button>
+          <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+            <Download size={12} /> تحميل
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -1751,7 +1813,12 @@ function AcademicCalendar({ t }) {
 function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
-  const tip = TIPS[Math.floor(Date.now() / 86400000) % TIPS.length];
+  const [tipIdx, setTipIdx] = useState(() => Math.floor(Date.now() / 3600000) % TIPS.length);
+  useEffect(() => {
+    const iv = setInterval(() => setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length), 60000);
+    return () => clearInterval(iv);
+  }, []);
+  const tip = TIPS[tipIdx];
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
@@ -1924,9 +1991,16 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         background: `linear-gradient(135deg,${P.goldLight},#fef9f0)`, borderRadius: 18,
         padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}30`,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <Lightbulb size={16} color={P.gold} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: P.gold }}>نصيحة اليوم</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Lightbulb size={16} color={P.gold} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: P.gold }}>نصيحة الساعة</span>
+          </div>
+          <button
+            onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
+            style={{ background: `${P.gold}20`, border: `1px solid ${P.gold}40`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontSize: 11, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
+            <RotateCcw size={11} /> التالية
+          </button>
         </div>
         <p style={{ margin: 0, fontSize: 13.5, color: "#5a4010", lineHeight: 1.7, fontWeight: 500 }}>{tip}</p>
       </div>
@@ -3212,19 +3286,52 @@ export default function App() {
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
       {showAI && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 500, background: t.bg, display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: t.s1, borderBottom: `1px solid ${t.bd}`, flexShrink: 0 }}>
-            <button onClick={() => setShowAI(false)} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "7px 13px", color: t.tx, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 12, fontWeight: 700 }}>
-              <ArrowLeft size={14} /> رجوع
-            </button>
-            <Sparkles size={15} color={P.gold} />
-            <select value={aiSubject} onChange={e => setAiSubject(e.target.value)} style={{ flex: 1, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "6px 10px", fontSize: 12, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
-              <option value="عام">عام — مساعد SEU</option>
-              {ALL_COURSES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+        <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: t.bg }}>
+          {/* WhatsApp-like header */}
+          <div style={{ background: `linear-gradient(135deg,${P.navyDeep} 0%,${P.navy} 60%,${P.blue} 100%)`, flexShrink: 0, boxShadow: "0 2px 20px rgba(0,0,0,.4)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px 8px" }}>
+              <button onClick={() => setShowAI(false)} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 14px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                <ArrowLeft size={15} /> رجوع
+              </button>
+              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,.13)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(255,255,255,.22)", flexShrink: 0 }}>
+                <Sparkles size={22} color={P.gold} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", letterSpacing: 0.2 }}>المساعد الذكي</div>
+                <div style={{ fontSize: 11, color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80", display: "inline-block" }} />
+                  متصل — يجيب بالعربية
+                </div>
+              </div>
+            </div>
+            {/* Subject Selector — prominently styled */}
+            <div style={{ padding: "6px 16px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.08)", borderRadius: 6, padding: "3px 10px", flexShrink: 0 }}>
+                <Book size={12} color="rgba(255,255,255,.7)" />
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 600, whiteSpace: "nowrap" }}>المادة</span>
+              </div>
+              <div style={{ flex: 1, position: "relative" }}>
+                <select
+                  value={aiSubject}
+                  onChange={e => setAiSubject(e.target.value)}
+                  style={{
+                    width: "100%", appearance: "none", WebkitAppearance: "none",
+                    background: "rgba(255,255,255,.14)", color: "#fff",
+                    border: "1.5px solid rgba(255,255,255,.28)", borderRadius: 22,
+                    padding: "8px 36px 8px 16px", fontSize: 13, fontWeight: 700,
+                    fontFamily: "inherit", outline: "none", cursor: "pointer",
+                    direction: "rtl",
+                  }}>
+                  <option value="عام" style={{ background: "#0b1e42", color: "#fff" }}>🌐 عام — مساعد SEU</option>
+                  {ALL_COURSES.map(c => <option key={c} value={c} style={{ background: "#0b1e42", color: "#fff" }}>{c}</option>)}
+                </select>
+                <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+              </div>
+            </div>
           </div>
-          <div style={{ flex: 1, overflow: "hidden", padding: 12 }}>
-            <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} />
+          {/* Chat fills remaining space, no extra padding */}
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
           </div>
         </div>
       )}
