@@ -972,41 +972,35 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
    REAL FILE ITEM (uploaded via admin)
    ══════════════════════════════════════════════════════════════ */
 function PDFViewer({ file, onClose }) {
-  const proxyUrl = `/api/download?url=${encodeURIComponent(file.blobUrl || file.url || "")}`;
+  const blobSrc = file.blobUrl || file.url || "";
+  const viewUrl = `/api/download?url=${encodeURIComponent(blobSrc)}`;
+  const dlUrl = `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "#050a16", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#0a1426", borderBottom: "1px solid #1c2e48", flexShrink: 0 }}>
         <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
           <ArrowLeft size={14} /> رجوع
         </button>
         <div style={{ flex: 1, color: "#e4ecf8", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
-        <a href={proxyUrl} download={file.name} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+        <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
           <Download size={12} /> تحميل
         </a>
       </div>
-      {/* PDF iframe */}
-      <iframe
-        src={proxyUrl}
-        style={{ flex: 1, border: "none", width: "100%", background: "#fff" }}
-        title={file.name}
-      />
+      <iframe src={viewUrl} style={{ flex: 1, border: "none", width: "100%", background: "#fff" }} title={file.name} />
     </div>
   );
 }
 
 function RealFileItem({ file, t }) {
   const [viewing, setViewing] = useState(false);
-  const proxyUrl = `/api/download?url=${encodeURIComponent(file.blobUrl || file.url || "")}`;
+  const blobSrc = file.blobUrl || file.url || "";
+  const dlUrl = `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
 
   if (viewing) return <PDFViewer file={file} onClose={() => setViewing(false)} />;
 
   return (
-    <div style={{
-      background: `${P.blue2}08`, border: `1.5px solid ${P.blue2}30`,
-      borderRadius: 14, padding: "12px 14px",
-      display: "flex", alignItems: "center", gap: 12,
-    }}>
+    <div style={{ background: `${P.blue2}08`, border: `1.5px solid ${P.blue2}30`, borderRadius: 14, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
       <div style={{ width: 40, height: 40, borderRadius: 10, background: `${P.blue2}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <FileText size={18} color={P.blue2} />
       </div>
@@ -1021,7 +1015,7 @@ function RealFileItem({ file, t }) {
         <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}18`, border: `1px solid ${P.blue2}40`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
           <Eye size={12} /> قراءة
         </button>
-        <a href={proxyUrl} download={file.name} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "7px 10px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+        <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "7px 10px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
           <Download size={12} /> تحميل
         </a>
       </div>
