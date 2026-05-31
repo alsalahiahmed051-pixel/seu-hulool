@@ -3849,6 +3849,7 @@ export default function App() {
   const [showFocus, setShowFocus] = useState(false);
   const [showMonthlyReport, setShowMonthlyReport] = useState(false);
   const [aiSubject, setAiSubject] = useState("عام");
+  const [aiGlobalTab, setAiGlobalTab] = useState("chat");
   const [notifOpen, setNotifOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -4129,8 +4130,8 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {/* Subject Selector — prominently styled */}
-            <div style={{ padding: "6px 16px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Subject Selector + Tab Toggle */}
+            <div style={{ padding: "6px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.08)", borderRadius: 6, padding: "3px 10px", flexShrink: 0 }}>
                 <Book size={12} color="rgba(255,255,255,.7)" />
                 <span style={{ fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 600, whiteSpace: "nowrap" }}>المادة</span>
@@ -4138,7 +4139,7 @@ export default function App() {
               <div style={{ flex: 1, position: "relative" }}>
                 <select
                   value={aiSubject}
-                  onChange={e => setAiSubject(e.target.value)}
+                  onChange={e => { setAiSubject(e.target.value); setAiGlobalTab("chat"); }}
                   style={{
                     width: "100%", appearance: "none", WebkitAppearance: "none",
                     background: "rgba(255,255,255,.14)", color: "#fff",
@@ -4153,10 +4154,29 @@ export default function App() {
                 <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               </div>
             </div>
+            {/* Mode tabs */}
+            <div style={{ display: "flex", gap: 8, padding: "0 16px 12px" }}>
+              {[["chat", "محادثة", Sparkles], ["quiz", "اختبار", FileQuestion]].map(([id, label, Ic]) => (
+                <button key={id} onClick={() => setAiGlobalTab(id)} style={{
+                  flex: 1, padding: "7px 10px", borderRadius: 22,
+                  background: aiGlobalTab === id ? "rgba(255,255,255,.22)" : "rgba(255,255,255,.07)",
+                  border: `1.5px solid ${aiGlobalTab === id ? "rgba(255,255,255,.5)" : "rgba(255,255,255,.15)"}`,
+                  color: aiGlobalTab === id ? "#fff" : "rgba(255,255,255,.6)",
+                  cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  transition: "all .2s",
+                }}>
+                  <Ic size={14} /> {label}
+                </button>
+              ))}
+            </div>
           </div>
-          {/* Chat fills remaining space, no extra padding */}
+          {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
+            {aiGlobalTab === "chat"
+              ? <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
+              : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} /></div>
+            }
           </div>
         </div>
       )}
