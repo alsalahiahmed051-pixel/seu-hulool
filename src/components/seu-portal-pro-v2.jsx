@@ -3903,6 +3903,34 @@ export default function App() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }, [tab]);
 
+  // Browser / Android back button support
+  const handleBackRef = useRef(null);
+  handleBackRef.current = () => {
+    if (showMonthlyReport) { setShowMonthlyReport(false); return; }
+    if (showFocus)         { setShowFocus(false);         return; }
+    if (showAI)            { setShowAI(false);            return; }
+    if (notifOpen)         { setNotifOpen(false);         return; }
+    if (settingsOpen)      { setSettingsOpen(false);      return; }
+    if (searchOpen)        { setSearchOpen(false); setSearchQuery(""); return; }
+    if (course)            { setCourse(null); setTab("explore"); return; }
+    if (tab !== "home")    { setTab("home");               return; }
+  };
+
+  // Push a history entry whenever a new overlay opens so popstate fires
+  const overlayDepthRef = useRef(0);
+  useEffect(() => {
+    const depth = [course, showAI, showFocus, notifOpen, settingsOpen, searchOpen, showMonthlyReport].filter(Boolean).length;
+    if (depth > overlayDepthRef.current) window.history.pushState(null, '');
+    overlayDepthRef.current = depth;
+  }, [course, showAI, showFocus, notifOpen, settingsOpen, searchOpen, showMonthlyReport]);
+
+  useEffect(() => {
+    const fn = () => handleBackRef.current?.();
+    window.addEventListener('popstate', fn);
+    return () => window.removeEventListener('popstate', fn);
+  }, []);
+
+
   const openCourse = (s) => {
     setCourse(s);
     setTab("course");
