@@ -563,29 +563,34 @@ function AIChat({ subject, t, onChat, standalone = true }) {
           return (
             <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 2 : 10, animation: "fadeUp .3s ease" }}>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+                {/* AI avatar on the left of AI bubble */}
                 {!isUser && (
-                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1 }}>
-                    <Sparkles size={14} color={P.gold} />
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1, boxShadow: `0 2px 8px ${P.blue}40` }}>
+                    <Sparkles size={15} color={P.gold} />
                   </div>
                 )}
                 <div style={{
                   maxWidth: "78%", padding: "10px 14px", lineHeight: 1.8, fontSize: 13.5,
-                  borderRadius: isUser ? "18px 18px 18px 4px" : "18px 18px 4px 18px",
-                  background: isUser ? t.s2 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
-                  color: isUser ? t.tx : "#fff",
-                  boxShadow: isUser ? `0 2px 8px rgba(0,0,0,.1)` : `0 4px 16px ${P.blue}40`,
-                  border: isUser ? `1px solid ${t.bd}` : "none",
+                  /* user=right side: round everywhere except bottom-right tail */
+                  /* AI=left side: round everywhere except bottom-left tail */
+                  borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                  /* user bubble = blue (like WhatsApp green), AI bubble = card color */
+                  background: isUser ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
+                  color: isUser ? "#fff" : t.tx,
+                  boxShadow: isUser ? `0 4px 16px ${P.blue}40` : `0 2px 8px rgba(0,0,0,.08)`,
+                  border: isUser ? "none" : `1px solid ${t.bd}`,
                   whiteSpace: "pre-wrap",
                 }}>
                   {m.text.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}
                 </div>
+                {/* User avatar on the right of user bubble */}
                 {isUser && (
-                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: `${P.blue2}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${P.blue2}20`, border: `1.5px solid ${P.blue2}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <CircleUser size={16} color={P.blue2} />
                   </div>
                 )}
               </div>
-              <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingInline: isUser ? 0 : 38, paddingLeft: isUser ? 38 : 0 }}>
+              <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingLeft: isUser ? 42 : 0, paddingRight: isUser ? 0 : 42 }}>
                 {fmtTime(m.ts)}
                 {isUser && <span style={{ marginRight: 4, color: P.blue2 }}>✓✓</span>}
               </div>
@@ -595,10 +600,10 @@ function AIChat({ subject, t, onChat, standalone = true }) {
         {loading && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 10 }}>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Sparkles size={14} color={P.gold} />
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Sparkles size={15} color={P.gold} />
               </div>
-              <div style={{ background: t.s2, border: `1px solid ${t.bd}`, padding: "12px 16px", borderRadius: "18px 18px 4px 18px", display: "flex", gap: 5, alignItems: "center" }}>
+              <div style={{ background: t.s2, border: `1px solid ${t.bd}`, padding: "12px 18px", borderRadius: "18px 18px 18px 4px", display: "flex", gap: 5, alignItems: "center" }}>
                 {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
               </div>
             </div>
@@ -1988,21 +1993,24 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       <AcademicCalendar t={t} />
 
       <div style={{
-        background: `linear-gradient(135deg,${P.goldLight},#fef9f0)`, borderRadius: 18,
-        padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}30`,
+        background: t.s1, borderRadius: 18,
+        padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
+        boxShadow: `0 4px 20px ${P.gold}15`,
       }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Lightbulb size={16} color={P.gold} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: P.gold }}>نصيحة الساعة</span>
+            <div style={{ width: 30, height: 30, borderRadius: 10, background: `${P.gold}20`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Lightbulb size={15} color={P.gold} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 800, color: P.gold }}>نصيحة الساعة</span>
           </div>
           <button
             onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
-            style={{ background: `${P.gold}20`, border: `1px solid ${P.gold}40`, borderRadius: 8, padding: "4px 10px", cursor: "pointer", fontSize: 11, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
+            style={{ background: `${P.gold}15`, border: `1px solid ${P.gold}35`, borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 11, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
             <RotateCcw size={11} /> التالية
           </button>
         </div>
-        <p style={{ margin: 0, fontSize: 13.5, color: "#5a4010", lineHeight: 1.7, fontWeight: 500 }}>{tip}</p>
+        <p style={{ margin: 0, fontSize: 13.5, color: t.tx, lineHeight: 1.8, fontWeight: 500, paddingRight: 4, borderRight: `3px solid ${P.gold}`, paddingRight: 12 }}>{tip}</p>
       </div>
 
       <div style={{ marginBottom: 16 }}>
