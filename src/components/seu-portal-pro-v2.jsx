@@ -3894,29 +3894,45 @@ export default function App() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }, [tab]);
 
-  // Browser / Android back button support
-  const handleBackRef = useRef(null);
-  handleBackRef.current = () => {
-    if (showMonthlyReport) { setShowMonthlyReport(false); return; }
-    if (showFocus)         { setShowFocus(false);         return; }
-    if (showAI)            { setShowAI(false);            return; }
-    if (notifOpen)         { setNotifOpen(false);         return; }
-    if (settingsOpen)      { setSettingsOpen(false);      return; }
-    if (searchOpen)        { setSearchOpen(false); setSearchQuery(""); return; }
-    if (course)            { setCourse(null); setTab("explore"); return; }
-    if (tab !== "home")    { setTab("home");               return; }
+  // ── Comprehensive back-button / Android back gesture support ──
+  // Tracks EVERY navigation change (tabs, overlays, courses) in a local stack
+  // and in browser history so popstate fires correctly every time.
+  const navHistoryRef   = useRef([]);
+  const skipNavPushRef  = useRef(false);
+
+  useEffect(() => {
+    if (skipNavPushRef.current) { skipNavPushRef.current = false; return; }
+    const o = [showMonthlyReport?'R':'', showFocus?'F':'', showAI?'A':'',
+               notifOpen?'N':'', settingsOpen?'S':'', searchOpen?'Q':''].join('');
+    const state = { tab, course: course || null, o };
+    const top = navHistoryRef.current[navHistoryRef.current.length - 1];
+    if (!top || top.tab !== state.tab || top.course !== state.course || top.o !== state.o) {
+      navHistoryRef.current.push(state);
+      window.history.pushState(state, '');
+    }
+  }, [tab, course, showMonthlyReport, showFocus, showAI, notifOpen, settingsOpen, searchOpen]);
+
+  const backHandlerRef = useRef(null);
+  backHandlerRef.current = () => {
+    if (navHistoryRef.current.length <= 1) return;
+    skipNavPushRef.current = true;
+    navHistoryRef.current.pop();
+    const prev = navHistoryRef.current[navHistoryRef.current.length - 1];
+    if (!prev) { skipNavPushRef.current = false; return; }
+    // Close overlays that weren't open in previous state
+    if (showMonthlyReport && !prev.o.includes('R')) setShowMonthlyReport(false);
+    if (showFocus        && !prev.o.includes('F')) setShowFocus(false);
+    if (showAI           && !prev.o.includes('A')) setShowAI(false);
+    if (notifOpen        && !prev.o.includes('N')) setNotifOpen(false);
+    if (settingsOpen     && !prev.o.includes('S')) setSettingsOpen(false);
+    if (searchOpen       && !prev.o.includes('Q')) { setSearchOpen(false); setSearchQuery(""); }
+    // Restore tab and course
+    if ((prev.course || null) !== (course || null)) setCourse(prev.course || null);
+    if (prev.tab !== tab) setTab(prev.tab);
   };
 
-  // Push a history entry whenever a new overlay opens so popstate fires
-  const overlayDepthRef = useRef(0);
   useEffect(() => {
-    const depth = [course, showAI, showFocus, notifOpen, settingsOpen, searchOpen, showMonthlyReport].filter(Boolean).length;
-    if (depth > overlayDepthRef.current) window.history.pushState(null, '');
-    overlayDepthRef.current = depth;
-  }, [course, showAI, showFocus, notifOpen, settingsOpen, searchOpen, showMonthlyReport]);
-
-  useEffect(() => {
-    const fn = () => handleBackRef.current?.();
+    const fn = () => backHandlerRef.current?.();
     window.addEventListener('popstate', fn);
     return () => window.removeEventListener('popstate', fn);
   }, []);
