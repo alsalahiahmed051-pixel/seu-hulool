@@ -563,7 +563,12 @@ function AIChat({ subject, t, onChat, standalone = true }) {
         body: JSON.stringify({ subject, messages: history }),
       });
       const d = await res.json();
-      setMsgs(m => [...m, { r: "a", id: mkId(), text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً.", ts: Date.now() }]);
+      const errText = d.error
+        ? d._debug?.length
+          ? `${d.error}\n\n🔍 تفاصيل: ${d._debug.join(" | ")}`
+          : d.error
+        : null;
+      setMsgs(m => [...m, { r: "a", id: mkId(), text: d.text || errText || "عذراً، حدث خطأ. حاول مجدداً.", ts: Date.now() }]);
     } catch {
       setMsgs(m => [...m, { r: "a", id: mkId(), text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة.", ts: Date.now() }]);
     }

@@ -20,33 +20,68 @@ async function callAnthropic(subject, messages) {
 }
 
 async function callOpenRouter(subject, messages) {
-  const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${OPENROUTER_KEY}`,
-      'HTTP-Referer': 'https://seu-hulool.vercel.app',
-      'X-Title': 'SEU Hulool',
-    },
-    body: JSON.stringify({
-      models: [
-        'meta-llama/llama-3.3-70b-instruct:free',
-        'deepseek/deepseek-chat-v3-0324:free',
-        'google/gemma-3-27b-it:free',
-      ],
-      route: 'fallback',
-      messages: [
-        { role: 'system', content: buildSystem(subject) },
-        ...messages,
-      ],
-      max_tokens: 1024,
-    }),
-  })
-  const data = await r.json()
-  if (!r.ok) throw new Error(data.error?.message || 'OpenRouter error')
-  const text = data.choices?.[0]?.message?.content
-  if (!text) throw new Error('empty response from OpenRouter')
-  return text
+  // Try multi-model fallback first, then individual models
+  const freeModels = [
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'deepseek/deepseek-chat-v3-0324:free',
+    'google/gemma-3-27b-it:free',
+    'mistralai/mistral-7b-instruct:free',
+    'qwen/qwen-2.5-7b-instruct:free',
+  ]
+
+  // Try multi-model route with first 3
+  try {
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${OPENROUTER_KEY}`,
+        'HTTP-Referer': 'https://seu-hulool.vercel.app',
+        'X-Title': 'SEU Hulool',
+      },
+      body: JSON.stringify({
+        models: freeModels.slice(0, 3),
+        route: 'fallback',
+        messages: [
+          { role: 'system', content: buildSystem(subject) },
+          ...messages,
+        ],
+        max_tokens: 1024,
+      }),
+    })
+    const data = await r.json()
+    if (r.ok && data.choices?.[0]?.message?.content)
+      return data.choices[0].message.content
+  } catch {}
+
+  // Fallback: try each model individually
+  const errors = []
+  for (const model of freeModels) {
+    try {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENROUTER_KEY}`,
+          'HTTP-Referer': 'https://seu-hulool.vercel.app',
+          'X-Title': 'SEU Hulool',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: buildSystem(subject) },
+            ...messages,
+          ],
+          max_tokens: 1024,
+        }),
+      })
+      const data = await r.json()
+      if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
+      const text = data.choices?.[0]?.message?.content
+      if (text) return text
+    } catch (e) { errors.push(`${model}: ${e.message}`) }
+  }
+  throw new Error(`OpenRouter all failed: ${errors.join('; ')}`)
 }
 
 async function callGroq(subject, messages) {
@@ -144,7 +179,7 @@ export async function POST(request) {
   }
 
   return Response.json(
-    { error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.` },
+    { error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.`, _debug: errors },
     { status: 500 }
   )
 }
