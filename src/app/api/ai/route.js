@@ -33,7 +33,6 @@ async function callOpenRouter(subject, messages) {
         'meta-llama/llama-3.3-70b-instruct:free',
         'deepseek/deepseek-chat-v3-0324:free',
         'google/gemma-3-27b-it:free',
-        'mistralai/mistral-7b-instruct:free',
       ],
       route: 'fallback',
       messages: [
@@ -124,7 +123,7 @@ export async function POST(request) {
     providers.push({ name: 'OpenRouter', fn: () => callOpenRouter(subject, messages) })
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
     providers.push({ name: 'Groq', fn: () => callGroq(subject, messages) })
-  if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder'))
+  if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
     providers.push({ name: 'Gemini', fn: () => callGemini(subject, messages) })
 
   if (providers.length === 0) {
@@ -145,7 +144,7 @@ export async function POST(request) {
   }
 
   return Response.json(
-    { error: `تعذّر الاتصال بالمساعد الذكي — جرّب مجدداً بعد لحظات. (${errors.join(' | ')})` },
+    { error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.` },
     { status: 500 }
   )
 }
