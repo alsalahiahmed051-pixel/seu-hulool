@@ -490,7 +490,7 @@ function StreakWeek({ activeDays, t }) {
 /* ══════════════════════════════════════════════════════════════
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
-function AIChat({ subject, t, onChat, standalone = true }) {
+function AIChat({ subject, t, onChat, standalone = true, files = null }) {
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
@@ -503,12 +503,49 @@ function AIChat({ subject, t, onChat, standalone = true }) {
   const [loading, setLoading] = useState(false);
   const [menuId, setMenuId] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [fileContext, setFileContext] = useState(null);
+  const [fileCount, setFileCount] = useState(0);
+  const [fileSugs, setFileSugs] = useState([]);
   const endRef = useRef(null);
 
   useEffect(() => {
     if (msgs.length > 1) storage.set(histKey, msgs.slice(-20));
   }, [msgs]);
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
+
+  useEffect(() => {
+    if (!files) return;
+    const catNames = { collections: "تجميعات الاختبارات", plans: "خطط دراسية", curriculum: "مناهج ومقررات", programs: "وثائق المادة" };
+    const catAr = { collections: "تجميعة", plans: "خطة", curriculum: "منهج", programs: "مقرر" };
+    const allF = Object.entries(files).flatMap(([cat, arr]) => (arr || []).map(f => ({ ...f, cat })));
+    if (allF.length === 0) return;
+    setFileCount(allF.length);
+    const sugs = [];
+    for (const [cat, arr] of Object.entries(files)) {
+      if ((arr || []).length > 0) sugs.push(`ما مواضيع ${catAr[cat] || cat} "${arr[0].name}"؟`);
+    }
+    if (allF.length > 1) sugs.push("ما أهم ما في الملفات المتاحة؟");
+    setFileSugs(sugs.slice(0, 3));
+    const lines = [`الملفات المتاحة في مادة "${subject}":`];
+    for (const [cat, arr] of Object.entries(files)) {
+      if ((arr || []).length > 0) lines.push(`• ${catNames[cat] || cat}: ${arr.map(f => f.name).join("، ")}`);
+    }
+    const textFiles = allF.filter(f => /\.(txt|md)$/i.test(f.name)).slice(0, 3);
+    Promise.all(textFiles.map(async f => {
+      try {
+        const src = f.blobUrl || f.url;
+        if (!src) return null;
+        const r = await fetch(`/api/download?url=${encodeURIComponent(src)}`);
+        if (!r.ok) return null;
+        const text = await r.text();
+        return `\nمحتوى "${f.name}":\n${text.slice(0, 600)}`;
+      } catch { return null; }
+    })).then(contents => {
+      const valid = contents.filter(Boolean);
+      if (valid.length > 0) lines.push(...valid);
+      setFileContext(lines.join("\n"));
+    }).catch(() => setFileContext(lines.join("\n")));
+  }, [files]);
 
   const clearChat = () => { storage.set(histKey, null); setMsgs([makeDefault()]); setMenuId(null); };
 
@@ -545,7 +582,29 @@ function AIChat({ subject, t, onChat, standalone = true }) {
     setTimeout(() => send(text), 50);
   };
 
-  const suggestions = ["كيف أستعد للاختبار النهائي؟", "ما هي الوحدات المهمة؟", "كيف يُحتسب المعدل؟", "ما نوع الأسئلة في الميدترم؟"];
+  const defaultSugs = [
+    `ما أهم مواضيع ${subject}؟`,
+    "كيف أستعد للاختبار النهائي؟",
+    "لخّص الوحدة الأولى",
+    "ما نوع أسئلة الاختبار؟",
+    "أعطني أمثلة تطبيقية",
+    "نصائح للدراسة الفعّالة",
+  ];
+  const allSugs = [...fileSugs, ...defaultSugs];
+
+  const renderInline = (txt) => txt.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p);
+  const renderMsg = (text) => text.split("\n").map((line, i) => {
+    if (/^#{1,3}\s/.test(line)) {
+      const lvl = (line.match(/^(#{1,3})\s/) || [[],[""]])[1].length;
+      return <div key={i} style={{ fontWeight: 800, fontSize: lvl === 1 ? 15 : 14, marginTop: i > 0 ? 8 : 0, color: P.gold, lineHeight: 1.5 }}>{line.replace(/^#{1,3}\s/, "")}</div>;
+    }
+    const listM = line.match(/^[-•*]\s+(.+)/);
+    if (listM) return <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 2 }}><span style={{ color: P.blue2, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>•</span><span style={{ flex: 1 }}>{renderInline(listM[1])}</span></div>;
+    const numM = line.match(/^([١٢٣٤٥٦٧٨٩\d]+[.،):]\s*)(.+)/);
+    if (numM) return <div key={i} style={{ display: "flex", gap: 8, marginTop: 2 }}><span style={{ color: P.blue2, fontWeight: 700, flexShrink: 0 }}>{numM[1]}</span><span style={{ flex: 1 }}>{renderInline(numM[2])}</span></div>;
+    if (line.trim() === "") return <div key={i} style={{ height: 5 }} />;
+    return <div key={i} style={{ lineHeight: 1.8 }}>{renderInline(line)}</div>;
+  });
 
   const send = async (q) => {
     const text = (q || inp).trim();
@@ -560,7 +619,7 @@ function AIChat({ subject, t, onChat, standalone = true }) {
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, messages: history }),
+        body: JSON.stringify({ subject, messages: history, fileContext }),
       });
       const d = await res.json();
       const errText = d.error
@@ -583,78 +642,79 @@ function AIChat({ subject, t, onChat, standalone = true }) {
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: standalone ? 480 : "100%", borderRadius: standalone ? 20 : 0, overflow: "hidden", border: standalone ? `1px solid ${t.bd}` : "none", boxShadow: standalone ? t.sh : "none" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: standalone ? 540 : "100%", borderRadius: standalone ? 20 : 0, overflow: "hidden", border: standalone ? `1px solid ${t.bd}` : "none", boxShadow: standalone ? t.sh : "none", background: t.s1 }}>
 
       {standalone && (
         <div style={{ background: `linear-gradient(135deg,${P.navy},${P.blue})`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid rgba(255,255,255,.25)" }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid rgba(255,255,255,.25)", flexShrink: 0 }}>
             <Sparkles size={20} color={P.gold} />
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>مساعد {subject}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: "#fff", fontWeight: 800, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>مساعد {subject}</div>
             <div style={{ color: "#4ade80", fontSize: 11, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block" }} />
-              متصل الآن
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block", flexShrink: 0 }} />
+              {fileCount > 0 ? `يستخدم ${fileCount} ملف من المادة` : "متصل الآن"}
             </div>
           </div>
-          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>مسح</button>
+          {fileCount > 0 && (
+            <div style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: P.gold, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, flexShrink: 0, whiteSpace: "nowrap" }}>
+              <FileText size={11} /> {fileCount}
+            </div>
+          )}
+          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
         </div>
       )}
 
-      {/* backdrop to close menu */}
       {menuId && <div onClick={() => setMenuId(null)} style={{ position: "fixed", inset: 0, zIndex: 90 }} />}
 
-      {/* copy toast */}
       {copied && (
-        <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", background: "rgba(15,28,51,.95)", color: "#fff", padding: "8px 18px", borderRadius: 20, fontSize: 12, fontWeight: 700, zIndex: 200, pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ position: "fixed", top: 80, left: "50%", transform: "translateX(-50%)", background: "rgba(15,28,51,.95)", color: "#fff", padding: "8px 18px", borderRadius: 20, fontSize: 12, fontWeight: 700, zIndex: 9999, pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}>
           <CheckCircle size={13} color={P.green} /> تم النسخ
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 4, background: t.s1, position: "relative" }}>
+      {/* Messages area */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "14px 12px", display: "flex", flexDirection: "column", gap: 0, background: t.s1, minHeight: 0 }}>
         {msgs.map((m, i) => {
           const isUser = m.r === "u";
           const prevSame = i > 0 && msgs[i - 1].r === m.r;
           const isMenuOpen = menuId === m.id;
           return (
-            <div key={m.id || i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 2 : 10, animation: "fadeUp .3s ease", position: "relative" }}>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+            <div key={m.id || i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 3 : 14, animation: "fadeUp .3s ease" }}>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, maxWidth: "84%" }}>
                 {!isUser && (
-                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1, boxShadow: `0 2px 8px ${P.blue}40` }}>
-                    <Sparkles size={15} color={P.gold} />
+                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1, boxShadow: `0 2px 8px ${P.blue}40` }}>
+                    <Sparkles size={14} color={P.gold} />
                   </div>
                 )}
                 <div
                   onClick={() => setMenuId(isMenuOpen ? null : m.id)}
                   style={{
-                    maxWidth: "78%", padding: "10px 14px", lineHeight: 1.8, fontSize: 13.5,
+                    padding: "10px 14px", fontSize: 13.5,
                     borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                     background: isUser ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
                     color: isUser ? "#fff" : t.tx,
-                    boxShadow: isMenuOpen
-                      ? `0 0 0 2px ${P.blue2}, 0 4px 20px ${P.blue}50`
-                      : isUser ? `0 4px 16px ${P.blue}40` : `0 2px 8px rgba(0,0,0,.08)`,
+                    boxShadow: isMenuOpen ? `0 0 0 2px ${P.blue2}, 0 6px 24px ${P.blue}40` : isUser ? `0 4px 16px ${P.blue}40` : `0 2px 8px rgba(0,0,0,.07)`,
                     border: isUser ? "none" : `1px solid ${isMenuOpen ? P.blue2 : t.bd}`,
-                    whiteSpace: "pre-wrap", cursor: "pointer", userSelect: "none",
+                    cursor: "pointer", userSelect: "none", wordBreak: "break-word",
                     transition: "box-shadow .15s, border-color .15s",
                   }}>
-                  {m.text.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}
+                  {renderMsg(m.text)}
                 </div>
                 {isUser && (
-                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${P.blue2}20`, border: `1.5px solid ${P.blue2}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <CircleUser size={16} color={P.blue2} />
+                  <div style={{ width: 30, height: 30, borderRadius: "50%", background: `${P.blue2}20`, border: `1.5px solid ${P.blue2}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <CircleUser size={15} color={P.blue2} />
                   </div>
                 )}
               </div>
 
-              {/* action menu */}
               {isMenuOpen && (
                 <div onClick={e => e.stopPropagation()} style={{
-                  position: "absolute", [isUser ? "right" : "left"]: 44,
-                  top: "50%", transform: "translateY(-50%)",
-                  background: t.s1, borderRadius: 14, boxShadow: t.sh,
+                  position: "absolute", [isUser ? "right" : "left"]: 46,
+                  marginTop: 4,
+                  background: t.bg, borderRadius: 14, boxShadow: `0 8px 32px rgba(0,0,0,.2)`,
                   border: `1px solid ${t.bd}`, padding: "5px 6px",
-                  zIndex: 100, minWidth: 160, animation: "scaleIn .15s ease",
+                  zIndex: 100, minWidth: 170, animation: "scaleIn .15s ease",
                 }}>
                   <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => copyMsg(m.text)}>
                     <Copy size={14} color={P.blue2} /> نسخ النص
@@ -672,18 +732,17 @@ function AIChat({ subject, t, onChat, standalone = true }) {
                 </div>
               )}
 
-              <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingLeft: isUser ? 42 : 0, paddingRight: isUser ? 0 : 42 }}>
-                {fmtTime(m.ts)}
-                {isUser && <span style={{ marginRight: 4, color: P.blue2 }}>✓✓</span>}
+              <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingLeft: isUser ? 40 : 0, paddingRight: isUser ? 0 : 40 }}>
+                {fmtTime(m.ts)}{isUser && <span style={{ marginRight: 4, color: P.blue2 }}>✓✓</span>}
               </div>
             </div>
           );
         })}
         {loading && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 14 }}>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Sparkles size={15} color={P.gold} />
+              <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Sparkles size={14} color={P.gold} />
               </div>
               <div style={{ background: t.s2, border: `1px solid ${t.bd}`, padding: "12px 18px", borderRadius: "18px 18px 18px 4px", display: "flex", gap: 5, alignItems: "center" }}>
                 {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
@@ -694,26 +753,30 @@ function AIChat({ subject, t, onChat, standalone = true }) {
         <div ref={endRef} />
       </div>
 
-      {msgs.length <= 2 && !loading && (
-        <div style={{ padding: "8px 12px 4px", display: "flex", gap: 6, flexWrap: "wrap", background: t.s1, borderTop: `1px solid ${t.bd}` }}>
-          {suggestions.map((s, i) => (
+      {/* Suggestions row — always visible, horizontally scrollable */}
+      {!loading && (
+        <div style={{ padding: "7px 12px 6px", display: "flex", gap: 6, overflowX: "auto", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, scrollbarWidth: "none" }}>
+          {allSugs.map((s, i) => (
             <button key={i} onClick={() => send(s)} style={{
-              background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20,
-              padding: "5px 12px", fontSize: 11, color: t.mu, cursor: "pointer",
-              fontFamily: "inherit", transition: "all .2s",
+              whiteSpace: "nowrap", background: i < fileSugs.length ? `${P.blue}10` : t.s2,
+              border: `1px solid ${i < fileSugs.length ? P.blue2 + "50" : t.bd}`,
+              borderRadius: 20, padding: "5px 13px", fontSize: 11,
+              color: i < fileSugs.length ? P.blue2 : t.mu,
+              cursor: "pointer", fontFamily: "inherit", transition: "all .2s", flexShrink: 0,
             }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.color = P.blue2; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.color = t.mu; }}>
-              {s}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.color = P.blue2; e.currentTarget.style.background = `${P.blue2}15`; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = i < fileSugs.length ? P.blue2 + "50" : t.bd; e.currentTarget.style.color = i < fileSugs.length ? P.blue2 : t.mu; e.currentTarget.style.background = i < fileSugs.length ? `${P.blue}10` : t.s2; }}>
+              {i < fileSugs.length ? "📄 " : ""}{s}
             </button>
           ))}
         </div>
       )}
 
+      {/* Input */}
       <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
         <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
-          placeholder={`اسأل عن ${subject}...`}
-          style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s" }}
+          placeholder={fileContext ? `اسأل عن ملفات ${subject}...` : `اسأل عن ${subject}...`}
+          style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
           onFocus={e => e.target.style.borderColor = P.blue2}
           onBlur={e => e.target.style.borderColor = t.bd} />
         <button onClick={() => send()} disabled={loading || !inp.trim()} style={{
@@ -1774,7 +1837,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
               {isOpen && (
                 <div style={{ padding: "0 16px 16px", animation: "fadeUp .3s ease" }}>
                   <div style={{ height: 1, background: t.bd, marginBottom: 14 }} />
-                  {sec.id === "ai" && <AIChat subject={subject} t={t} onChat={onChat} />}
+                  {sec.id === "ai" && <AIChat subject={subject} t={t} onChat={onChat} files={realFiles} />}
                   {sec.id === "notes" && <NotesEditor subject={subject} notes={notes} setNotes={setNotes} t={t} onToast={onToast} />}
                   {sec.id === "flashcards" && <FlashCards subject={subject} t={t} />}
                   {sec.id === "support" && (

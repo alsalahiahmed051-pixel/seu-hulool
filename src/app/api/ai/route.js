@@ -5,13 +5,13 @@ const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
-async function callAnthropic(subject, messages) {
+async function callAnthropic(subject, messages, fileContext) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
-    system: buildSystem(subject),
+    system: buildSystem(subject, fileContext),
     messages,
   })
   const text = res.content[0]?.text
@@ -39,7 +39,7 @@ async function getFreeModels() {
   }
 }
 
-async function callOpenRouter(subject, messages) {
+async function callOpenRouter(subject, messages, fileContext) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
 
@@ -57,7 +57,7 @@ async function callOpenRouter(subject, messages) {
         body: JSON.stringify({
           models: freeModels.slice(0, 3),
           route: 'fallback',
-          messages: [{ role: 'system', content: buildSystem(subject) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, fileContext) }, ...messages],
           max_tokens: 1024,
         }),
       })
@@ -81,7 +81,7 @@ async function callOpenRouter(subject, messages) {
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'system', content: buildSystem(subject) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, fileContext) }, ...messages],
           max_tokens: 1024,
         }),
       })
@@ -94,7 +94,7 @@ async function callOpenRouter(subject, messages) {
   throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 3).join('; ')}`)
 }
 
-async function callGroq(subject, messages) {
+async function callGroq(subject, messages, fileContext) {
   // try multiple models in sequence
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
   for (const model of models) {
@@ -108,7 +108,7 @@ async function callGroq(subject, messages) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject) },
+            { role: 'system', content: buildSystem(subject, fileContext) },
             ...messages,
           ],
           max_tokens: 1024,
@@ -124,7 +124,7 @@ async function callGroq(subject, messages) {
   throw new Error('all Groq models failed')
 }
 
-async function callGemini(subject, messages) {
+async function callGemini(subject, messages, fileContext) {
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
@@ -132,7 +132,7 @@ async function callGemini(subject, messages) {
   const lastMsg = messages[messages.length - 1].content
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
   const body = {
-    system_instruction: { parts: [{ text: buildSystem(subject) }] },
+    system_instruction: { parts: [{ text: buildSystem(subject, fileContext) }] },
     contents: [...history, { role: 'user', parts: [{ text: lastMsg }] }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
@@ -148,28 +148,34 @@ async function callGemini(subject, messages) {
   return text
 }
 
-function buildSystem(subject) {
-  return `أنت مساعد أكاديمي ذكي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية (SEU).
+function buildSystem(subject, fileContext) {
+  let sys = `أنت مساعد أكاديمي ذكي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية (SEU).
 مهمتك مساعدة الطلاب في: شرح المفاهيم، تلخيص الوحدات، حل الأسئلة، وتقديم نصائح دراسية.
 قواعد:
 - أجب دائماً باللغة العربية الفصيحة البسيطة
 - كن موجزاً ودقيقاً ومفيداً
-- استخدم النقاط والعناوين لتنظيم الإجابة عند الحاجة
+- استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة
 - إذا سُئلت عن موضوع خارج المادة فوجّه الطالب بلطف`
+  if (fileContext) {
+    sys += `\n\n${fileContext}
+عند الإجابة: استند إلى هذه الملفات عند الإمكان، وأشر إلى اسم الملف المصدر.
+إذا سأل الطالب عن ملف معين، اشرح محتواه أو وجّهه لتحميله.`
+  }
+  return sys
 }
 
 export async function POST(request) {
-  const { subject, messages } = await request.json()
+  const { subject, messages, fileContext } = await request.json()
 
   const providers = []
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder'))
-    providers.push({ name: 'Anthropic', fn: () => callAnthropic(subject, messages) })
+    providers.push({ name: 'Anthropic', fn: () => callAnthropic(subject, messages, fileContext) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', fn: () => callOpenRouter(subject, messages) })
+    providers.push({ name: 'OpenRouter', fn: () => callOpenRouter(subject, messages, fileContext) })
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', fn: () => callGroq(subject, messages) })
+    providers.push({ name: 'Groq', fn: () => callGroq(subject, messages, fileContext) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', fn: () => callGemini(subject, messages) })
+    providers.push({ name: 'Gemini', fn: () => callGemini(subject, messages, fileContext) })
 
   if (providers.length === 0) {
     return Response.json({
