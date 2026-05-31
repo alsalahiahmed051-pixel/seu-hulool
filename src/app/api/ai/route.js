@@ -19,42 +19,53 @@ async function callAnthropic(subject, messages) {
   return text
 }
 
-async function callOpenRouter(subject, messages) {
-  // Try multi-model fallback first, then individual models
-  const freeModels = [
-    'meta-llama/llama-3.1-8b-instruct:free',
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'google/gemma-2-9b-it:free',
-    'deepseek/deepseek-r1:free',
-    'deepseek/deepseek-chat:free',
-    'mistralai/mistral-7b-instruct:free',
-    'qwen/qwen-2.5-72b-instruct:free',
-  ]
-
-  // Try multi-model route with first 3
+async function getFreeModels() {
   try {
-    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${OPENROUTER_KEY}`,
-        'HTTP-Referer': 'https://seu-hulool.vercel.app',
-        'X-Title': 'SEU Hulool',
-      },
-      body: JSON.stringify({
-        models: ['meta-llama/llama-3.1-8b-instruct:free', 'google/gemma-2-9b-it:free', 'mistralai/mistral-7b-instruct:free'],
-        route: 'fallback',
-        messages: [
-          { role: 'system', content: buildSystem(subject) },
-          ...messages,
-        ],
-        max_tokens: 1024,
-      }),
+    const r = await fetch('https://openrouter.ai/api/v1/models', {
+      headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
     })
+    if (!r.ok) return []
     const data = await r.json()
-    if (r.ok && data.choices?.[0]?.message?.content)
-      return data.choices[0].message.content
-  } catch {}
+    return (data.data || [])
+      .filter(m => {
+        const p = m.pricing?.prompt
+        return p === '0' || p === 0 || p === '0.0' || Number(p) === 0
+      })
+      .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
+      .map(m => m.id)
+      .slice(0, 8)
+  } catch {
+    return []
+  }
+}
+
+async function callOpenRouter(subject, messages) {
+  const freeModels = await getFreeModels()
+  if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
+
+  // Try multi-model fallback with first 3
+  if (freeModels.length >= 3) {
+    try {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENROUTER_KEY}`,
+          'HTTP-Referer': 'https://seu-hulool.vercel.app',
+          'X-Title': 'SEU Hulool',
+        },
+        body: JSON.stringify({
+          models: freeModels.slice(0, 3),
+          route: 'fallback',
+          messages: [{ role: 'system', content: buildSystem(subject) }, ...messages],
+          max_tokens: 1024,
+        }),
+      })
+      const data = await r.json()
+      if (r.ok && data.choices?.[0]?.message?.content)
+        return data.choices[0].message.content
+    } catch {}
+  }
 
   // Fallback: try each model individually
   const errors = []
@@ -70,10 +81,7 @@ async function callOpenRouter(subject, messages) {
         },
         body: JSON.stringify({
           model,
-          messages: [
-            { role: 'system', content: buildSystem(subject) },
-            ...messages,
-          ],
+          messages: [{ role: 'system', content: buildSystem(subject) }, ...messages],
           max_tokens: 1024,
         }),
       })
@@ -83,7 +91,7 @@ async function callOpenRouter(subject, messages) {
       if (text) return text
     } catch (e) { errors.push(`${model}: ${e.message}`) }
   }
-  throw new Error(`OpenRouter all failed: ${errors.join('; ')}`)
+  throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 3).join('; ')}`)
 }
 
 async function callGroq(subject, messages) {
