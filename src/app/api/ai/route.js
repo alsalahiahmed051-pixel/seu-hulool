@@ -22,11 +22,13 @@ async function callAnthropic(subject, messages) {
 async function callOpenRouter(subject, messages) {
   // Try multi-model fallback first, then individual models
   const freeModels = [
+    'meta-llama/llama-3.1-8b-instruct:free',
     'meta-llama/llama-3.3-70b-instruct:free',
-    'deepseek/deepseek-chat-v3-0324:free',
-    'google/gemma-3-27b-it:free',
+    'google/gemma-2-9b-it:free',
+    'deepseek/deepseek-r1:free',
+    'deepseek/deepseek-chat:free',
     'mistralai/mistral-7b-instruct:free',
-    'qwen/qwen-2.5-7b-instruct:free',
+    'qwen/qwen-2.5-72b-instruct:free',
   ]
 
   // Try multi-model route with first 3
@@ -40,7 +42,7 @@ async function callOpenRouter(subject, messages) {
         'X-Title': 'SEU Hulool',
       },
       body: JSON.stringify({
-        models: freeModels.slice(0, 3),
+        models: ['meta-llama/llama-3.1-8b-instruct:free', 'google/gemma-2-9b-it:free', 'mistralai/mistral-7b-instruct:free'],
         route: 'fallback',
         messages: [
           { role: 'system', content: buildSystem(subject) },
