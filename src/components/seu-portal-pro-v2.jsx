@@ -3841,6 +3841,12 @@ export default function App() {
   const [showMonthlyReport, setShowMonthlyReport] = useState(false);
   const [aiSubject, setAiSubject] = useState("عام");
   const [aiGlobalTab, setAiGlobalTab] = useState("chat");
+  const [aiClearKey, setAiClearKey] = useState(0);
+  const clearGlobalAI = () => {
+    const histKey = `aiHistory_${aiSubject.replace(/\s+/g, "_").slice(0, 40)}`;
+    storage.set(histKey, null);
+    setAiClearKey(k => k + 1);
+  };
   const [notifOpen, setNotifOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -4164,6 +4170,7 @@ export default function App() {
                   متصل — يجيب بالعربية
                 </div>
               </div>
+              <button onClick={clearGlobalAI} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
             </div>
             {/* Subject Selector + Tab Toggle */}
             <div style={{ padding: "6px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -4209,7 +4216,7 @@ export default function App() {
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {aiGlobalTab === "chat"
-              ? <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
+              ? <AIChat key={`${aiSubject}-${aiClearKey}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} /></div>
             }
           </div>
