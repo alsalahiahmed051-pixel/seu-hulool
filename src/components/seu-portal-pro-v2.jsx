@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
-  RotateCcw, Award, TrendingUp, Users, CheckCircle, X, Plus,
+  RotateCcw, Award, TrendingUp, Users, CheckCircle, X, Plus, Copy,
   Minus, Calendar, ArrowLeft, GraduationCap, Eye, Download,
   Bookmark, Zap, BarChart2, BookOpen, AlarmClock, Monitor,
   Briefcase, Globe, Code, Trophy, Flag, Coffee, Target,
@@ -492,13 +492,17 @@ function StreakWeek({ activeDays, t }) {
    ══════════════════════════════════════════════════════════════ */
 function AIChat({ subject, t, onChat, standalone = true }) {
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
-  const makeDefault = () => ({ r: "a", text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
+  const mkId = () => Date.now() + Math.random();
+  const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
   const [msgs, setMsgs] = useState(() => {
     const stored = storage.get(histKey, null);
-    return (stored && stored.length > 0) ? stored : [makeDefault()];
+    if (stored && stored.length > 0) return stored.map(m => ({ ...m, id: m.id || mkId() }));
+    return [makeDefault()];
   });
   const [inp, setInp] = useState("");
   const [loading, setLoading] = useState(false);
+  const [menuId, setMenuId] = useState(null);
+  const [copied, setCopied] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -506,11 +510,39 @@ function AIChat({ subject, t, onChat, standalone = true }) {
   }, [msgs]);
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
 
-  const clearChat = () => { storage.set(histKey, null); setMsgs([makeDefault()]); };
+  const clearChat = () => { storage.set(histKey, null); setMsgs([makeDefault()]); setMenuId(null); };
 
   const fmtTime = (ts) => {
     if (!ts) return "";
     return new Date(ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", hour12: true });
+  };
+
+  const deleteMsg = (id) => {
+    setMsgs(ms => ms.length <= 1 ? ms : ms.filter(m => m.id !== id));
+    setMenuId(null);
+  };
+
+  const copyMsg = (text) => {
+    const plain = text.replace(/\*\*/g, "");
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(plain).catch(() => {});
+    } else {
+      try {
+        const el = document.createElement("textarea");
+        el.value = plain; document.body.appendChild(el); el.select();
+        document.execCommand("copy"); document.body.removeChild(el);
+      } catch {}
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+    setMenuId(null);
+  };
+
+  const resendMsg = (id, text) => {
+    const idx = msgs.findIndex(m => m.id === id);
+    setMsgs(ms => ms.slice(0, idx));
+    setMenuId(null);
+    setTimeout(() => send(text), 50);
   };
 
   const suggestions = ["كيف أستعد للاختبار النهائي؟", "ما هي الوحدات المهمة؟", "كيف يُحتسب المعدل؟", "ما نوع الأسئلة في الميدترم؟"];
@@ -519,7 +551,8 @@ function AIChat({ subject, t, onChat, standalone = true }) {
     const text = (q || inp).trim();
     if (!text || loading) return;
     setInp("");
-    const newMsgs = [...msgs, { r: "u", text, ts: Date.now() }];
+    const newMsg = { r: "u", id: mkId(), text, ts: Date.now() };
+    const newMsgs = [...msgs, newMsg];
     setMsgs(newMsgs);
     setLoading(true);
     onChat?.();
@@ -530,12 +563,19 @@ function AIChat({ subject, t, onChat, standalone = true }) {
         body: JSON.stringify({ subject, messages: history }),
       });
       const d = await res.json();
-      setMsgs(m => [...m, { r: "a", text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً.", ts: Date.now() }]);
+      setMsgs(m => [...m, { r: "a", id: mkId(), text: d.text || d.error || "عذراً، حدث خطأ. حاول مجدداً.", ts: Date.now() }]);
     } catch {
-      setMsgs(m => [...m, { r: "a", text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة.", ts: Date.now() }]);
+      setMsgs(m => [...m, { r: "a", id: mkId(), text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة.", ts: Date.now() }]);
     }
     setLoading(false);
   };
+
+  const menuBtnSt = (danger) => ({
+    background: "none", border: "none", padding: "9px 14px", cursor: "pointer",
+    fontSize: 13, color: danger ? P.red : t.tx, fontFamily: "inherit", fontWeight: 600,
+    display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "right",
+    borderRadius: 8, transition: "background .15s",
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: standalone ? 480 : "100%", borderRadius: standalone ? 20 : 0, overflow: "hidden", border: standalone ? `1px solid ${t.bd}` : "none", boxShadow: standalone ? t.sh : "none" }}>
@@ -552,44 +592,81 @@ function AIChat({ subject, t, onChat, standalone = true }) {
               متصل الآن
             </div>
           </div>
-          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>مسح المحادثة</button>
+          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>مسح</button>
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 4, background: t.s1 }}>
+      {/* backdrop to close menu */}
+      {menuId && <div onClick={() => setMenuId(null)} style={{ position: "fixed", inset: 0, zIndex: 90 }} />}
+
+      {/* copy toast */}
+      {copied && (
+        <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", background: "rgba(15,28,51,.95)", color: "#fff", padding: "8px 18px", borderRadius: 20, fontSize: 12, fontWeight: 700, zIndex: 200, pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}>
+          <CheckCircle size={13} color={P.green} /> تم النسخ
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px", display: "flex", flexDirection: "column", gap: 4, background: t.s1, position: "relative" }}>
         {msgs.map((m, i) => {
           const isUser = m.r === "u";
           const prevSame = i > 0 && msgs[i - 1].r === m.r;
+          const isMenuOpen = menuId === m.id;
           return (
-            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 2 : 10, animation: "fadeUp .3s ease" }}>
+            <div key={m.id || i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 2 : 10, animation: "fadeUp .3s ease", position: "relative" }}>
               <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-                {/* AI avatar on the left of AI bubble */}
                 {!isUser && (
                   <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1, boxShadow: `0 2px 8px ${P.blue}40` }}>
                     <Sparkles size={15} color={P.gold} />
                   </div>
                 )}
-                <div style={{
-                  maxWidth: "78%", padding: "10px 14px", lineHeight: 1.8, fontSize: 13.5,
-                  /* user=right side: round everywhere except bottom-right tail */
-                  /* AI=left side: round everywhere except bottom-left tail */
-                  borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                  /* user bubble = blue (like WhatsApp green), AI bubble = card color */
-                  background: isUser ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
-                  color: isUser ? "#fff" : t.tx,
-                  boxShadow: isUser ? `0 4px 16px ${P.blue}40` : `0 2px 8px rgba(0,0,0,.08)`,
-                  border: isUser ? "none" : `1px solid ${t.bd}`,
-                  whiteSpace: "pre-wrap",
-                }}>
+                <div
+                  onClick={() => setMenuId(isMenuOpen ? null : m.id)}
+                  style={{
+                    maxWidth: "78%", padding: "10px 14px", lineHeight: 1.8, fontSize: 13.5,
+                    borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                    background: isUser ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
+                    color: isUser ? "#fff" : t.tx,
+                    boxShadow: isMenuOpen
+                      ? `0 0 0 2px ${P.blue2}, 0 4px 20px ${P.blue}50`
+                      : isUser ? `0 4px 16px ${P.blue}40` : `0 2px 8px rgba(0,0,0,.08)`,
+                    border: isUser ? "none" : `1px solid ${isMenuOpen ? P.blue2 : t.bd}`,
+                    whiteSpace: "pre-wrap", cursor: "pointer", userSelect: "none",
+                    transition: "box-shadow .15s, border-color .15s",
+                  }}>
                   {m.text.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p)}
                 </div>
-                {/* User avatar on the right of user bubble */}
                 {isUser && (
                   <div style={{ width: 32, height: 32, borderRadius: "50%", background: `${P.blue2}20`, border: `1.5px solid ${P.blue2}40`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <CircleUser size={16} color={P.blue2} />
                   </div>
                 )}
               </div>
+
+              {/* action menu */}
+              {isMenuOpen && (
+                <div onClick={e => e.stopPropagation()} style={{
+                  position: "absolute", [isUser ? "right" : "left"]: 44,
+                  top: "50%", transform: "translateY(-50%)",
+                  background: t.s1, borderRadius: 14, boxShadow: t.sh,
+                  border: `1px solid ${t.bd}`, padding: "5px 6px",
+                  zIndex: 100, minWidth: 160, animation: "scaleIn .15s ease",
+                }}>
+                  <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => copyMsg(m.text)}>
+                    <Copy size={14} color={P.blue2} /> نسخ النص
+                  </button>
+                  {isUser && !loading && (
+                    <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => resendMsg(m.id, m.text)}>
+                      <RotateCcw size={14} color={P.green} /> إعادة الإرسال
+                    </button>
+                  )}
+                  {i > 0 && (
+                    <button style={menuBtnSt(true)} onMouseEnter={e => e.currentTarget.style.background = `${P.red}10`} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => deleteMsg(m.id)}>
+                      <Trash2 size={14} color={P.red} /> حذف
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingLeft: isUser ? 42 : 0, paddingRight: isUser ? 0 : 42 }}>
                 {fmtTime(m.ts)}
                 {isUser && <span style={{ marginRight: 4, color: P.blue2 }}>✓✓</span>}
