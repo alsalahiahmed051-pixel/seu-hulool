@@ -13,7 +13,8 @@ import {
   PenLine, Compass, Lightbulb, Shield, ArrowUpRight, Hash,
   ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
-  AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser
+  AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
+  Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -137,6 +138,24 @@ const TREE = {
 };
 
 const ALL_COURSES = (() => {
+  const out = new Set();
+  Object.values(TREE.preparatory.plans).forEach(p => p.subjects.forEach(s => out.add(s)));
+  TREE.bachelor.colleges.forEach(c => c.programs.forEach(p => out.add(p)));
+  TREE.diploma.programs.forEach(p => out.add(p));
+  TREE.graduate.programs.forEach(p => out.add(p));
+  return [...out];
+})();
+
+/* XP Level helper */
+function getXpLevel(xp) {
+  if (xp >= 5000) return { name: "أستاذ", stars: "⭐⭐⭐⭐⭐", next: null, min: 5000 };
+  if (xp >= 3000) return { name: "خبير", stars: "⭐⭐⭐⭐", next: 5000, min: 3000 };
+  if (xp >= 1500) return { name: "متقدم", stars: "⭐⭐⭐", next: 3000, min: 1500 };
+  if (xp >= 500) return { name: "متوسط", stars: "⭐⭐", next: 1500, min: 500 };
+  return { name: "مبتدئ", stars: "⭐", next: 500, min: 0 };
+}
+
+const ALL_SUBJECTS_LIST = (() => {
   const out = new Set();
   Object.values(TREE.preparatory.plans).forEach(p => p.subjects.forEach(s => out.add(s)));
   TREE.bachelor.colleges.forEach(c => c.programs.forEach(p => out.add(p)));
@@ -506,7 +525,14 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
   const [fileContext, setFileContext] = useState(null);
   const [fileCount, setFileCount] = useState(0);
   const [fileSugs, setFileSugs] = useState([]);
+  const [recording, setRecording] = useState(false);
+  const [hasSpeech, setHasSpeech] = useState(false);
+  const recogRef = useRef(null);
   const endRef = useRef(null);
+
+  useEffect(() => {
+    setHasSpeech(!!(typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)));
+  }, []);
 
   useEffect(() => {
     if (msgs.length > 1) storage.set(histKey, msgs.slice(-20));
@@ -632,6 +658,25 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
       setMsgs(m => [...m, { r: "a", id: mkId(), text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة.", ts: Date.now() }]);
     }
     setLoading(false);
+  };
+
+  const toggleRecording = () => {
+    if (recording) {
+      recogRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const r = new SR();
+    r.lang = "ar-SA";
+    r.interimResults = false;
+    r.onresult = (e) => { const t = e.results[0][0].transcript; setInp(prev => prev + t); };
+    r.onend = () => setRecording(false);
+    r.onerror = () => setRecording(false);
+    recogRef.current = r;
+    r.start();
+    setRecording(true);
   };
 
   const menuBtnSt = (danger) => ({
@@ -779,6 +824,18 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
           onFocus={e => e.target.style.borderColor = P.blue2}
           onBlur={e => e.target.style.borderColor = t.bd} />
+        {hasSpeech && (
+          <button onClick={toggleRecording} style={{
+            width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
+            background: recording ? P.red : t.s3,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            boxShadow: recording ? `0 0 0 3px ${P.red}40` : "none",
+            transition: "all .2s",
+            animation: recording ? "pulse 1.2s infinite" : "none",
+          }}>
+            {recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
+          </button>
+        )}
         <button onClick={() => send()} disabled={loading || !inp.trim()} style={{
           width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || !inp.trim() ? "not-allowed" : "pointer",
           background: loading || !inp.trim() ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
@@ -788,6 +845,146 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
           <Send size={17} color={loading || !inp.trim() ? t.dim : "#fff"} />
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AI QUIZ MODE
+   ══════════════════════════════════════════════════════════════ */
+function QuizMode({ subject, t, onToast }) {
+  const [quiz, setQuiz] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [selected, setSelected] = useState(null);
+  const [score, setScore] = useState(0);
+  const [done, setDone] = useState(false);
+
+  const startQuiz = async () => {
+    setLoading(true); setQuiz(null); setCurrent(0); setSelected(null); setScore(0); setDone(false);
+    try {
+      const res = await fetch("/api/ai-quiz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject }) });
+      const d = await res.json();
+      if (d.quiz && Array.isArray(d.quiz)) { setQuiz(d.quiz); }
+      else { onToast?.(d.error || "تعذّر توليد الاختبار", "error"); }
+    } catch { onToast?.("خطأ في الاتصال", "error"); }
+    setLoading(false);
+  };
+
+  const choose = (idx) => {
+    if (selected !== null) return;
+    setSelected(idx);
+    const isCorrect = idx === quiz[current].answer;
+    if (isCorrect) setScore(s => s + 1);
+  };
+
+  const next = () => {
+    if (current + 1 >= quiz.length) {
+      setDone(true);
+      const finalScore = selected === quiz[current].answer ? score + 1 : score;
+      const existing = storage.get("quiz_scores", []);
+      storage.set("quiz_scores", [...existing, { subject, score: finalScore, total: quiz.length, date: Date.now() }]);
+      // Award XP
+      const xp = storage.get("xp", 0);
+      storage.set("xp", xp + 50);
+      onToast?.(`+50 XP! أكملت الاختبار`, "success");
+    } else {
+      setCurrent(c => c + 1); setSelected(null);
+    }
+  };
+
+  const finalScore = done ? (selected === quiz?.[quiz.length - 1]?.answer ? score : score) : score;
+
+  if (!quiz && !loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "30px 20px" }}>
+        <div style={{ width: 64, height: 64, borderRadius: 18, background: `${P.purple}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", border: `1px solid ${P.purple}30` }}>
+          <FileQuestion size={28} color={P.purple} />
+        </div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, marginBottom: 8 }}>اختبار بالذكاء الاصطناعي</div>
+        <div style={{ fontSize: 12, color: t.mu, marginBottom: 20, lineHeight: 1.7 }}>سيولّد الذكاء الاصطناعي 5 أسئلة اختيار من متعدد عن مادة {subject}</div>
+        <Btn variant="primary" onClick={startQuiz}>
+          <Brain size={15} /> ابدأ اختبار جديد
+        </Btn>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: "40px 20px" }}>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 14 }}>
+          {[0,1,2].map(i => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: P.purple, animation: `bounce .9s ${i * .15}s infinite` }} />)}
+        </div>
+        <div style={{ fontSize: 13, color: t.mu }}>جارٍ توليد الأسئلة…</div>
+      </div>
+    );
+  }
+
+  if (done) {
+    const pct = Math.round((finalScore / quiz.length) * 100);
+    const msg = pct >= 80 ? "ممتاز! أداء رائع" : pct >= 60 ? "جيد! استمر" : "تحتاج مراجعة أكثر";
+    const col = pct >= 80 ? P.green : pct >= 60 ? P.orange : P.red;
+    return (
+      <div style={{ textAlign: "center", padding: "20px 10px" }}>
+        <div style={{ width: 80, height: 80, borderRadius: "50%", background: `${col}18`, border: `3px solid ${col}40`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: col }}>{finalScore}/{quiz.length}</div>
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: t.tx, marginBottom: 6 }}>حصلت على {finalScore} من {quiz.length}</div>
+        <div style={{ fontSize: 13, color: col, fontWeight: 700, marginBottom: 20 }}>{msg}</div>
+        <div style={{ fontSize: 11, color: t.mu, marginBottom: 16 }}>+50 XP أُضيفت لرصيدك</div>
+        <Btn variant="primary" onClick={startQuiz}>
+          <RotateCcw size={14} /> إعادة الاختبار
+        </Btn>
+      </div>
+    );
+  }
+
+  const q = quiz[current];
+  const optLetters = ["أ", "ب", "ج", "د"];
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: t.mu }}>السؤال {current + 1} / {quiz.length}</div>
+        <div style={{ fontSize: 12, color: P.green, fontWeight: 700 }}>{score} صحيح</div>
+      </div>
+      <div style={{ height: 4, background: t.s3, borderRadius: 2, marginBottom: 16, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${((current) / quiz.length) * 100}%`, background: `linear-gradient(90deg,${P.purple},${P.blue2})`, borderRadius: 2, transition: "width .4s" }} />
+      </div>
+      <div style={{ background: t.s2, borderRadius: 14, padding: 16, marginBottom: 14, border: `1px solid ${t.bd}` }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: t.tx, lineHeight: 1.7 }}>{q.q}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+        {q.options.map((opt, i) => {
+          const isCorrect = i === q.answer;
+          const isSelected = i === selected;
+          let bg = t.s1; let border = t.bd; let color = t.tx;
+          if (selected !== null) {
+            if (isCorrect) { bg = `${P.green}18`; border = P.green; color = P.green; }
+            else if (isSelected) { bg = `${P.red}18`; border = P.red; color = P.red; }
+          }
+          return (
+            <button key={i} onClick={() => choose(i)} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+              background: bg, border: `1.5px solid ${border}`, borderRadius: 10,
+              cursor: selected !== null ? "default" : "pointer", fontFamily: "inherit",
+              textAlign: "right", transition: "all .2s",
+            }}>
+              <div style={{ width: 26, height: 26, borderRadius: 8, background: `${border}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: border }}>{optLetters[i]}</span>
+              </div>
+              <span style={{ fontSize: 13, color, flex: 1 }}>{opt}</span>
+              {selected !== null && isCorrect && <CheckCircle size={16} color={P.green} />}
+              {selected !== null && isSelected && !isCorrect && <X size={16} color={P.red} />}
+            </button>
+          );
+        })}
+      </div>
+      {selected !== null && (
+        <Btn variant="primary" onClick={next} style={{ width: "100%" }}>
+          {current + 1 >= quiz.length ? "عرض النتيجة" : "السؤال التالي"} <ChevronLeft size={15} />
+        </Btn>
+      )}
     </div>
   );
 }
@@ -1736,6 +1933,29 @@ function CourseProgress({ subject, t }) {
   );
 }
 
+function AISection({ subject, t, onChat, files, onToast }) {
+  const [aiTab, setAiTab] = useState("chat");
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {[["chat", "محادثة", Sparkles], ["quiz", "اختبار", FileQuestion]].map(([id, label, Ic]) => (
+          <button key={id} onClick={() => setAiTab(id)} style={{
+            flex: 1, padding: "8px", borderRadius: 10,
+            background: aiTab === id ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
+            border: `1px solid ${aiTab === id ? P.blue2 : t.bd}`,
+            color: aiTab === id ? "#fff" : t.mu, cursor: "pointer", fontFamily: "inherit",
+            fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all .2s",
+          }}>
+            <Ic size={14} /> {label}
+          </button>
+        ))}
+      </div>
+      {aiTab === "chat" && <AIChat subject={subject} t={t} onChat={onChat} files={files} />}
+      {aiTab === "quiz" && <QuizMode subject={subject} t={t} onToast={onToast} />}
+    </div>
+  );
+}
+
 function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast }) {
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
@@ -1837,7 +2057,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
               {isOpen && (
                 <div style={{ padding: "0 16px 16px", animation: "fadeUp .3s ease" }}>
                   <div style={{ height: 1, background: t.bd, marginBottom: 14 }} />
-                  {sec.id === "ai" && <AIChat subject={subject} t={t} onChat={onChat} files={realFiles} />}
+                  {sec.id === "ai" && <AISection subject={subject} t={t} onChat={onChat} files={realFiles} onToast={onToast} />}
                   {sec.id === "notes" && <NotesEditor subject={subject} notes={notes} setNotes={setNotes} t={t} onToast={onToast} />}
                   {sec.id === "flashcards" && <FlashCards subject={subject} t={t} />}
                   {sec.id === "support" && (
@@ -1911,6 +2131,408 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
 /* ══════════════════════════════════════════════════════════════
    HOME PAGE
    ══════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════
+   STUDY ANALYTICS (Feature 6)
+   ══════════════════════════════════════════════════════════════ */
+function StudyAnalytics({ sessionLog, t }) {
+  const now = Date.now();
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const recent = (sessionLog || []).filter(s => {
+    const ts = s.t || (s.date ? new Date(s.date).getTime() : 0);
+    return ts >= weekAgo;
+  });
+  const totalMins = recent.reduce((a, s) => a + (s.dur || 25), 0);
+  const bySubject = {};
+  recent.forEach(s => {
+    const subj = s.subject || "عام";
+    bySubject[subj] = (bySubject[subj] || 0) + (s.dur || 25);
+  });
+  const sorted = Object.entries(bySubject).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxMins = sorted[0]?.[1] || 1;
+
+  if (recent.length === 0) {
+    return (
+      <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginTop: 16, border: `1px solid ${t.bd}` }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+          <BarChart size={15} color={P.purple} /> إحصائيات المذاكرة
+        </div>
+        <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 12, lineHeight: 1.7 }}>
+          لم تسجّل أي جلسات مذاكرة هذا الأسبوع — استخدم مؤقت البومودورو
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginTop: 16, border: `1px solid ${t.bd}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+          <BarChart size={15} color={P.purple} /> إحصائيات المذاكرة
+        </div>
+        <div style={{ fontSize: 11, color: t.mu }}>{totalMins} دقيقة هذا الأسبوع</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {sorted.map(([subject, mins]) => {
+          const pct = Math.round((mins / maxMins) * 100);
+          return (
+            <div key={subject}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 12, color: t.tx, fontWeight: 600 }}>{subject}</span>
+                <span style={{ fontSize: 11, color: t.mu }}>{mins}د</span>
+              </div>
+              <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${P.purple},${P.blue2})`, borderRadius: 3, transition: "width .6s" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   XP BAR (Feature 8)
+   ══════════════════════════════════════════════════════════════ */
+function XPBar({ xp, t }) {
+  const level = getXpLevel(xp);
+  const progress = level.next ? Math.round(((xp - level.min) / (level.next - level.min)) * 100) : 100;
+  return (
+    <div style={{ background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <div style={{ width: 38, height: 38, borderRadius: 12, background: `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Trophy size={18} color={P.gold} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{level.stars} {level.name}</div>
+          <div style={{ fontSize: 11, color: t.mu }}>{xp} XP{level.next ? ` / ${level.next}` : " (أقصى مستوى)"}</div>
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 900, color: P.gold }}>{xp}</div>
+      </div>
+      {level.next && (
+        <div>
+          <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${progress}%`, background: `linear-gradient(90deg,${P.gold},${P.orange})`, borderRadius: 3, transition: "width .6s" }} />
+          </div>
+          <div style={{ fontSize: 10, color: t.mu, marginTop: 4 }}>
+            {level.next - xp} XP للمستوى التالي
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   EXAM COUNTDOWN WIDGET (Feature 2)
+   ══════════════════════════════════════════════════════════════ */
+function ExamCountdown({ exams, setExams, t, onToast, setXp }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newExam, setNewExam] = useState({ subject: ALL_SUBJECTS_LIST[0] || "", date: "", type: "ميدترم" });
+  const today = todayKey();
+
+  const upcoming = (exams || []).filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+
+  const addExam = () => {
+    if (!newExam.date) return;
+    setExams(prev => [...(prev || []), { ...newExam, id: Date.now() }]);
+    setNewExam({ subject: ALL_SUBJECTS_LIST[0] || "", date: "", type: "ميدترم" });
+    setShowAdd(false);
+    // Award XP
+    const xp = storage.get("xp", 0);
+    storage.set("xp", xp + 20);
+    setXp(xp + 20);
+    onToast?.("تم إضافة الاختبار +20 XP", "success");
+  };
+
+  const remove = (id) => setExams(prev => (prev || []).filter(e => e.id !== id));
+
+  const countdownColor = (days) => days <= 3 ? P.red : days <= 7 ? P.orange : P.green;
+
+  return (
+    <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+          <Calendar size={15} color={P.red} /> اختباراتي القادمة
+        </div>
+        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.red}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.red, fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+          <Plus size={12} /> اختبار
+        </button>
+      </div>
+      {showAdd && (
+        <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <select value={newExam.subject} onChange={e => setNewExam(p => ({ ...p, subject: e.target.value }))}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }}>
+              {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input type="date" value={newExam.date} onChange={e => setNewExam(p => ({ ...p, date: e.target.value }))}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+              <select value={newExam.type} onChange={e => setNewExam(p => ({ ...p, type: e.target.value }))}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }}>
+                {["ميدترم", "نهائي", "مشروع"].map(tp => <option key={tp} value={tp}>{tp}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
+              <Btn variant="primary" size="sm" onClick={addExam} style={{ flex: 2 }} disabled={!newExam.date}>
+                <Plus size={14} /> إضافة
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+      {upcoming.length === 0 ? (
+        <div style={{ textAlign: "center", padding: "10px 0", color: t.dim, fontSize: 12 }}>لا اختبارات قادمة — أضف اختبارك الأول!</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {upcoming.slice(0, 5).map(exam => {
+            const days = Math.ceil((new Date(exam.date) - new Date(today)) / 86400000);
+            const cc = countdownColor(days);
+            return (
+              <div key={exam.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}` }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{exam.subject}</div>
+                  <div style={{ fontSize: 10, color: t.mu, marginTop: 1 }}>{exam.type} • {new Date(exam.date + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</div>
+                </div>
+                <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                  {days === 0 ? "اليوم!" : days === 1 ? "غداً" : `تبقى ${days} يوم`}
+                </div>
+                <button onClick={() => remove(exam.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
+                  <X size={11} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MONTHLY REPORT MODAL (Feature 7)
+   ══════════════════════════════════════════════════════════════ */
+function MonthlyReportModal({ t, sessionLog, tasks, semesters, onClose }) {
+  const now = new Date();
+  const monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+  const monthName = monthNames[now.getMonth()];
+
+  const thisMonth = (sessionLog || []).filter(s => {
+    const d = new Date(s.t || (s.date ? s.date + "T12:00:00" : Date.now()));
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const totalMonthMins = thisMonth.reduce((a, s) => a + (s.dur || 25), 0);
+  const totalMonthHours = Math.floor(totalMonthMins / 60);
+
+  const doneTasks = (tasks || []).filter(tk => tk.done).length;
+  const lastGpa = semesters?.length ? parseFloat(semesters[semesters.length - 1]?.gpa || 0) : null;
+
+  const bySubject = {};
+  thisMonth.forEach(s => { const sub = s.subject || "عام"; bySubject[sub] = (bySubject[sub] || 0) + (s.dur || 25); });
+  const topSubject = Object.entries(bySubject).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
+
+  const studyDays = new Set(thisMonth.map(s => s.date || new Date(s.t || Date.now()).toISOString().slice(0, 10))).size;
+
+  // Weekly breakdown for this month
+  const weeklyMins = [0, 0, 0, 0, 0];
+  thisMonth.forEach(s => {
+    const d = new Date(s.t || (s.date ? s.date + "T12:00:00" : Date.now()));
+    const dayOfMonth = d.getDate();
+    const weekIdx = Math.min(Math.floor((dayOfMonth - 1) / 7), 4);
+    weeklyMins[weekIdx] += (s.dur || 25);
+  });
+  const maxWeekMins = Math.max(...weeklyMins, 1);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,.6)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, animation: "fadeIn .2s ease" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.s1, borderRadius: 24, padding: 24, maxWidth: 420, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: t.sh, border: `1px solid ${t.bd}`, animation: "scaleIn .25s ease" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <div style={{ fontSize: 17, fontWeight: 900, color: t.tx, display: "flex", alignItems: "center", gap: 8 }}>
+            <FileBarChart size={18} color={P.blue2} /> التقرير الشهري
+          </div>
+          <button onClick={onClose} style={{ background: t.s2, border: "none", borderRadius: 8, padding: 7, cursor: "pointer", display: "flex", color: t.mu }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div style={{ background: t.hero, borderRadius: 16, padding: 16, marginBottom: 16, textAlign: "center" }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: P.gold }}>{monthName} {now.getFullYear()}</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginTop: 4 }}>التقرير الشهري الأكاديمي</div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          {[
+            { label: "ساعات الدراسة", value: totalMonthHours + "س", color: P.blue2, Icon: Clock },
+            { label: "مهام منجزة", value: doneTasks, color: P.green, Icon: CheckCircle },
+            { label: "آخر معدل", value: lastGpa ? lastGpa.toFixed(2) : "—", color: P.gold, Icon: Trophy },
+            { label: "أيام الدراسة", value: studyDays, color: P.purple, Icon: Calendar },
+          ].map(({ label, value, color, Icon: Ic }) => (
+            <div key={label} style={{ background: t.s2, borderRadius: 12, padding: 12, border: `1px solid ${t.bd}`, textAlign: "center" }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
+                <Ic size={15} color={color} />
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
+              <div style={{ fontSize: 10, color: t.mu, marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 16, border: `1px solid ${t.bd}` }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 4 }}>المادة الأكثر مذاكرة</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: P.blue2 }}>{topSubject}</div>
+        </div>
+
+        <div style={{ background: t.s1, borderRadius: 14, padding: 14, border: `1px solid ${t.bd}` }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>دقائق الدراسة أسبوعياً</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
+            {weeklyMins.map((v, i) => {
+              const h = Math.max(4, (v / maxWeekMins) * 100);
+              return (
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                  <div style={{ fontSize: 9, color: t.dim }}>{v}</div>
+                  <div style={{ width: "100%", height: `${h}%`, borderRadius: "4px 4px 0 0", background: `linear-gradient(180deg,${P.blue2},${P.blue})`, minHeight: 4 }} />
+                  <div style={{ fontSize: 9, color: t.mu }}>أ{i + 1}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FOCUS MODE OVERLAY (Feature 5)
+   ══════════════════════════════════════════════════════════════ */
+function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessions, soundOn, onToast, onClose, setXp }) {
+  const [focusSubject, setFocusSubject] = useState(ALL_SUBJECTS_LIST[0] || "عام");
+  const [mode, setMode] = useState("work");
+  const [secs, setSecs] = useState(25 * 60);
+  const [running, setRunning] = useState(false);
+  const [focusQ, setFocusQ] = useState("");
+  const [focusA, setFocusA] = useState("");
+  const [focusLoading, setFocusLoading] = useState(false);
+  const timerRef = useRef(null);
+  const DURATIONS = { work: 25 * 60, short: 5 * 60 };
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
+  const ss = String(secs % 60).padStart(2, "0");
+  const prog = 1 - secs / DURATIONS[mode];
+  const r = 50; const circ = 2 * Math.PI * r;
+  const modeColor = mode === "work" ? P.blue2 : P.green;
+
+  useEffect(() => {
+    if (running) {
+      timerRef.current = setInterval(() => setSecs(s => {
+        if (s <= 1) {
+          clearInterval(timerRef.current); setRunning(false);
+          if (soundOn) playBell();
+          if (mode === "work") {
+            setTotalSessions(n => n + 1);
+            setSessionLog(l => [...l, { date: todayKey(), dur: 25, subject: focusSubject, t: Date.now() }]);
+            const xp = storage.get("xp", 0);
+            storage.set("xp", xp + 30);
+            setXp(xp + 30);
+            onToast?.("جلسة تركيز مكتملة! +30 XP", "success");
+          }
+          return 0;
+        }
+        return s - 1;
+      }), 1000);
+    } else clearInterval(timerRef.current);
+    return () => clearInterval(timerRef.current);
+  }, [running, mode, focusSubject, soundOn]);
+
+  const changeMode = (m) => { clearInterval(timerRef.current); setRunning(false); setMode(m); setSecs(DURATIONS[m]); };
+
+  const askAI = async () => {
+    if (!focusQ.trim() || focusLoading) return;
+    setFocusLoading(true); setFocusA("");
+    try {
+      const res = await fetch("/api/ai", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject: focusSubject, messages: [{ role: "user", content: focusQ }], fileContext: null }),
+      });
+      const d = await res.json();
+      setFocusA(d.text || d.error || "لا توجد إجابة");
+    } catch { setFocusA("تعذّر الاتصال"); }
+    setFocusLoading(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 450, background: "rgba(2,6,18,.97)", display: "flex", flexDirection: "column", animation: "fadeIn .3s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Target size={18} color={P.blue2} /> وضع التركيز
+        </div>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: 8, cursor: "pointer", color: "#fff", display: "flex" }}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", maxWidth: 480, margin: "0 auto", width: "100%" }}>
+        {/* Subject selector */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
+          <select value={focusSubject} onChange={e => setFocusSubject(e.target.value)}
+            style={{ width: "100%", background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "10px 14px", fontSize: 14, fontFamily: "inherit", direction: "rtl", outline: "none", fontWeight: 700 }}>
+            {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s} style={{ background: "#0b1e42" }}>{s}</option>)}
+          </select>
+        </div>
+
+        {/* Pomodoro Timer */}
+        <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 20, padding: 24, marginBottom: 20, textAlign: "center", border: "1px solid rgba(255,255,255,.08)" }}>
+          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 20 }}>
+            {[["work", "⚡ دراسة"], ["short", "☕ راحة"]].map(([m, l]) => (
+              <button key={m} onClick={() => changeMode(m)} style={{ background: mode === m ? "rgba(255,255,255,.2)" : "transparent", border: `1px solid rgba(255,255,255,${mode === m ? .4 : .12})`, borderRadius: 20, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,.9)", fontFamily: "inherit" }}>{l}</button>
+            ))}
+          </div>
+          <div style={{ position: "relative", display: "inline-block", marginBottom: 16 }}>
+            <svg width={120} height={120} style={{ transform: "rotate(-90deg)" }}>
+              <circle cx={60} cy={60} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={7} />
+              <circle cx={60} cy={60} r={r} fill="none" stroke={modeColor} strokeWidth={7}
+                strokeDasharray={circ} strokeDashoffset={circ * (1 - prog)} strokeLinecap="round"
+                style={{ transition: "stroke-dashoffset .9s linear" }} />
+            </svg>
+            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
+              <div style={{ fontSize: 28, fontWeight: 900, color: "#fff", fontFamily: "monospace" }}>{mm}:{ss}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+            <button onClick={() => { clearInterval(timerRef.current); setRunning(false); setSecs(DURATIONS[mode]); }} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: "50%", width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.7)" }}>
+              <RotateCcw size={14} />
+            </button>
+            <button onClick={() => setRunning(rv => !rv)} style={{ background: running ? P.red : modeColor, border: "none", borderRadius: 22, padding: "10px 28px", cursor: "pointer", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7 }}>
+              {running ? <><Pause size={15} />إيقاف</> : <><Play size={15} />بدء</>}
+            </button>
+          </div>
+        </div>
+
+        {/* Quick AI Question */}
+        <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,.08)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.8)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <Sparkles size={14} color={P.gold} /> اسأل سؤالاً سريعاً
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <input value={focusQ} onChange={e => setFocusQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
+              placeholder="اكتب سؤالك..."
+              style={{ flex: 1, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "8px 12px", color: "#fff", fontSize: 12, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <button onClick={askAI} disabled={focusLoading || !focusQ.trim()} style={{ background: focusLoading || !focusQ.trim() ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontFamily: "inherit", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+              {focusLoading ? "…" : <Send size={13} />}
+            </button>
+          </div>
+          {focusA && (
+            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 12, color: "rgba(255,255,255,.8)", lineHeight: 1.7, maxHeight: 150, overflowY: "auto" }}>
+              {focusA}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SEU_CALENDAR = [
   { label: "الاختبارات النهائية — الفصل الثاني 1447", date: "2026-06-07", color: P.red, CIcon: Flame },
   { label: "نتائج الفصل الثاني 1447", date: "2026-06-28", color: P.green, CIcon: Trophy },
@@ -1960,14 +2582,25 @@ function AcademicCalendar({ t }) {
   );
 }
 
-function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast }) {
+function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, onShowFocus, onShowReport }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
   const [tipIdx, setTipIdx] = useState(() => Math.floor(Date.now() / 3600000) % TIPS.length);
+  const [pwaPrompt, setPwaPrompt] = useState(null);
   useEffect(() => {
     const iv = setInterval(() => setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length), 60000);
     return () => clearInterval(iv);
   }, []);
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setPwaPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+  const installPwa = () => {
+    if (!pwaPrompt) return;
+    pwaPrompt.prompt();
+    pwaPrompt.userChoice.then(() => setPwaPrompt(null));
+  };
   const tip = TIPS[tipIdx];
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
@@ -2010,6 +2643,15 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           }}>
             <Sparkles size={12} /> المساعد الذكي
           </button>
+          {pwaPrompt && (
+            <button onClick={installPwa} style={{
+              background: `${P.green}25`, border: `1px solid ${P.green}50`,
+              borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 12,
+              color: P.green, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
+            }}>
+              <Download size={12} /> ثبّت التطبيق
+            </button>
+          )}
         </div>
       </div>
 
@@ -2045,6 +2687,9 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
 
       {/* Daily Progress */}
       <DailyProgress sessionLog={sessionLog} weeklyGoal={weeklyGoal} t={t} />
+
+      {/* Exam Countdown */}
+      <ExamCountdown exams={exams} setExams={setExams} t={t} onToast={onToast} setXp={setXp} />
 
       {/* Task Tracker */}
       <TaskTracker t={t} tasks={tasks} setTasks={setTasks} onToast={onToast} />
@@ -2118,10 +2763,13 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         </div>
       )}
 
+      {/* XP Bar */}
+      <div style={{ marginBottom: 16 }}>
+        <XPBar xp={xp || 0} t={t} />
+      </div>
+
       {/* Quick Stats Bar */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16,
-      }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 8 }}>
         {[
           { label: "دقائق هذا الأسبوع", value: weekMins || 0, color: P.blue2, suffix: "د" },
           { label: "يوم للاختبارات", value: Math.max(0, examDays), color: examDays <= 14 ? P.red : P.gold, suffix: "" },
@@ -2132,6 +2780,23 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
             <div style={{ fontSize: 10, color: t.mu, marginTop: 3, lineHeight: 1.3 }}>{label}</div>
           </div>
         ))}
+      </div>
+      {/* Action Cards Row */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <button onClick={onShowFocus} style={{ background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
+          <Target size={20} color="#fff" />
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>مؤقت + ذكاء اصطناعي</div>
+          </div>
+        </button>
+        <button onClick={onShowReport} style={{ background: `${P.purple}15`, border: `1px solid ${P.purple}30`, borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
+          <FileBarChart size={20} color={P.purple} />
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>التقرير الشهري</div>
+            <div style={{ fontSize: 10, color: t.mu }}>إحصائيات شاملة</div>
+          </div>
+        </button>
       </div>
 
       {/* Academic Calendar */}
@@ -3179,6 +3844,10 @@ export default function App() {
   const [seen, setSeen] = useStored("onboarded", false);
   const [tasks, setTasks] = useStored("tasks", []);
   const [schedule, setSchedule] = useStored("schedule", []);
+  const [exams, setExams] = useStored("exams", []);
+  const [xp, setXp] = useStored("xp", 0);
+  const [showFocus, setShowFocus] = useState(false);
+  const [showMonthlyReport, setShowMonthlyReport] = useState(false);
   const [aiSubject, setAiSubject] = useState("عام");
   const [notifOpen, setNotifOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -3250,7 +3919,7 @@ export default function App() {
     setDark(true); setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
     setTotalSessions(0); setSessionLog([]); setGpaCalcs(0); setAiChats(0); setSemesters([]);
     setSoundOn(true); setWeeklyGoal(15); setSeen(false);
-    setTasks([]); setSchedule([]);
+    setTasks([]); setSchedule([]); setExams([]); setXp(0);
     setTab("home"); setCourse(null);
   };
 
@@ -3347,7 +4016,9 @@ export default function App() {
           openCourse={openCourse} onOpenAI={() => setShowAI(true)} t={t} recent={recent} streak={streak}
           activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
           achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
-          schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push} />}
+          schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
+          exams={exams} setExams={setExams} xp={xp} setXp={setXp}
+          onShowFocus={() => setShowFocus(true)} onShowReport={() => setShowMonthlyReport(true)} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} />}
 
@@ -3371,6 +4042,7 @@ export default function App() {
             <GPACalc t={t} onCalc={() => setGpaCalcs(c => c + 1)}
               semesters={semesters} setSemesters={setSemesters} onToast={toasts.push} />
             <SemesterChart semesters={semesters} t={t} />
+            <StudyAnalytics sessionLog={sessionLog} t={t} />
           </div>
         )}
 
@@ -3487,6 +4159,16 @@ export default function App() {
             <AIChat key={aiSubject} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
           </div>
         </div>
+      )}
+      {showFocus && (
+        <FocusMode t={t} sessionLog={sessionLog} setSessionLog={setSessionLog}
+          totalSessions={totalSessions} setTotalSessions={setTotalSessions}
+          soundOn={soundOn} onToast={toasts.push} onClose={() => setShowFocus(false)}
+          setXp={setXp} />
+      )}
+      {showMonthlyReport && (
+        <MonthlyReportModal t={t} sessionLog={sessionLog} tasks={tasks} semesters={semesters}
+          onClose={() => setShowMonthlyReport(false)} />
       )}
       <ToastStack list={toasts.list} />
     </div>
