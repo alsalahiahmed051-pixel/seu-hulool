@@ -3558,7 +3558,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
 
         {/* Loading bar */}
         <div style={{
-          width: 180, height: 3, background: "rgba(255,255,255,.1)", borderRadius: 2, overflow: "hidden",
+          width: 200, height: 4, background: "rgba(255,255,255,.1)", borderRadius: 2, overflow: "hidden",
           animation: "fadeUp .7s ease .5s backwards",
         }}>
           <div style={{
@@ -3566,15 +3566,6 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
             borderRadius: 2, animation: "splashBar 3.2s ease forwards",
           }} />
         </div>
-
-        <button onClick={() => setPhase(1)} style={{
-          marginTop: 32, background: "none", border: "1px solid rgba(255,255,255,.2)",
-          borderRadius: 20, padding: "8px 22px", cursor: "pointer",
-          color: "rgba(255,255,255,.5)", fontSize: 12, fontFamily: "inherit",
-          animation: "fadeUp .7s ease .6s backwards",
-        }}>
-          تخطي ←
-        </button>
       </div>
     );
   }
@@ -3635,12 +3626,12 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
           </button>
         </div>
 
-        <button onClick={onClose} style={{
-          background: "none", border: "none", color: t.dim, fontSize: 12,
-          cursor: "pointer", marginTop: 14, fontFamily: "inherit",
+        <span onClick={onClose} style={{
+          color: t.dim, fontSize: 12, cursor: "pointer", marginTop: 14,
+          display: "inline-block", userSelect: "none",
         }}>
           تخطي
-        </button>
+        </span>
       </div>
     </div>
   );
