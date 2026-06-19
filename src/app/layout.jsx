@@ -1,3 +1,5 @@
+import { Analytics } from '@vercel/analytics/next';
+
 export const metadata = {
   title: 'حلول | SEU',
   description: 'بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية',
@@ -35,6 +37,7 @@ export default function RootLayout({ children }) {
         background: '#050a16',
       }}>
         {children}
+        <Analytics />
       </body>
     </html>
   )
