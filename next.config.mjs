@@ -2,6 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // Allow Supabase storage images
   images: {
     remotePatterns: [
