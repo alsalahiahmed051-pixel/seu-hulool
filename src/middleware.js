@@ -6,6 +6,8 @@ const PUBLIC_ROUTES = [
   '/signup',
   '/reset-password',
   '/auth/callback',
+  '/terms',
+  '/privacy',
 ]
 
 const DEMO_MODE =

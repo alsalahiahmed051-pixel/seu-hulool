@@ -2113,7 +2113,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                         )}
                         {filteredMock.map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
                         {fq && filteredReal.length === 0 && filteredMock.length === 0 && (
-                          <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 12 }}>لا نتائج لـ "{fileFilter[sec.id]}"</div>
+                          <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 12 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
                       </div>
                     );
@@ -2899,7 +2899,7 @@ function SearchResults({ query, onCourse, onClose, t }) {
           </div>
         ) : groups.length === 0 ? (
           <div style={{ textAlign: "center", padding: 30 }}>
-            <div style={{ fontSize: 14, color: t.mu }}>لا توجد نتائج لـ "{query}"</div>
+            <div style={{ fontSize: 14, color: t.mu }}>لا توجد نتائج لـ «{query}»</div>
           </div>
         ) : (
           <>
@@ -4308,7 +4308,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
               const total = groups.reduce((a, g) => a + g.items.length, 0);
               if (!total) return (
                 <div style={{ textAlign: "center", padding: 30, color: t.mu, fontSize: 13 }}>
-                  لا توجد نتائج لـ "{query}"
+                  لا توجد نتائج لـ «{query}»
                 </div>
               );
               return (
