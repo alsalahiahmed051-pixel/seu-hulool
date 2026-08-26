@@ -1,4 +1,5 @@
 import { list, del, put } from '@vercel/blob'
+import { isValidAdminSecret } from '@/lib/admin-auth'
 
 export const runtime = 'nodejs'
 
@@ -49,7 +50,7 @@ export async function GET(request) {
 
 export async function DELETE(request) {
   const secret = request.headers.get('x-admin-secret')
-  if (!secret || secret !== process.env.ADMIN_SECRET)
+  if (!isValidAdminSecret(secret))
     return Response.json({ error: 'غير مصرح' }, { status: 401 })
   if (!BLOB_ENABLED)
     return Response.json({ error: 'Blob not configured' }, { status: 503 })

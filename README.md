@@ -33,9 +33,10 @@
 اذهب إلى **SQL Editor** في لوحة Supabase ونفّذ الملفات بهذا الترتيب:
 
 ```
-supabase/migrations/001_initial_schema.sql   ← الجداول والـ functions
-supabase/migrations/002_rls_policies.sql     ← سياسات الأمان
-supabase/migrations/003_seed_data.sql        ← البيانات الأولية للمواد
+supabase/migrations/001_initial_schema.sql       ← الجداول والـ functions
+supabase/migrations/002_rls_policies.sql         ← سياسات الأمان
+supabase/migrations/003_seed_data.sql            ← البيانات الأولية للمواد
+supabase/migrations/004_security_hardening.sql   ← إغلاق ثغرات تصعيد الصلاحيات (مهم قبل الإطلاق)
 ```
 
 انسخ محتوى كل ملف، الصقه في SQL Editor، اضغط Run.
@@ -238,15 +239,17 @@ vercel
 
 ## 10. الأمان — Checklist قبل الإطلاق
 
-- [ ] لم تعرض `SUPABASE_SERVICE_ROLE_KEY` أو `ANTHROPIC_API_KEY` في الـ frontend
-- [ ] فعّلت RLS على **كل** الجداول
-- [ ] اختبرت تسجيل دخول مستخدم آخر — هل يستطيع رؤية بيانات مستخدم آخر؟
+- [x] لم تعرض `SUPABASE_SERVICE_ROLE_KEY` أو `ANTHROPIC_API_KEY` في الـ frontend — كلها تُقرأ فقط داخل route handlers على الخادم
+- [x] فعّلت RLS على **كل** الجداول — لكن **لازم تشغّل `004_security_hardening.sql`** أيضاً: بدونه، أي مستخدم يقدر يرفع نفسه لـ `role = 'admin'` عبر تعديل بروفايله، أو يوافق على ملفه المرفوع بنفسه ويتجاوز المراجعة (`files.is_approved`)
+- [ ] اختبرت تسجيل دخول مستخدم آخر — هل يستطيع رؤية بيانات مستخدم آخر؟ (تأكيد يدوي بعد تشغيل الـ migrations)
 - [ ] فعّلت Email rate limiting في Supabase (Settings → Auth)
-- [ ] فعّلت Upstash للـ rate limiting في `/api/chat`
-- [ ] حدّدت كمية tokens القصوى في طلبات Claude
+- [x] فعّلت Upstash للـ rate limiting في `/api/chat` **و** `/api/ai` و `/api/ai-quiz` (المساعد الذكي في الصفحة الرئيسية) — بدون `UPSTASH_REDIS_REST_URL/TOKEN` الحدّ معطّل فعلياً، فلا تنشر بدونه
+- [x] حدّدت كمية tokens القصوى في طلبات Claude (`max_tokens` في كل الـ routes)
 - [ ] فعّلت Sentry أو ما يشبهه لتتبع الأخطاء
-- [ ] أضفت صفحات `/terms` و `/privacy` (مطلوب لـ Google OAuth)
-- [ ] أضفت طريقة للإبلاغ عن محتوى مخالف لحقوق الجامعة
+- [x] أضفت صفحات `/terms` و `/privacy` (مطلوب لـ Google OAuth)
+- [ ] أضفت طريقة للإبلاغ عن محتوى مخالف لحقوق الجامعة (بريد التواصل في `/privacy` — عدّله لبريدك الفعلي)
+- [x] `/api/download` لا يعيد توجيه `BLOB_READ_WRITE_TOKEN` إلا لدومين تخزين Vercel Blob نفسه (كان قابلاً للاستغلال كـ SSRF قبل هذا التحديث)
+- [x] مقارنة `ADMIN_SECRET` بطريقة constant-time (`timingSafeEqual`) بدل `===` العادية
 
 ---
 

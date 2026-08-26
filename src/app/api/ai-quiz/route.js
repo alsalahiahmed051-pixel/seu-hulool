@@ -1,3 +1,6 @@
+import { createClient } from '@/lib/supabase/server'
+import { aiPerMinuteLimit, aiDailyLimit } from '@/lib/rate-limit'
+
 export const runtime = 'nodejs'
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
@@ -95,7 +98,41 @@ async function callGemini(subject) {
 }
 
 export async function POST(request) {
-  const { subject } = await request.json()
+  // 1) Authenticate — this endpoint calls paid third-party AI providers,
+  // so it must never be reachable by a logged-out or anonymous caller.
+  const supabase = await createClient()
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return Response.json({ error: 'يجب تسجيل الدخول' }, { status: 401 })
+  }
+
+  // 2) Parse + validate body
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return Response.json({ error: 'صيغة الطلب غير صحيحة' }, { status: 400 })
+  }
+  const { subject } = body
+  if (!subject || typeof subject !== 'string' || subject.length > 200) {
+    return Response.json({ error: 'مادة غير صحيحة' }, { status: 400 })
+  }
+
+  // 3) Rate limit — per authenticated user, not per IP
+  const minuteCheck = await aiPerMinuteLimit.limit(user.id)
+  if (!minuteCheck.success) {
+    return Response.json(
+      { error: 'الرجاء الانتظار قليلاً قبل إرسال طلب آخر', retry_after: Math.ceil((minuteCheck.reset - Date.now()) / 1000) },
+      { status: 429 }
+    )
+  }
+  const dayCheck = await aiDailyLimit.limit(user.id)
+  if (!dayCheck.success) {
+    return Response.json(
+      { error: 'لقد استنفدت رصيدك اليومي من المساعد الذكي', reset_at: new Date(dayCheck.reset).toISOString() },
+      { status: 429 }
+    )
+  }
 
   const providers = []
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder'))

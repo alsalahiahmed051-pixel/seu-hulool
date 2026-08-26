@@ -1,4 +1,5 @@
 import { put, list, del } from '@vercel/blob'
+import { isValidAdminSecret } from '@/lib/admin-auth'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -36,7 +37,7 @@ async function writeMeta(records) {
 
 export async function POST(request) {
   const secret = request.headers.get('x-admin-secret')
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
+  if (!isValidAdminSecret(secret)) {
     return Response.json({ error: 'غير مصرح' }, { status: 401 })
   }
   if (!BLOB_ENABLED) {
