@@ -1,7 +1,12 @@
 import { updateSession } from '@/lib/supabase/middleware'
 import { NextResponse } from 'next/server'
 
-const PUBLIC_ROUTES = ['/login', '/signup', '/reset-password', '/auth/callback']
+const PUBLIC_ROUTES = [
+  '/login',
+  '/signup',
+  '/reset-password',
+  '/auth/callback',
+]
 
 const DEMO_MODE =
   !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -13,8 +18,11 @@ export async function middleware(request) {
   const { pathname } = request.nextUrl
   const { response, user } = await updateSession(request)
 
-  const isPublic = PUBLIC_ROUTES.some(r => pathname.startsWith(r))
-  if (!user && !isPublic && pathname !== '/') {
+  const isPublic = PUBLIC_ROUTES.some((route) =>
+    pathname.startsWith(route)
+  )
+
+  if (!user && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', pathname)
@@ -32,7 +40,6 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
-    // Match all routes except static assets and Next.js internals
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',
   ],
 }
