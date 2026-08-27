@@ -3374,7 +3374,10 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
     setSigningOut(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login");
+    // Go to the home page, not /login — login is optional now, so the
+    // user stays in the (now signed-out) app. If login is ever required
+    // again, middleware redirects "/" to /login on its own.
+    router.push("/");
     router.refresh();
   };
   const Row = ({ Icon, label, desc, children, color = P.blue2 }) => (
