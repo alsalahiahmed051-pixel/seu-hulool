@@ -1,5 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
@@ -14,7 +16,7 @@ import {
   ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
   AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
-  Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart
+  Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -3365,6 +3367,16 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
    ══════════════════════════════════════════════════════════════ */
 function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyGoal, setWeeklyGoal, onReset, onToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
   const Row = ({ Icon, label, desc, children, color = P.blue2 }) => (
     <div style={{
       background: t.s2, borderRadius: 14, padding: "14px 16px", marginBottom: 8,
@@ -3448,6 +3460,10 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
             </div>
             <div style={{ background: `${P.blue2}15`, borderRadius: 8, padding: "3px 8px", fontSize: 10, color: P.blue2, fontWeight: 700 }}>PRO</div>
           </div>
+
+          <Btn variant="ghost" onClick={handleSignOut} disabled={signingOut} style={{ width: "100%", marginBottom: 8 }}>
+            <LogOut size={14} /> {signingOut ? "جارٍ تسجيل الخروج..." : "تسجيل الخروج"}
+          </Btn>
 
           <Btn variant="danger" onClick={() => setShowConfirm(true)} style={{ width: "100%" }}>
             <Trash2 size={14} /> إعادة تعيين كل البيانات

@@ -30,10 +30,20 @@
 -- ════════════════════════════════════════════════════════════════
 
 -- ─── 1) profiles.role: only an existing admin/moderator may change it ───
+--
+-- auth.uid() is NULL outside a normal PostgREST end-user request (direct
+-- SQL via the dashboard/an MCP connection, or the app's own service_role
+-- admin client) — is_admin() then reads as false too, so without the
+-- `auth.uid() IS NOT NULL` guard this trigger would revert even a
+-- legitimate first-admin promotion or a service_role-driven change right
+-- along with the actual client-side self-escalation attempts it's meant
+-- to stop. Direct SQL / service_role already bypasses RLS entirely by
+-- design, so this trigger should only ever second-guess a change coming
+-- from an authenticated end-user's own request.
 CREATE OR REPLACE FUNCTION prevent_self_role_escalation()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.role IS DISTINCT FROM OLD.role AND NOT is_admin() THEN
+  IF NEW.role IS DISTINCT FROM OLD.role AND auth.uid() IS NOT NULL AND NOT is_admin() THEN
     NEW.role := OLD.role;
   END IF;
   RETURN NEW;
@@ -46,10 +56,13 @@ BEFORE UPDATE ON profiles
 FOR EACH ROW EXECUTE FUNCTION prevent_self_role_escalation();
 
 -- ─── 2) files: moderation + stat columns are admin/system-only ───
+-- Same auth.uid() IS NOT NULL reasoning as above.
 CREATE OR REPLACE FUNCTION protect_files_moderation_columns()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NOT is_admin() AND coalesce(current_setting('hulool.trusted_write', true), '') <> 'on' THEN
+  IF auth.uid() IS NOT NULL
+     AND NOT is_admin()
+     AND coalesce(current_setting('hulool.trusted_write', true), '') <> 'on' THEN
     NEW.is_approved    := OLD.is_approved;
     NEW.download_count := OLD.download_count;
     NEW.view_count      := OLD.view_count;
