@@ -100,3 +100,60 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ════════════════════════════════════════════════════════════════
+-- 3) Pin search_path on every SECURITY DEFINER / trigger function
+--
+-- A SECURITY DEFINER function that doesn't fix its search_path can be
+-- tricked into resolving an unqualified table/function name to one an
+-- attacker created earlier in the caller's search_path, running with
+-- the definer's elevated privilege (classic Postgres search_path
+-- hijack). Supabase's own advisor flags this on every function below.
+-- ════════════════════════════════════════════════════════════════
+ALTER FUNCTION prevent_self_role_escalation()               SET search_path = public, pg_temp;
+ALTER FUNCTION protect_files_moderation_columns()            SET search_path = public, pg_temp;
+ALTER FUNCTION increment_file_view(uuid)                     SET search_path = public, pg_temp;
+ALTER FUNCTION log_download(uuid, text, text)                SET search_path = public, pg_temp;
+ALTER FUNCTION update_file_rating()                          SET search_path = public, pg_temp;
+ALTER FUNCTION update_session_totals()                       SET search_path = public, pg_temp;
+ALTER FUNCTION increment_course_view(uuid)                   SET search_path = public, pg_temp;
+ALTER FUNCTION is_admin()                                    SET search_path = public, pg_temp;
+ALTER FUNCTION set_updated_at()                              SET search_path = public, pg_temp;
+ALTER FUNCTION handle_new_user()                             SET search_path = public, pg_temp;
+
+-- ════════════════════════════════════════════════════════════════
+-- 4) Stop exposing internal trigger functions as public RPC endpoints
+--
+-- set_updated_at / update_file_rating / update_session_totals /
+-- handle_new_user only ever run *as* a trigger — Postgres fires
+-- triggers regardless of a role's EXECUTE grant on the function, so
+-- revoking EXECUTE here does not break them, it just removes the
+-- pointless (and slightly risky) /rest/v1/rpc/<name> entry points
+-- Supabase's advisor found for them.
+-- ════════════════════════════════════════════════════════════════
+REVOKE EXECUTE ON FUNCTION set_updated_at()                   FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION update_file_rating()               FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION update_session_totals()            FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION handle_new_user()                  FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION prevent_self_role_escalation()     FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION protect_files_moderation_columns() FROM PUBLIC, anon, authenticated;
+
+-- These three ARE meant to be called by the app via .rpc(...), but only
+-- once the user is logged in — the app never calls them as `anon`.
+-- Must revoke from PUBLIC itself (not just `anon`): EXECUTE is granted
+-- to PUBLIC by default when a function is created, and every role —
+-- anon included — implicitly inherits whatever PUBLIC has, so revoking
+-- only from the named role is a no-op while the PUBLIC grant stands.
+-- (is_admin() is deliberately NOT touched here: it's referenced inside
+-- several RLS policies across the schema, e.g. courses' "is_active =
+-- true OR is_admin()" — revoking anon's EXECUTE on it could error out
+-- an anon query the moment a row makes it evaluate the is_admin()
+-- branch. Low value, non-zero risk; leaving it as Supabase's advisor
+-- only WARNs on it, doesn't flag it as an error.)
+REVOKE EXECUTE ON FUNCTION increment_file_view(uuid)      FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION increment_course_view(uuid)    FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION log_download(uuid, text, text) FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION increment_file_view(uuid)      TO authenticated;
+GRANT EXECUTE ON FUNCTION increment_course_view(uuid)    TO authenticated;
+GRANT EXECUTE ON FUNCTION log_download(uuid, text, text) TO authenticated;
