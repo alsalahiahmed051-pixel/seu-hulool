@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
@@ -3837,11 +3838,9 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [course, setCourse] = useState(null);
   const [favorites, setFavorites] = useStored("favorites", []);
-  const [notifs, setNotifs] = useStored("notifs", NOTIFS_SEED);
-  // migrate old notifs that stored Icon as React component (breaks JSON serialization)
-  useEffect(() => {
-    setNotifs(prev => prev.map(n => n.Icon ? { ...n, iconKey: n.iconKey || "bell", Icon: undefined } : n));
-  }, []);
+  // Live notifications: broadcasts sent from the admin panel + the user's
+  // own, straight from Supabase (replaces the old localStorage mock).
+  const [notifs, setNotifs] = useLiveNotifications();
   const [notes, setNotes] = useStored("notes", {});
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
