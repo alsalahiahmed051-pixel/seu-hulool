@@ -199,6 +199,17 @@ const TIPS = [
 
 const NOTIF_ICONS = { book: Book, file: FileText, calendar: Calendar, star: Star, bell: Bell };
 
+// Each broadcast type gets its own color, icon, label — and its own place:
+// announcement/warning surface as a prominent top banner AND in the bell;
+// info/success live only in the bell.
+const NOTIF_TYPE = {
+  announcement: { color: P.gold,   Icon: Radio,         label: "إعلان",   banner: true },
+  warning:      { color: P.orange, Icon: AlertTriangle, label: "تنبيه",   banner: true },
+  info:         { color: P.blue2,  Icon: Bell,          label: "معلومة",  banner: false },
+  success:      { color: P.green,  Icon: PartyPopper,   label: "خبر جيد", banner: false },
+};
+function notifMeta(type) { return NOTIF_TYPE[type] || NOTIF_TYPE.info; }
+
 const NOTIFS_SEED = [
   { id: 1, title: "تجميعات جديدة", text: "رُفعت تجميعات فاينل لمادة إدارة الأعمال ف2 1447", time: "منذ 5 دقائق", read: false, iconKey: "book" },
   { id: 2, title: "تحديث الخطة الدراسية", text: "تم تحديث خطة السنة الأولى المشتركة (CFY) للفصل الثاني", time: "منذ ساعة", read: false, iconKey: "file" },
@@ -3315,6 +3326,39 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
 }
 
 /* ══════════════════════════════════════════════════════════════
+   NOTIFICATION BANNER (announcements / warnings, top strip)
+   ══════════════════════════════════════════════════════════════ */
+function NotifBanner({ notifs, setNotifs, t }) {
+  // The most recent unread banner-type broadcast (announcement/warning).
+  const item = (notifs || []).find(n => notifMeta(n.type).banner && !n.read);
+  if (!item) return null;
+  const meta = notifMeta(item.type);
+  const Icon = meta.Icon;
+  const dismiss = (e) => {
+    e.stopPropagation();
+    setNotifs(ns => ns.map(x => x.id === item.id ? { ...x, read: true } : x));
+  };
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "10px 16px",
+      background: `linear-gradient(90deg, ${meta.color}22, ${meta.color}0a)`,
+      borderBottom: `1px solid ${meta.color}44`, animation: "fadeIn .3s ease",
+    }}>
+      <div style={{ width: 30, height: 30, borderRadius: 9, background: `${meta.color}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icon size={15} color={meta.color} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0, lineHeight: 1.4 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: meta.color }}>{item.title}</span>
+        <span style={{ fontSize: 12.5, color: t.tx, marginRight: 6 }}>— {item.text}</span>
+      </div>
+      <button onClick={dismiss} title="إغلاق" style={{ background: "transparent", border: "none", cursor: "pointer", color: t.mu, display: "flex", flexShrink: 0, padding: 2 }}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    NOTIFICATIONS PANEL
    ══════════════════════════════════════════════════════════════ */
 function NotifPanel({ t, onClose, notifs, setNotifs }) {
@@ -3341,20 +3385,27 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
             }}><X size={16} /></button>
           </div>
         </div>
+        {notifs.length === 0 && (
+          <div style={{ textAlign: "center", padding: "30px 0", color: t.mu, fontSize: 13 }}>لا توجد إشعارات بعد</div>
+        )}
         {notifs.map(n => {
-          const NIcon = NOTIF_ICONS[n.iconKey] || (n.Icon && typeof n.Icon !== "string" ? n.Icon : Bell);
+          const meta = notifMeta(n.type);
+          const NIcon = meta.Icon;
           return (
           <div key={n.id} onClick={() => setNotifs(ns => ns.map(x => x.id === n.id ? { ...x, read: true } : x))} style={{
             display: "flex", gap: 12, padding: "12px", borderRadius: 14, marginBottom: 8, cursor: "pointer",
-            background: n.read ? t.s1 : t.s2, border: `1px solid ${n.read ? t.bd : P.blue2 + "30"}`, transition: "all .2s",
+            background: n.read ? t.s1 : t.s2, border: `1px solid ${n.read ? t.bd : meta.color + "40"}`,
+            borderRight: `3px solid ${meta.color}`, transition: "all .2s",
           }}>
-            <div style={{ width: 38, height: 38, borderRadius: 10, background: `${P.blue}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <NIcon size={16} color={P.blue2} />
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: `${meta.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <NIcon size={16} color={meta.color} />
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-                {n.title}{!n.read && <span style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, display: "inline-block" }} />}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                <span style={{ fontSize: 9, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: "1px 7px" }}>{meta.label}</span>
+                {!n.read && <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, display: "inline-block" }} />}
               </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{n.title}</div>
               <div style={{ fontSize: 12, color: t.mu, marginTop: 2, lineHeight: 1.5 }}>{n.text}</div>
               <div style={{ fontSize: 10, color: t.dim, marginTop: 4 }}>{n.time}</div>
             </div>
@@ -4075,6 +4126,9 @@ export default function App() {
           }}>{unread}</span>}
         </button>
       </div>
+
+      {/* Announcement / warning banner strip */}
+      <NotifBanner notifs={notifs} setNotifs={setNotifs} t={t} />
 
       {/* MAIN */}
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px" }}>

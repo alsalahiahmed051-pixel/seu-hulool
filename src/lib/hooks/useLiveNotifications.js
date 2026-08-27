@@ -76,6 +76,7 @@ export function useLiveNotifications() {
 
   const notifs = raw.map(n => ({
     id: n.id,
+    type: n.type || 'info',
     title: n.title,
     text: n.body,
     time: timeAgo(n.created_at),

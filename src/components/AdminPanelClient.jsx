@@ -535,12 +535,15 @@ function NotificationsTab({ flash }) {
         <label style={S.label}>النص *</label>
         <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="اكتب محتوى الإشعار..." rows={3} style={{ ...S.input, marginBottom: 10, resize: 'vertical' }} required />
         <label style={S.label}>النوع</label>
-        <select value={type} onChange={e => setType(e.target.value)} style={{ ...S.input, marginBottom: 12 }}>
-          <option value="announcement">إعلان</option>
-          <option value="info">معلومة</option>
-          <option value="warning">تنبيه</option>
-          <option value="success">خبر جيد</option>
+        <select value={type} onChange={e => setType(e.target.value)} style={{ ...S.input, marginBottom: 6 }}>
+          <option value="announcement">إعلان — شريط بارز أعلى الموقع + الجرس</option>
+          <option value="warning">تنبيه — شريط أحمر أعلى الموقع + الجرس</option>
+          <option value="info">معلومة — في زر الجرس فقط</option>
+          <option value="success">خبر جيد — في زر الجرس فقط</option>
         </select>
+        <div style={{ fontSize: 11, color: '#7d97b8', marginBottom: 12, lineHeight: 1.6 }}>
+          «إعلان» و«تنبيه» يظهران كشريط بارز أعلى الموقع لكل الطلاب (قابل للإغلاق)، بينما «معلومة» و«خبر جيد» تظهر فقط عند فتح زر الجرس.
+        </div>
         <button type="submit" disabled={sending || !title.trim() || !body.trim()} style={{ ...S.btn(), width: '100%', opacity: (sending || !title.trim() || !body.trim()) ? 0.5 : 1 }}>
           {sending ? 'جارٍ الإرسال...' : <><Send size={14} /> بث الإشعار</>}
         </button>
