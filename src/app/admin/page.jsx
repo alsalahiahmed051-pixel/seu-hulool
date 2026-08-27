@@ -284,7 +284,7 @@ export default function AdminPage() {
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#e4ecf8', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</div>
                   <div style={{ fontSize: 11, color: '#7d97b8' }}>{f.courseName} • {CATEGORIES.find(c => c.id === f.category)?.label} • {f.sizeLabel} • {formatDate(f.uploadedAt)}</div>
                 </div>
-                <a href={f.url} target="_blank" rel="noopener noreferrer"
+                <a href={`/api/download?url=${encodeURIComponent(f.blobUrl)}`} target="_blank" rel="noopener noreferrer"
                   style={{ background: `${P.blue2}15`, border: 'none', borderRadius: 8, padding: 7, cursor: 'pointer', color: P.blue2, display: 'flex', textDecoration: 'none' }}>
                   <Eye size={14} />
                 </a>

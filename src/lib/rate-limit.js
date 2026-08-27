@@ -66,6 +66,30 @@ export const chatDailyLimit = hasUpstash
     })
   : { limit: async () => ({ success: true, remaining: 50, reset: Date.now() + 86_400_000 }) }
 
+// GlobalAI overlay (/api/ai, /api/ai-quiz) — separate, slightly looser
+// budget from the per-subject chat above since it also powers quiz mode.
+export const aiPerMinuteLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(
+        Number(process.env.AI_PER_MINUTE_LIMIT || 10),
+        '1 m'
+      ),
+      prefix: 'rl:ai:minute',
+    })
+  : { limit: async () => ({ success: true, remaining: 10, reset: Date.now() + 60_000 }) }
+
+export const aiDailyLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(
+        Number(process.env.AI_DAILY_LIMIT || 80),
+        '1 d'
+      ),
+      prefix: 'rl:ai:day',
+    })
+  : { limit: async () => ({ success: true, remaining: 80, reset: Date.now() + 86_400_000 }) }
+
 /**
  * Hash an IP address for storing in DB (don't store raw IPs — PDPL compliance)
  */

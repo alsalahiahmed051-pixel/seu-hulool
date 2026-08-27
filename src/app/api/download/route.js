@@ -1,12 +1,35 @@
+import { createClient } from '@/lib/supabase/server'
+
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
 export async function GET(request) {
+  // Require a logged-in user before proxying any file.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new Response('يجب تسجيل الدخول', { status: 401 })
+
   const { searchParams } = new URL(request.url)
-  const url = searchParams.get('url')
+  const rawUrl = searchParams.get('url')
   const forceDownload = searchParams.get('dl') === '1'
 
-  if (!url) return new Response('url required', { status: 400 })
+  if (!rawUrl) return new Response('url required', { status: 400 })
+
+  // SSRF / secret-leak guard: `url` is attacker-controlled input, and we
+  // attach our BLOB_READ_WRITE_TOKEN to whatever request we make with it.
+  // Without this check, a caller could pass their own server's URL here
+  // and have us hand our secret token straight to them. Only ever proxy
+  // to our own Vercel Blob store's hostname.
+  let parsed
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return new Response('Invalid url', { status: 400 })
+  }
+  if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.public.blob.vercel-storage.com')) {
+    return new Response('Invalid file host', { status: 400 })
+  }
+  const url = parsed.toString()
 
   try {
     const res = await fetch(url, {
