@@ -33,11 +33,14 @@
 اذهب إلى **SQL Editor** في لوحة Supabase ونفّذ الملفات بهذا الترتيب:
 
 ```
-supabase/migrations/001_initial_schema.sql       ← الجداول والـ functions
-supabase/migrations/002_rls_policies.sql         ← سياسات الأمان
-supabase/migrations/003_seed_data.sql            ← البيانات الأولية للمواد
-supabase/migrations/004_security_hardening.sql   ← إغلاق ثغرات تصعيد الصلاحيات (مهم قبل الإطلاق)
+supabase/migrations/001_initial_schema.sql        ← الجداول والـ functions
+supabase/migrations/002_rls_policies.sql          ← سياسات الأمان
+supabase/migrations/003_seed_data.sql             ← البيانات الأولية للمواد
+supabase/migrations/004_security_hardening.sql    ← إغلاق ثغرات تصعيد الصلاحيات (مهم قبل الإطلاق)
+supabase/migrations/005_grant_table_privileges.sql ← ⚠️ إلزامي — بدونه كل استعلام من التطبيق يفشل بـ "permission denied"
 ```
+
+⚠️ **مهم جداً**: `002_rls_policies.sql` يعرّف سياسات RLS بس ما يمنح صلاحيات الجدول الأساسية (GRANT) اللي تتطلبها Postgres قبل ما تُفعَّل سياسات RLS أصلاً. بدون `005`، أي طلب من التطبيق (تسجيل مفضلة، حفظ ملاحظة، حتى فحص admin) يفشل بخطأ "permission denied for table ..." رغم إن سياسات RLS نفسها مضبوطة صح.
 
 انسخ محتوى كل ملف، الصقه في SQL Editor، اضغط Run.
 
@@ -249,6 +252,8 @@ vercel
 - [x] أضفت صفحات `/terms` و `/privacy` (مطلوب لـ Google OAuth)
 - [ ] أضفت طريقة للإبلاغ عن محتوى مخالف لحقوق الجامعة (بريد التواصل في `/privacy` — عدّله لبريدك الفعلي)
 - [x] `/api/download` لا يعيد توجيه `BLOB_READ_WRITE_TOKEN` إلا لدومين تخزين Vercel Blob نفسه (كان قابلاً للاستغلال كـ SSRF قبل هذا التحديث)
+- [x] شغّلت `005_grant_table_privileges.sql` — بدونه كل الجداول محجوبة تماماً عن `authenticated`/`anon` بغضّ النظر عن سياسات RLS (اكتُشف حياً أثناء اختبار `/admin`)
+- [ ] فعّلت "Leaked Password Protection" بـ Supabase (Authentication → Policies) — يمنع كلمات مرور مسرّبة معروفة، تفعيلها بضغطة زر
 - [x] `/admin` وواجهاته (`/api/upload`, `/api/files` DELETE) تتحقق من جلسة Supabase الحقيقية و`profile.role`، بدل كلمة مرور مشتركة (`ADMIN_SECRET` القديم صار غير مستخدم)
 
 ---
