@@ -1,5 +1,6 @@
 import { updateSession } from '@/lib/supabase/middleware'
 import { NextResponse } from 'next/server'
+import { REQUIRE_LOGIN } from '@/lib/auth-config'
 
 const PUBLIC_ROUTES = [
   '/login',
@@ -24,7 +25,7 @@ export async function middleware(request) {
     pathname.startsWith(route)
   )
 
-  if (!user && !isPublic) {
+  if (REQUIRE_LOGIN && !user && !isPublic) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', pathname)
