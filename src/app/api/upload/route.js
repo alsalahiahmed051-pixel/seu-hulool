@@ -1,5 +1,5 @@
 import { put, list, del } from '@vercel/blob'
-import { getAdminUser } from '@/lib/supabase/server'
+import { requireAdmin } from '@/lib/admin-guard'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -36,9 +36,9 @@ async function writeMeta(records) {
 }
 
 export async function POST(request) {
-  const admin = await getAdminUser()
-  if (!admin) {
-    return Response.json({ error: 'غير مصرح' }, { status: 401 })
+  const gate = await requireAdmin()
+  if (!gate.ok) {
+    return Response.json({ error: gate.error }, { status: gate.status })
   }
   if (!BLOB_ENABLED) {
     return Response.json({ error: 'BLOB_READ_WRITE_TOKEN غير مضبوط' }, { status: 503 })

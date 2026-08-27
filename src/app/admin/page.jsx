@@ -1,8 +1,11 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { ShieldAlert } from 'lucide-react'
-import { getAdminUser } from '@/lib/supabase/server'
+import { createClient, getAdminUser } from '@/lib/supabase/server'
+import { isPinConfigured, verifyPinCookie } from '@/lib/admin-pin'
 import AdminPanelClient from '@/components/AdminPanelClient'
+import AdminPinGate from '@/components/AdminPinGate'
 
 const DEMO_MODE =
   !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -25,14 +28,9 @@ export default async function AdminPage() {
   const admin = await getAdminUser()
 
   if (!admin) {
-    // Distinguish "not logged in at all" from "logged in but not admin"
-    // so a regular student doesn't just see a confusing dead end.
-    const { createClient } = await import('@/lib/supabase/server')
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-
     if (!user) redirect('/login?next=/admin')
-
     return (
       <ForbiddenScreen
         title="غير مصرح لك بالدخول"
@@ -41,10 +39,21 @@ export default async function AdminPage() {
     )
   }
 
+  // Second factor: the admin PIN, but only if one has been configured.
+  const pinConfigured = isPinConfigured()
+  if (pinConfigured) {
+    const store = await cookies()
+    const ok = verifyPinCookie(admin.user.id, store.get('admin_pin')?.value)
+    if (!ok) {
+      return <AdminPinGate adminName={admin.profile.full_name} />
+    }
+  }
+
   return (
     <AdminPanelClient
       adminName={admin.profile.full_name}
       adminEmail={admin.user.email}
+      pinConfigured={pinConfigured}
     />
   )
 }
@@ -54,15 +63,13 @@ function ForbiddenScreen({ title, message }) {
     <div dir="rtl" style={{
       minHeight: '100vh', background: '#050a16', color: '#e4ecf8',
       fontFamily: "'Tajawal','Cairo',sans-serif",
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20,
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }}>
       <div style={{ textAlign: 'center', maxWidth: 380 }}>
         <div style={{
           width: 60, height: 60, borderRadius: 18,
           background: 'linear-gradient(135deg,#001f5a,#0038b8)',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          marginBottom: 16,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
         }}>
           <ShieldAlert size={26} color="#fff" />
         </div>
