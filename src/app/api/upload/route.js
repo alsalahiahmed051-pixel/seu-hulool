@@ -1,5 +1,5 @@
 import { put, list, del } from '@vercel/blob'
-import { isValidAdminSecret } from '@/lib/admin-auth'
+import { getAdminUser } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -36,8 +36,8 @@ async function writeMeta(records) {
 }
 
 export async function POST(request) {
-  const secret = request.headers.get('x-admin-secret')
-  if (!isValidAdminSecret(secret)) {
+  const admin = await getAdminUser()
+  if (!admin) {
     return Response.json({ error: 'غير مصرح' }, { status: 401 })
   }
   if (!BLOB_ENABLED) {

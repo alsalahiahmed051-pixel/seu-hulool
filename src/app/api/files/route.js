@@ -1,5 +1,5 @@
 import { list, del, put } from '@vercel/blob'
-import { isValidAdminSecret } from '@/lib/admin-auth'
+import { getAdminUser } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -49,8 +49,8 @@ export async function GET(request) {
 }
 
 export async function DELETE(request) {
-  const secret = request.headers.get('x-admin-secret')
-  if (!isValidAdminSecret(secret))
+  const admin = await getAdminUser()
+  if (!admin)
     return Response.json({ error: 'غير مصرح' }, { status: 401 })
   if (!BLOB_ENABLED)
     return Response.json({ error: 'Blob not configured' }, { status: 503 })

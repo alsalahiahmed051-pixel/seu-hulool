@@ -37,6 +37,27 @@ export async function createClient() {
 }
 
 /**
+ * Returns { user, profile } if the currently logged-in user (from
+ * request cookies) has role 'admin' or 'moderator', otherwise null.
+ * Use this to gate admin-only pages and API routes.
+ */
+export async function getAdminUser() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile || !['admin', 'moderator'].includes(profile.role)) return null
+
+  return { user, profile }
+}
+
+/**
  * SERVICE ROLE client — bypasses RLS!
  * Only use for admin-only server tasks (e.g. broadcasting notifications).
  * NEVER expose the service role key to the client.

@@ -249,7 +249,7 @@ vercel
 - [x] أضفت صفحات `/terms` و `/privacy` (مطلوب لـ Google OAuth)
 - [ ] أضفت طريقة للإبلاغ عن محتوى مخالف لحقوق الجامعة (بريد التواصل في `/privacy` — عدّله لبريدك الفعلي)
 - [x] `/api/download` لا يعيد توجيه `BLOB_READ_WRITE_TOKEN` إلا لدومين تخزين Vercel Blob نفسه (كان قابلاً للاستغلال كـ SSRF قبل هذا التحديث)
-- [x] مقارنة `ADMIN_SECRET` بطريقة constant-time (`timingSafeEqual`) بدل `===` العادية
+- [x] `/admin` وواجهاته (`/api/upload`, `/api/files` DELETE) تتحقق من جلسة Supabase الحقيقية و`profile.role`، بدل كلمة مرور مشتركة (`ADMIN_SECRET` القديم صار غير مستخدم)
 
 ---
 
