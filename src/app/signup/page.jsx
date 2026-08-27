@@ -17,6 +17,11 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
+  const [otp, setOtp] = useState('')
+  const [verifying, setVerifying] = useState(false)
+  const [otpError, setOtpError] = useState(null)
+  const [resending, setResending] = useState(false)
+  const [resendMsg, setResendMsg] = useState(null)
 
   const validate = () => {
     if (!fullName.trim() || fullName.trim().length < 3) return 'الاسم قصير جداً'
@@ -56,6 +61,37 @@ export default function SignupPage() {
     setSuccess(true)
   }
 
+  const handleVerify = async (e) => {
+    e.preventDefault()
+    setOtpError(null)
+    if (!/^\d{6}$/.test(otp)) {
+      setOtpError('أدخل الرمز المكوّن من 6 أرقام')
+      return
+    }
+    setVerifying(true)
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: otp,
+      type: 'signup',
+    })
+    setVerifying(false)
+
+    if (error) {
+      setOtpError('الرمز غير صحيح أو منتهي الصلاحية. تأكد منه أو أعد الإرسال.')
+      return
+    }
+    router.push('/')
+    router.refresh()
+  }
+
+  const handleResend = async () => {
+    setResending(true)
+    setResendMsg(null)
+    const { error } = await supabase.auth.resend({ type: 'signup', email })
+    setResending(false)
+    setResendMsg(error ? 'تعذّر إعادة الإرسال، حاول بعد قليل' : 'تم إرسال رمز جديد ✓')
+  }
+
   if (success) {
     return (
       <AuthShell title="تحقق من بريدك" subtitle="">
@@ -66,13 +102,52 @@ export default function SignupPage() {
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             marginBottom: 16, fontSize: 32,
           }}>📧</div>
-          <p style={{ color: '#e4ecf8', fontSize: 14, lineHeight: 1.8, marginBottom: 18 }}>
-            أرسلنا رسالة تحقق إلى <strong style={{ color: '#60a5fa', direction: 'ltr', display: 'inline-block' }}>{email}</strong>
-            <br />اضغط على الرابط في الرسالة لإكمال التسجيل.
+          <p style={{ color: '#e4ecf8', fontSize: 14, lineHeight: 1.8, marginBottom: 22 }}>
+            أرسلنا رمز تحقق مكوّن من 6 أرقام إلى <strong style={{ color: '#60a5fa', direction: 'ltr', display: 'inline-block' }}>{email}</strong>
           </p>
-          <Link href="/login" style={{ color: '#60a5fa', fontSize: 13, textDecoration: 'none' }}>
-            العودة لتسجيل الدخول
-          </Link>
+
+          <ErrorBox message={otpError} />
+
+          <form onSubmit={handleVerify}>
+            <Input
+              label="رمز التحقق"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              required
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="000000"
+              dir="ltr"
+              style={{ textAlign: 'center', letterSpacing: 8, fontSize: 22, fontWeight: 800 }}
+            />
+            <SubmitBtn loading={verifying} type="submit">
+              تأكيد والدخول
+            </SubmitBtn>
+          </form>
+
+          <div style={{ marginTop: 18, fontSize: 12, color: '#7d97b8' }}>
+            لم يصلك الرمز؟{' '}
+            <button
+              onClick={handleResend}
+              disabled={resending}
+              type="button"
+              style={{
+                background: 'none', border: 'none', padding: 0,
+                color: '#60a5fa', fontWeight: 700, cursor: resending ? 'wait' : 'pointer',
+                fontFamily: 'inherit', fontSize: 12,
+              }}
+            >
+              {resending ? 'جارٍ الإرسال...' : 'إعادة الإرسال'}
+            </button>
+            {resendMsg && <div style={{ marginTop: 6, color: '#7d97b8' }}>{resendMsg}</div>}
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <Link href="/login" style={{ color: '#7d97b8', fontSize: 12, textDecoration: 'none' }}>
+              العودة لتسجيل الدخول
+            </Link>
+          </div>
         </div>
       </AuthShell>
     )
