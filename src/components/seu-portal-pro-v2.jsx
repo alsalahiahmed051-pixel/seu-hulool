@@ -3,6 +3,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
+import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
+import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
+import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
@@ -3834,23 +3837,27 @@ function SEULinksPage({ t }) {
    MAIN APP
    ══════════════════════════════════════════════════════════════ */
 export default function App() {
-  const [dark, setDark] = useStored("dark", true);
+  // Settings sync to the user's profile when logged in (cross-device);
+  // localStorage stays the instant source of truth for everyone.
+  const [dark, setDark] = useSyncedSetting("dark", "dark_mode", true);
   const [tab, setTab] = useState("home");
   const [course, setCourse] = useState(null);
-  const [favorites, setFavorites] = useStored("favorites", []);
+  // Favorites + notes sync per-user across devices (name-keyed tables),
+  // falling back to localStorage when logged out.
+  const [favorites, setFavorites] = useSyncedFavorites();
   // Live notifications: broadcasts sent from the admin panel + the user's
   // own, straight from Supabase (replaces the old localStorage mock).
   const [notifs, setNotifs] = useLiveNotifications();
-  const [notes, setNotes] = useStored("notes", {});
+  const [notes, setNotes] = useSyncedNotes();
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
   const [gpaCalcs, setGpaCalcs] = useStored("gpaCalcs", 0);
   const [aiChats, setAiChats] = useStored("aiChats", 0);
   const [semesters, setSemesters] = useStored("semesters", []);
-  const [soundOn, setSoundOn] = useStored("soundOn", true);
-  const [weeklyGoal, setWeeklyGoal] = useStored("weeklyGoal", 15);
-  const [seen, setSeen] = useStored("onboarded", false);
+  const [soundOn, setSoundOn] = useSyncedSetting("soundOn", "sound_on", true);
+  const [weeklyGoal, setWeeklyGoal] = useSyncedSetting("weeklyGoal", "weekly_goal", 15);
+  const [seen, setSeen] = useSyncedSetting("onboarded", "onboarded", false);
   const [tasks, setTasks] = useStored("tasks", []);
   const [schedule, setSchedule] = useStored("schedule", []);
   const [exams, setExams] = useStored("exams", []);
