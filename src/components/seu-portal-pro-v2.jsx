@@ -22,7 +22,7 @@ import {
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
   AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
   Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut,
-  Instagram, Youtube, Twitter, Ghost,
+  Instagram, Youtube, Twitter, Ghost, LogIn,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -2889,7 +2889,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           {profile?.name ? <>مرحباً <span style={{ color: P.gold }}>{profile.name}</span></> : <>مرحباً في <span style={{ color: P.gold }}>حلول</span></>}
         </h1>
         <p style={{ color: "rgba(255,255,255,.65)", fontSize: 13, margin: 0, lineHeight: 1.7 }}>
-          {profile?.track ? `مسارك: ${profile.track} • بوابتك الأكاديمية الذكية` : "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية"}
+          {profile?.track ? `مسارك: ${profile.track}${profile.plan ? " — " + profile.plan : ""} • بوابتك الأكاديمية الذكية` : "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية"}
         </p>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           <Btn onClick={() => setActiveTab("explore")} size="sm" variant="gold">
@@ -3372,17 +3372,16 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-const STUDENT_TRACKS = ["تحضيري", "تخصص (بكالوريوس)", "دبلوم", "دراسات عليا"];
-
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, openCourse, openSettings }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onLogout, openCourse, openSettings }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
-  const [draft, setDraft] = useState({ name: profile?.name || "", track: profile?.track || "" });
+  const [draft, setDraft] = useState({ name: profile?.name || "", track: profile?.track || "تحضيري", plan: profile?.plan || "" });
+  const draftPlans = AUTH_PLANS[draft.track] || null;
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
-    setProfile({ name: draft.name.trim(), track: draft.track || "تحضيري", created: profile?.created || Date.now() });
+    setProfile({ name: draft.name.trim(), track: draft.track || "تحضيري", plan: draft.plan || "", created: profile?.created || Date.now() });
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
   };
@@ -3420,7 +3419,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{profile.track}</span>}
+              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{profile.track}{profile.plan ? ` — ${profile.plan}` : ""}</span>}
               <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", gap: 5 }}><Clock size={12} color={P.gold} /> {totalHours} ساعة دراسة</span>
             </div>
           </div>
@@ -3444,17 +3443,33 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="اكتب اسمك"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار / التخصص</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-            {STUDENT_TRACKS.map(tr => {
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {AUTH_TRACKS.map(tr => {
               const active = draft.track === tr;
               return (
-                <button key={tr} onClick={() => setDraft(d => ({ ...d, track: tr }))} style={{
+                <button key={tr} onClick={() => setDraft(d => ({ ...d, track: tr, plan: "" }))} style={{
                   padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
                   background: active ? `${P.blue2}18` : t.s2, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
                 }}>{tr}</button>
               );
             })}
           </div>
+          {draftPlans && (
+            <>
+              <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>الخطة</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+                {draftPlans.map(pl => {
+                  const active = draft.plan === pl;
+                  return (
+                    <button key={pl} onClick={() => setDraft(d => ({ ...d, plan: pl }))} style={{
+                      padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                      background: active ? `${P.purple}18` : t.s2, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
+                    }}>{pl}</button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             {profile && <Btn variant="ghost" size="sm" onClick={() => setEditing(false)} style={{ flex: 1 }}>إلغاء</Btn>}
             <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim()}>
@@ -3555,6 +3570,16 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             })}
           </div>
         </div>
+      )}
+
+      {!editing && profile && (
+        <button onClick={() => { if (confirm("تسجيل الخروج؟ ستحتاج لإدخال اسمك ومسارك مجدداً.")) onLogout?.(); }} style={{
+          width: "100%", marginTop: 4, background: `${P.red}0d`, border: `1px solid ${P.red}30`, borderRadius: 12,
+          padding: "12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: P.red,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}>
+          <LogOut size={16} /> تسجيل الخروج
+        </button>
       )}
     </div>
   );
@@ -4149,6 +4174,124 @@ function SEULinksPage({ t, content }) {
 /* ══════════════════════════════════════════════════════════════
    MAIN APP
    ══════════════════════════════════════════════════════════════ */
+const AUTH_TRACKS = ["تحضيري", "تخصص", "دبلوم", "دراسات عليا"];
+const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
+
+// First-open sign-up / sign-in gate (no email). Register → name + track +
+// plan + password (saved to the DB for the admin). Or browse-only.
+function AuthGate({ t, setProfile, onBrowse, onToast }) {
+  const [mode, setMode] = useState("register"); // register | login
+  const [f, setF] = useState({ name: "", track: "تحضيري", plan: "", password: "", confirm: "" });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const plans = AUTH_PLANS[f.track] || null;
+
+  const submit = async () => {
+    setErr("");
+    if (mode === "register") {
+      if (f.name.trim().length < 2) return setErr("اكتب اسمك الكامل (الاسم واللقب)");
+      if (f.password.length < 4) return setErr("كلمة المرور 4 أحرف على الأقل");
+      if (f.password !== f.confirm) return setErr("كلمتا المرور غير متطابقتين");
+      setLoading(true);
+      try {
+        const res = await fetch("/api/student/register", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ full_name: f.name.trim(), track: f.track, plan: f.plan || "", password: f.password }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) onToast?.(d.error ? `تم الحفظ محليًا (${d.error})` : "تم الحفظ محليًا", "warn");
+      } catch { onToast?.("تم الحفظ محليًا (تعذّر الاتصال)", "warn"); }
+      setProfile({ name: f.name.trim(), track: f.track, plan: f.plan || "", created: Date.now() });
+      onToast?.("مرحباً بك في حلول 🎉", "success");
+      setLoading(false);
+    } else {
+      if (!f.name.trim() || !f.password) return setErr("أدخل الاسم وكلمة المرور");
+      setLoading(true);
+      try {
+        const res = await fetch("/api/student/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ full_name: f.name.trim(), password: f.password }),
+        });
+        const d = await res.json().catch(() => ({}));
+        setLoading(false);
+        if (!res.ok) return setErr(d.error || "تعذّر تسجيل الدخول");
+        setProfile({ name: d.student.full_name, track: d.student.track || "", plan: d.student.plan || "", created: Date.now() });
+        onToast?.(`أهلاً ${d.student.full_name} 👋`, "success");
+      } catch { setLoading(false); setErr("تعذّر الاتصال بالخادم"); }
+    }
+  };
+
+  const chip = (label, active, onClick) => (
+    <button key={label} onClick={onClick} type="button" style={{
+      padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+      background: active ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.08)",
+      border: `1.5px solid ${active ? "#fff" : "rgba(255,255,255,.2)"}`, color: "#fff",
+    }}>{label}</button>
+  );
+  const inp = { width: "100%", border: "1.5px solid rgba(255,255,255,.25)", borderRadius: 12, padding: "12px 14px", fontSize: 14, background: "rgba(255,255,255,.1)", color: "#fff", fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 12 };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 600, overflowY: "auto",
+      background: "linear-gradient(160deg, #04120c 0%, #063a27 45%, #0a5c3a 75%, #05130d 100%)",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 420, animation: "fadeUp .4s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ width: 72, height: 72, borderRadius: 22, margin: "0 auto 14px", background: "linear-gradient(135deg,#0a3d29,#0a8a58)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 40px rgba(10,138,88,.5)" }}>
+            <GradCap size={38} color={P.gold} strokeWidth={1.6} />
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>حلول</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", marginTop: 4 }}>بوابة الطالب الذكية — الجامعة السعودية الإلكترونية</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 18, background: "rgba(255,255,255,.08)", borderRadius: 12, padding: 4 }}>
+          {["register", "login"].map(m => (
+            <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{
+              flex: 1, padding: "10px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 800,
+              background: mode === m ? "#fff" : "transparent", color: mode === m ? "#0a5c3a" : "rgba(255,255,255,.7)",
+            }}>{m === "register" ? "حساب جديد" : "تسجيل دخول"}</button>
+          ))}
+        </div>
+
+        <input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="الاسم واللقب" style={inp} />
+
+        {mode === "register" && (
+          <>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 700, marginBottom: 8 }}>اختر مسارك</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+              {AUTH_TRACKS.map(tr => chip(tr, f.track === tr, () => setF(p => ({ ...p, track: tr, plan: "" }))))}
+            </div>
+            {plans && (
+              <>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 700, marginBottom: 8 }}>الخطة</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+                  {plans.map(pl => chip(pl, f.plan === pl, () => setF(p => ({ ...p, plan: pl }))))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        <input type="password" value={f.password} onChange={e => setF(p => ({ ...p, password: e.target.value }))} placeholder="كلمة المرور" style={inp} />
+        {mode === "register" && <input type="password" value={f.confirm} onChange={e => setF(p => ({ ...p, confirm: e.target.value }))} placeholder="تأكيد كلمة المرور" style={inp} />}
+
+        {err && <div style={{ background: "rgba(220,38,38,.2)", border: "1px solid rgba(248,113,113,.4)", color: "#fca5a5", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, textAlign: "center" }}>{err}</div>}
+
+        <button onClick={submit} disabled={loading} style={{
+          width: "100%", padding: "13px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 15, fontWeight: 800,
+          background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, color: "#3a2e05", opacity: loading ? 0.6 : 1,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}>
+          {loading ? "لحظة..." : mode === "register" ? <><CheckCircle size={17} /> إنشاء الحساب</> : <><LogIn size={17} /> دخول</>}
+        </button>
+
+        <button onClick={onBrowse} style={{ width: "100%", marginTop: 12, background: "none", border: "none", color: "rgba(255,255,255,.7)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", padding: 8 }}>
+          تصفّح الموقع بدون حساب
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Fires a reminder 5 minutes before any lecture on the current day (while the
 // app is open): in-app toast + sound + a browser notification if permitted.
 function useLectureReminders(schedule, soundOn, push) {
@@ -4206,8 +4349,9 @@ export default function App() {
   const { data: themeContent } = useSiteContent("theme");
   const brandPreset = getPreset(themeContent?.preset);
   applyBrand(brandPreset); // recolour P for this render
-  // Lightweight local student profile — name + track, no email/password.
+  // Lightweight local student profile — name + track + plan, no email.
   const [profile, setProfile] = useStored("student_profile", null);
+  const [browseOnly, setBrowseOnly] = useStored("browse_only", false);
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -4482,6 +4626,7 @@ export default function App() {
           favorites={favorites} totalSessions={totalSessions}
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
+          onLogout={() => { setProfile(null); setBrowseOnly(false); }}
           openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
@@ -4546,6 +4691,11 @@ export default function App() {
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
+
+      {/* First-open sign-up / sign-in gate (no email) */}
+      {!showOnboard && !profile && !browseOnly && (
+        <AuthGate t={t} setProfile={setProfile} onBrowse={() => setBrowseOnly(true)} onToast={toasts.push} />
+      )}
       {showAI && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: t.bg }}>
           {/* WhatsApp-like header */}
