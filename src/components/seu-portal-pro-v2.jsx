@@ -1662,8 +1662,8 @@ function SemesterChart({ semesters, t }) {
 function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newLec, setNewLec] = useState({ course: "", day: "الأحد", time: "08:00", room: "" });
-  const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
-  const DAY_COLORS = { "الأحد": P.blue2, "الاثنين": P.purple, "الثلاثاء": P.green, "الأربعاء": P.orange, "الخميس": P.red };
+  const DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+  const DAY_COLORS = { "السبت": P.cyan, "الأحد": P.blue2, "الاثنين": P.purple, "الثلاثاء": P.green, "الأربعاء": P.orange, "الخميس": P.red };
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const addLecture = () => {
     if (!newLec.course.trim()) return;
