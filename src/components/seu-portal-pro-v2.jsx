@@ -3522,7 +3522,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار / التخصص</label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-            {AUTH_TRACKS.map(tr => {
+            {AUTH_TRACKS.map(({ id: tr }) => {
               const active = draft.track === tr;
               return (
                 <button key={tr} onClick={() => setDraft(d => ({ ...d, track: tr, plan: "" }))} style={{
@@ -4252,118 +4252,126 @@ function SEULinksPage({ t, content }) {
 /* ══════════════════════════════════════════════════════════════
    MAIN APP
    ══════════════════════════════════════════════════════════════ */
-const AUTH_TRACKS = ["تحضيري", "تخصص", "دبلوم", "دراسات عليا"];
+const AUTH_TRACKS = [
+  { id: "تحضيري", Icon: BookOpen, desc: "السنة الأولى المشتركة" },
+  { id: "تخصص", Icon: GradCap, desc: "بكالوريوس التخصص" },
+  { id: "دبلوم", Icon: Award, desc: "برامج الدبلوم" },
+  { id: "دراسات عليا", Icon: Trophy, desc: "ماجستير ودراسات عليا" },
+];
 const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
 
-// First-open sign-up / sign-in gate (no email). Register → name + track +
-// plan + password (saved to the DB for the admin). Or browse-only.
+// One elegant screen: name + track (+ plan for تحضيري) + password. A single
+// button logs in if the name exists, else creates the account. Or browse.
 function AuthGate({ t, setProfile, onBrowse, onToast }) {
-  const [mode, setMode] = useState("register"); // register | login
-  const [f, setF] = useState({ name: "", track: "تحضيري", plan: "", password: "", confirm: "" });
+  const [f, setF] = useState({ name: "", track: "تحضيري", plan: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const plans = AUTH_PLANS[f.track] || null;
 
   const submit = async () => {
     setErr("");
-    if (mode === "register") {
-      if (f.name.trim().length < 2) return setErr("اكتب اسمك الكامل (الاسم واللقب)");
-      if (f.password.length < 4) return setErr("كلمة المرور 4 أحرف على الأقل");
-      if (f.password !== f.confirm) return setErr("كلمتا المرور غير متطابقتين");
-      setLoading(true);
-      try {
-        const res = await fetch("/api/student/register", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ full_name: f.name.trim(), track: f.track, plan: f.plan || "", password: f.password }),
-        });
-        const d = await res.json().catch(() => ({}));
-        if (!res.ok) onToast?.(d.error ? `تم الحفظ محليًا (${d.error})` : "تم الحفظ محليًا", "warn");
-      } catch { onToast?.("تم الحفظ محليًا (تعذّر الاتصال)", "warn"); }
-      setProfile({ name: f.name.trim(), track: f.track, plan: f.plan || "", created: Date.now() });
-      onToast?.("مرحباً بك في حلول 🎉", "success");
-      setLoading(false);
-    } else {
-      if (!f.name.trim() || !f.password) return setErr("أدخل الاسم وكلمة المرور");
-      setLoading(true);
-      try {
-        const res = await fetch("/api/student/login", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ full_name: f.name.trim(), password: f.password }),
-        });
-        const d = await res.json().catch(() => ({}));
+    if (f.name.trim().length < 2) return setErr("اكتب اسمك");
+    if (f.password.length < 4) return setErr("كلمة المرور 4 أحرف على الأقل");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/student/enter", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: f.name.trim(), track: f.track, plan: f.plan || "", password: f.password }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setProfile({ name: d.student?.full_name || f.name.trim(), track: d.student?.track || f.track, plan: d.student?.plan || f.plan || "", created: Date.now() });
+        onToast?.(d.mode === "login" ? `أهلاً بعودتك ${d.student?.full_name || ""} 👋` : "مرحباً بك في حلول 🎉", "success");
         setLoading(false);
-        if (!res.ok) return setErr(d.error || "تعذّر تسجيل الدخول");
-        setProfile({ name: d.student.full_name, track: d.student.track || "", plan: d.student.plan || "", created: Date.now() });
-        onToast?.(`أهلاً ${d.student.full_name} 👋`, "success");
-      } catch { setLoading(false); setErr("تعذّر الاتصال بالخادم"); }
+        return;
+      }
+      if (res.status === 401 || res.status === 400) { setErr(d.error || "تعذّر الدخول"); setLoading(false); return; }
+      // Server/DB not ready — don't lock the user out; continue locally.
+      setProfile({ name: f.name.trim(), track: f.track, plan: f.plan || "", created: Date.now() });
+      onToast?.("تم الدخول (تعذّر حفظ الحساب على الخادم)", "warn");
+    } catch {
+      setProfile({ name: f.name.trim(), track: f.track, plan: f.plan || "", created: Date.now() });
+      onToast?.("تم الدخول محليًا (تعذّر الاتصال)", "warn");
     }
+    setLoading(false);
   };
 
-  const chip = (label, active, onClick) => (
-    <button key={label} onClick={onClick} type="button" style={{
-      padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-      background: active ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.08)",
-      border: `1.5px solid ${active ? "#fff" : "rgba(255,255,255,.2)"}`, color: "#fff",
-    }}>{label}</button>
+  const field = (icon, node) => (
+    <div style={{ position: "relative", marginBottom: 12 }}>
+      <div style={{ position: "absolute", top: "50%", right: 14, transform: "translateY(-50%)", color: "rgba(255,255,255,.5)", display: "flex" }}>{icon}</div>
+      {node}
+    </div>
   );
-  const inp = { width: "100%", border: "1.5px solid rgba(255,255,255,.25)", borderRadius: 12, padding: "12px 14px", fontSize: 14, background: "rgba(255,255,255,.1)", color: "#fff", fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 12 };
+  const inp = { width: "100%", border: "1.5px solid rgba(255,255,255,.22)", borderRadius: 14, padding: "13px 44px 13px 14px", fontSize: 14.5, background: "rgba(255,255,255,.08)", color: "#fff", fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" };
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 600, overflowY: "auto",
-      background: "linear-gradient(160deg, #04120c 0%, #063a27 45%, #0a5c3a 75%, #05130d 100%)",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 420, animation: "fadeUp .4s ease" }}>
+      background: "linear-gradient(165deg, #041a12 0%, #06422c 42%, #0a6b45 72%, #041209 100%)",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 22 }}>
+      {/* floating orbs */}
+      <div style={{ position: "absolute", top: "12%", right: "14%", width: 200, height: 200, borderRadius: "50%", background: `radial-gradient(circle, ${P.gold}22 0%, transparent 70%)`, pointerEvents: "none", animation: "floatOrb 6s ease-in-out infinite" }} />
+      <div style={{ position: "absolute", bottom: "14%", left: "10%", width: 240, height: 240, borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,.16) 0%, transparent 70%)", pointerEvents: "none", animation: "floatOrb 7s ease-in-out infinite" }} />
+
+      <div style={{ width: "100%", maxWidth: 430, position: "relative", animation: "fadeUp .5s ease" }}>
         <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <div style={{ width: 72, height: 72, borderRadius: 22, margin: "0 auto 14px", background: "linear-gradient(135deg,#0a3d29,#0a8a58)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 12px 40px rgba(10,138,88,.5)" }}>
-            <GradCap size={38} color={P.gold} strokeWidth={1.6} />
+          <div style={{ width: 78, height: 78, borderRadius: 24, margin: "0 auto 14px", background: "linear-gradient(135deg,#0a3d29,#0a8a58)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 14px 44px rgba(10,138,88,.55)", border: "1.5px solid rgba(255,255,255,.14)" }}>
+            <GradCap size={40} color={P.gold} strokeWidth={1.6} />
           </div>
-          <div style={{ fontSize: 24, fontWeight: 900, color: "#fff" }}>حلول</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", marginTop: 4 }}>بوابة الطالب الذكية — الجامعة السعودية الإلكترونية</div>
+          <div style={{ fontSize: 27, fontWeight: 900, color: "#fff" }}>حلول</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", marginTop: 5 }}>بوابة الطالب الذكية — الجامعة السعودية الإلكترونية</div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 18, background: "rgba(255,255,255,.08)", borderRadius: 12, padding: 4 }}>
-          {["register", "login"].map(m => (
-            <button key={m} onClick={() => { setMode(m); setErr(""); }} style={{
-              flex: 1, padding: "10px", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 800,
-              background: mode === m ? "#fff" : "transparent", color: mode === m ? "#0a5c3a" : "rgba(255,255,255,.7)",
-            }}>{m === "register" ? "حساب جديد" : "تسجيل دخول"}</button>
-          ))}
-        </div>
+        <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 24, padding: 22, border: "1px solid rgba(255,255,255,.12)", backdropFilter: "blur(10px)", boxShadow: "0 20px 60px rgba(0,0,0,.35)" }}>
+          {field(<User size={18} />, <input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="الاسم" style={inp} />)}
 
-        <input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="الاسم واللقب" style={inp} />
+          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.65)", fontWeight: 700, margin: "6px 2px 9px" }}>اختر مسارك</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: plans ? 12 : 14 }}>
+            {AUTH_TRACKS.map(({ id, Icon, desc }) => {
+              const active = f.track === id;
+              return (
+                <button key={id} onClick={() => setF(p => ({ ...p, track: id, plan: "" }))} type="button" style={{
+                  textAlign: "right", padding: "11px 12px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+                  background: active ? "rgba(255,255,255,.16)" : "rgba(255,255,255,.05)",
+                  border: `1.5px solid ${active ? "#fff" : "rgba(255,255,255,.15)"}`, transition: "all .18s",
+                }}>
+                  <Icon size={18} color={active ? P.gold : "rgba(255,255,255,.75)"} />
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#fff", marginTop: 5 }}>{id}</div>
+                  <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", marginTop: 1 }}>{desc}</div>
+                </button>
+              );
+            })}
+          </div>
 
-        {mode === "register" && (
-          <>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 700, marginBottom: 8 }}>اختر مسارك</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-              {AUTH_TRACKS.map(tr => chip(tr, f.track === tr, () => setF(p => ({ ...p, track: tr, plan: "" }))))}
+          {plans && (
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              {plans.map(pl => {
+                const active = f.plan === pl;
+                return (
+                  <button key={pl} type="button" onClick={() => setF(p => ({ ...p, plan: pl }))} style={{
+                    flex: 1, padding: "9px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                    background: active ? `${P.gold}28` : "rgba(255,255,255,.05)", border: `1.5px solid ${active ? P.gold : "rgba(255,255,255,.15)"}`, color: "#fff",
+                  }}>{pl}</button>
+                );
+              })}
             </div>
-            {plans && (
-              <>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 700, marginBottom: 8 }}>الخطة</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-                  {plans.map(pl => chip(pl, f.plan === pl, () => setF(p => ({ ...p, plan: pl }))))}
-                </div>
-              </>
-            )}
-          </>
-        )}
+          )}
 
-        <input type="password" value={f.password} onChange={e => setF(p => ({ ...p, password: e.target.value }))} placeholder="كلمة المرور" style={inp} />
-        {mode === "register" && <input type="password" value={f.confirm} onChange={e => setF(p => ({ ...p, confirm: e.target.value }))} placeholder="تأكيد كلمة المرور" style={inp} />}
+          {field(<Lock size={18} />, <input type="password" value={f.password} onChange={e => setF(p => ({ ...p, password: e.target.value }))} onKeyDown={e => e.key === "Enter" && submit()} placeholder="كلمة المرور" style={inp} />)}
 
-        {err && <div style={{ background: "rgba(220,38,38,.2)", border: "1px solid rgba(248,113,113,.4)", color: "#fca5a5", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, textAlign: "center" }}>{err}</div>}
+          {err && <div style={{ background: "rgba(220,38,38,.2)", border: "1px solid rgba(248,113,113,.4)", color: "#fca5a5", borderRadius: 11, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, textAlign: "center" }}>{err}</div>}
 
-        <button onClick={submit} disabled={loading} style={{
-          width: "100%", padding: "13px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 15, fontWeight: 800,
-          background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, color: "#3a2e05", opacity: loading ? 0.6 : 1,
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-        }}>
-          {loading ? "لحظة..." : mode === "register" ? <><CheckCircle size={17} /> إنشاء الحساب</> : <><LogIn size={17} /> دخول</>}
-        </button>
+          <button onClick={submit} disabled={loading} style={{
+            width: "100%", padding: "14px", borderRadius: 16, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 16, fontWeight: 900,
+            background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, color: "#3a2e05", opacity: loading ? 0.6 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 10px 30px ${P.gold}44`,
+          }}>
+            {loading ? "لحظة..." : <><LogIn size={18} /> دخول</>}
+          </button>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", textAlign: "center", marginTop: 9 }}>حساب جديد؟ سيُنشأ تلقائيًا. لديك حساب؟ اكتب نفس الاسم وكلمة المرور.</div>
+        </div>
 
-        <button onClick={onBrowse} style={{ width: "100%", marginTop: 12, background: "none", border: "none", color: "rgba(255,255,255,.7)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", padding: 8 }}>
-          تصفّح الموقع بدون حساب
+        <button onClick={onBrowse} style={{ width: "100%", marginTop: 14, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, color: "rgba(255,255,255,.85)", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+          <Compass size={16} /> تصفّح الموقع بدون حساب
         </button>
       </div>
     </div>
