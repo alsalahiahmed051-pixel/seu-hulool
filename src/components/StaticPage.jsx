@@ -28,7 +28,7 @@ export default function StaticPage({ title, updatedAt, children }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8 }}>
           <div style={{
             width: 44, height: 44, borderRadius: 14,
-            background: 'linear-gradient(135deg,#001f5a,#0038b8)',
+            background: 'linear-gradient(135deg,#043d2a,#066b45)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>

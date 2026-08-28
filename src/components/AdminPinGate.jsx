@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lock } from 'lucide-react'
 
-const P = { navy: '#001f5a', blue: '#0038b8', blue2: '#1a56db', red: '#dc2626' }
+const P = { navy: '#043d2a', blue: '#066b45', blue2: '#0a8a58', red: '#dc2626' }
 
 export default function AdminPinGate({ adminName }) {
   const router = useRouter()

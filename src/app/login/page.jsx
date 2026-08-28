@@ -74,7 +74,7 @@ function LoginForm() {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           gap: 10, marginBottom: 18, transition: 'all .2s',
         }}
-        onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#1a56db')}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = '#0a8a58')}
         onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#1c2e48')}
       >
         <svg width="18" height="18" viewBox="0 0 18 18">

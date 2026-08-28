@@ -28,7 +28,7 @@ export default function AuthShell({ title, subtitle, children, footer }) {
             width: 56,
             height: 56,
             borderRadius: 18,
-            background: 'linear-gradient(135deg,#001f5a,#0038b8)',
+            background: 'linear-gradient(135deg,#043d2a,#066b45)',
             alignItems: 'center',
             justifyContent: 'center',
             marginBottom: 16,
@@ -87,7 +87,7 @@ export function Input({ label, error, ...rest }) {
           boxSizing: 'border-box',
           transition: 'border-color .2s',
         }}
-        onFocus={(e) => (e.target.style.borderColor = '#1a56db')}
+        onFocus={(e) => (e.target.style.borderColor = '#0a8a58')}
         onBlur={(e) => (e.target.style.borderColor = error ? '#dc2626' : '#1c2e48')}
       />
       {error && (
@@ -109,7 +109,7 @@ export function SubmitBtn({ loading, children, ...rest }) {
         border: 'none',
         background: loading
           ? '#1c2e48'
-          : 'linear-gradient(135deg,#0038b8,#1a56db)',
+          : 'linear-gradient(135deg,#066b45,#0a8a58)',
         color: '#fff',
         fontSize: 14,
         fontWeight: 800,
