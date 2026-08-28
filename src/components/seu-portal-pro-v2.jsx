@@ -1528,7 +1528,7 @@ const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
 function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
-  const [nt, setNt] = useState({ title: "", type: "واجب", track: "", subject: "", dueDate: "", priority: "متوسط" });
+  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", subject: "", dueDate: "", priority: "متوسط" });
   const today = todayKey();
 
   // One-time migration: fold legacy exams into the unified tasks list.
@@ -1551,8 +1551,9 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
   const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
   const add = () => {
     if (!nt.title.trim()) return;
-    setTasks(ts => [...(ts || []), { ...nt, id: Date.now(), done: false }]);
-    setNt({ title: "", type: "واجب", track: "", subject: "", dueDate: "", priority: "متوسط" });
+    const finalType = nt.type === "أخرى" && nt.customType.trim() ? nt.customType.trim() : nt.type;
+    setTasks(ts => [...(ts || []), { title: nt.title, type: finalType, track: nt.track, subject: nt.subject, dueDate: nt.dueDate, priority: nt.priority, id: Date.now(), done: false }]);
+    setNt({ title: "", type: "واجب", customType: "", track: "", subject: "", dueDate: "", priority: "متوسط" });
     setShowAdd(false);
     const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
     onToast?.("تمت الإضافة +15 XP", "success");
@@ -1620,6 +1621,10 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
                   );
                 })}
               </div>
+              {nt.type === "أخرى" && (
+                <input autoFocus placeholder="اكتب نوعاً مخصصاً (مثال: عرض تقديمي)" value={nt.customType} onChange={e => setNt(p => ({ ...p, customType: e.target.value }))}
+                  style={{ marginTop: 8, width: "100%", border: `1.5px solid ${P.green}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+              )}
             </div>
 
             {/* Track selector */}
