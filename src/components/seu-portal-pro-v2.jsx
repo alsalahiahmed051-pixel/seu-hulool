@@ -681,12 +681,13 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
   };
 
   const defaultSugs = [
-    `ما أهم مواضيع ${subject}؟`,
-    "كيف أستعد للاختبار النهائي؟",
-    "لخّص الوحدة الأولى",
-    "ما نوع أسئلة الاختبار؟",
-    "أعطني أمثلة تطبيقية",
-    "نصائح للدراسة الفعّالة",
+    `📌 أهم مواضيع ${subject}`,
+    "📝 لخّص لي بنقاط مختصرة",
+    "🧠 اشرح لي بطريقة مبسطة",
+    "🎯 كيف أستعد للاختبار النهائي؟",
+    "❓ أنشئ لي اختبار قصير",
+    "💡 أعطني أمثلة تطبيقية",
+    "⏱️ خطة مذاكرة سريعة",
   ];
   const allSugs = [...fileSugs, ...defaultSugs];
 
@@ -2844,10 +2845,6 @@ function AcademicCalendar({ t }) {
 function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, onShowFocus, onShowReport }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
-  const hijriToday = (() => {
-    try { return new Date().toLocaleDateString("ar-SA-u-ca-islamic-umalqura", { weekday: "long", day: "numeric", month: "long" }); }
-    catch { try { return new Date().toLocaleDateString("ar-SA", { weekday: "long", day: "numeric", month: "long" }); } catch { return ""; } }
-  })();
   const [tipIdx, setTipIdx] = useState(() => Math.floor(Date.now() / 3600000) % TIPS.length);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   useEffect(() => {
@@ -2881,10 +2878,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       <div style={{ background: t.hero, borderRadius: 22, padding: "22px", marginBottom: 16, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}10`, pointerEvents: "none" }} />
-        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span>{greeting} 👋</span>
-          <span style={{ color: P.gold, fontSize: 11.5 }}>{hijriToday}</span>
-        </div>
+        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 4 }}>{greeting} 👋</div>
         <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, margin: "0 0 6px", lineHeight: 1.3 }}>
           مرحباً في <span style={{ color: P.gold }}>حلول</span>
         </h1>
@@ -4366,6 +4360,21 @@ export default function App() {
           sessionLog={sessionLog} streak={streak}
           openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
+
+      {/* Floating AI assistant button — reachable from any main tab */}
+      {!showAI && !showFocus && !settingsOpen && !searchOpen && !notifOpen && !showMonthlyReport && !course && (
+        <button onClick={() => setShowAI(true)} title="المساعد الذكي" aria-label="المساعد الذكي" style={{
+          position: "fixed", bottom: 82, left: 16, zIndex: 90,
+          width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer",
+          background: `linear-gradient(135deg,${P.navy},${P.blue2})`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `0 8px 24px ${P.blue}66, 0 2px 8px rgba(0,0,0,.3)`,
+          animation: "floatOrb 3s ease-in-out infinite",
+        }}>
+          <Sparkles size={24} color={P.gold} />
+          <span style={{ position: "absolute", top: 2, right: 2, width: 12, height: 12, borderRadius: "50%", background: "#4ade80", border: `2px solid ${P.navy}`, boxShadow: "0 0 6px #4ade80" }} />
+        </button>
+      )}
 
       {/* BOTTOM NAV */}
       <div id="bottom-nav" style={{
