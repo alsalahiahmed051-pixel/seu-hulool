@@ -1509,85 +1509,199 @@ function GradeCalc({ subject, t }) {
 /* ══════════════════════════════════════════════════════════════
    TASK TRACKER
    ══════════════════════════════════════════════════════════════ */
-function TaskTracker({ t, tasks, setTasks, onToast }) {
+// Unified task/exam model. Every item lives in `tasks` with a `type`.
+const TASK_TYPES = ["واجب", "اسايمنت", "مشروع", "مناقشة", "كويز", "ميدترم", "فاينل", "أخرى"];
+const EXAM_TYPES = ["كويز", "ميدترم", "فاينل"];
+const TASK_TRACKS = ["تحضيري", "تخصص", "دبلوم", "دراسات عليا"];
+const TASK_TYPE_META = {
+  "واجب": { color: P.blue2, Icon: FileText },
+  "اسايمنت": { color: P.purple, Icon: FileText },
+  "مشروع": { color: P.orange, Icon: Briefcase },
+  "مناقشة": { color: P.cyan, Icon: MessageCircle },
+  "كويز": { color: P.gold, Icon: Zap },
+  "ميدترم": { color: P.red, Icon: Calendar },
+  "فاينل": { color: "#b91c1c", Icon: Award },
+  "أخرى": { color: P.green, Icon: CheckCircle },
+};
+const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
+
+function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [newTask, setNewTask] = useState({ title: "", subject: "", dueDate: "", priority: "متوسط" });
+  const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
+  const [nt, setNt] = useState({ title: "", type: "واجب", track: "", subject: "", dueDate: "", priority: "متوسط" });
   const today = todayKey();
-  const addTask = () => {
-    if (!newTask.title.trim()) return;
-    setTasks(ts => [...(ts || []), { ...newTask, id: Date.now(), done: false }]);
-    setNewTask({ title: "", subject: "", dueDate: "", priority: "متوسط" });
+
+  // One-time migration: fold legacy exams into the unified tasks list.
+  useEffect(() => {
+    if (!exams || exams.length === 0) return;
+    setTasks(ts => {
+      const ids = new Set((ts || []).map(x => x.id));
+      const mapped = exams.map(e => ({
+        id: e.id || (Date.now() + Math.floor(Math.random() * 1000)),
+        title: e.subject || "اختبار",
+        type: e.type === "نهائي" ? "فاينل" : e.type === "ميدترم" ? "ميدترم" : e.type === "مشروع" ? "مشروع" : (EXAM_TYPES.includes(e.type) ? e.type : "أخرى"),
+        track: "", subject: e.subject || "", dueDate: e.date || "", priority: "عالي", done: false,
+      })).filter(m => !ids.has(m.id));
+      return [...(ts || []), ...mapped];
+    });
+    setExams([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
+  const add = () => {
+    if (!nt.title.trim()) return;
+    setTasks(ts => [...(ts || []), { ...nt, id: Date.now(), done: false }]);
+    setNt({ title: "", type: "واجب", track: "", subject: "", dueDate: "", priority: "متوسط" });
     setShowAdd(false);
-    onToast?.("تم إضافة المهمة", "success");
+    const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
+    onToast?.("تمت الإضافة +15 XP", "success");
   };
   const toggle = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
   const remove = (id) => setTasks(ts => (ts || []).filter(tk => tk.id !== id));
-  const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
-  const sorted = [...(tasks || [])].sort((a, b) => {
+
+  const all = (tasks || []).map(tk => ({ ...tk, type: tk.type || "واجب" }));
+  const filtered = all.filter(tk => filter === "الكل" ? true : filter === "اختبارات" ? EXAM_TYPES.includes(tk.type) : !EXAM_TYPES.includes(tk.type));
+  const sorted = [...filtered].sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
   });
+  const pending = all.filter(tk => !tk.done).length;
+  const examCount = all.filter(tk => EXAM_TYPES.includes(tk.type) && !tk.done).length;
+
+  const chip = (label, active, onClick, count) => (
+    <button onClick={onClick} style={{
+      padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+      fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
+      background: active ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
+      border: `1px solid ${active ? P.blue2 : t.bd}`, color: active ? "#fff" : t.mu,
+    }}>{label}{count != null ? ` (${count})` : ""}</button>
+  );
+
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-          <CheckCircle size={15} color={P.blue2} /> مهامي القادمة
+        <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 9, background: `linear-gradient(135deg,${P.blue},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <CheckCircle size={15} color="#fff" />
+          </div>
+          مهامي
+          {pending > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: P.blue2, background: `${P.blue2}15`, borderRadius: 6, padding: "1px 7px" }}>{pending}</span>}
         </div>
-        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.blue2}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.blue2, fontSize: 13, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
-          <Plus size={12} /> مهمة
+        <button onClick={() => setShowAdd(s => !s)} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 800 }}>
+          <Plus size={13} /> إضافة
         </button>
       </div>
+
+      {/* Filter chips */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
+        {chip("الكل", filter === "الكل", () => setFilter("الكل"), all.length)}
+        {chip("اختبارات", filter === "اختبارات", () => setFilter("اختبارات"), examCount)}
+        {chip("مهام", filter === "مهام", () => setFilter("مهام"))}
+      </div>
+
       {showAdd && (
         <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input placeholder="عنوان المهمة (مطلوب)" value={newTask.title} onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))}
-              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input placeholder="العنوان (مطلوب)" value={nt.title} onChange={e => setNt(p => ({ ...p, title: e.target.value }))}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "9px 11px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+
+            {/* Type selector */}
+            <div>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>النوع</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {TASK_TYPES.map(ty => {
+                  const m = typeMeta(ty); const active = nt.type === ty;
+                  return (
+                    <button key={ty} onClick={() => setNt(p => ({ ...p, type: ty }))} style={{
+                      display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                      background: active ? `${m.color}18` : t.s1, border: `1.5px solid ${active ? m.color : t.bd}`, color: active ? m.color : t.mu,
+                    }}><m.Icon size={12} /> {ty}</button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Track selector */}
+            <div>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>المجال (اختياري)</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {TASK_TRACKS.map(tr => {
+                  const active = nt.track === tr;
+                  return (
+                    <button key={tr} onClick={() => setNt(p => ({ ...p, track: active ? "" : tr }))} style={{
+                      padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                      background: active ? `${P.purple}18` : t.s1, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
+                    }}>{tr}</button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <input placeholder="المادة" value={newTask.subject} onChange={e => setNewTask(p => ({ ...p, subject: e.target.value }))}
+              <input placeholder="المادة (اختياري)" value={nt.subject} onChange={e => setNt(p => ({ ...p, subject: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
-              <input type="date" value={newTask.dueDate} onChange={e => setNewTask(p => ({ ...p, dueDate: e.target.value }))}
+              <input type="date" value={nt.dueDate} onChange={e => setNt(p => ({ ...p, dueDate: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
             </div>
+
             <div style={{ display: "flex", gap: 6 }}>
               {["عالي", "متوسط", "منخفض"].map(p => (
-                <button key={p} onClick={() => setNewTask(nt => ({ ...nt, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${newTask.priority === p ? prioColor[p] : t.bd}`, background: newTask.priority === p ? `${prioColor[p]}15` : t.s1, color: newTask.priority === p ? prioColor[p] : t.mu, fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                <button key={p} onClick={() => setNt(x => ({ ...x, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${nt.priority === p ? prioColor[p] : t.bd}`, background: nt.priority === p ? `${prioColor[p]}15` : t.s1, color: nt.priority === p ? prioColor[p] : t.mu, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                   {p}
                 </button>
               ))}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
-              <Btn variant="primary" size="sm" onClick={addTask} style={{ flex: 2 }} disabled={!newTask.title.trim()}>
+              <Btn variant="primary" size="sm" onClick={add} style={{ flex: 2 }} disabled={!nt.title.trim()}>
                 <Plus size={14} /> إضافة
               </Btn>
             </div>
           </div>
         </div>
       )}
+
       {sorted.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "12px 0", color: t.dim, fontSize: 13 }}>لا مهام بعد، أضف مهمتك الأولى</div>
+        <div style={{ textAlign: "center", padding: "18px 0", color: t.dim, fontSize: 13 }}>
+          <CheckCircle size={26} color={t.dim} style={{ opacity: 0.5, marginBottom: 6 }} />
+          <div>{filter === "اختبارات" ? "لا اختبارات قادمة" : "لا مهام بعد، أضف مهمتك الأولى"}</div>
+        </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
-          {sorted.slice(0, 6).map(task => {
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
+          {sorted.slice(0, 12).map(task => {
+            const m = typeMeta(task.type);
             const isOverdue = !task.done && task.dueDate && task.dueDate < today;
-            const overdueDays = isOverdue ? Math.ceil((new Date(today) - new Date(task.dueDate)) / 86400000) : 0;
+            const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
+            const overdueDays = isOverdue ? Math.abs(days) : 0;
+            const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
             const pc = prioColor[task.priority] || P.orange;
             return (
-              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: isOverdue && !task.done ? `${P.red}08` : t.s2, borderRadius: 10, border: `1px solid ${isOverdue && !task.done ? P.red + "40" : t.bd}`, opacity: task.done ? 0.55 : 1 }}>
+              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1 }}>
                 <button onClick={() => toggle(task.id)} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {task.done && <Check size={12} color={P.green} />}
                 </button>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: `${m.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <m.Icon size={14} color={m.color} />
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
-                  <div style={{ fontSize: 11.5, color: t.mu, display: "flex", gap: 6, marginTop: 1 }}>
+                  <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
+                    {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
                     {task.subject && <span>{task.subject}</span>}
                     {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</span>}
                     {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
                   </div>
                 </div>
-                <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} />
+                {!task.done && days != null && !isOverdue && (
+                  <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, fontWeight: 800, flexShrink: 0, whiteSpace: "nowrap" }}>
+                    {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
+                  </div>
+                )}
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={task.priority} />
                 <button onClick={() => remove(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
-                  <X size={11} />
+                  <X size={12} />
                 </button>
               </div>
             );
@@ -1659,25 +1773,96 @@ function SemesterChart({ semesters, t }) {
 /* ══════════════════════════════════════════════════════════════
    SCHEDULE PAGE
    ══════════════════════════════════════════════════════════════ */
+const WEEK_ORDER = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+const isUrl = (s) => /^https?:\/\//i.test((s || "").trim());
+const fmtCountdown = (mins) => {
+  if (mins <= 0) return "الآن";
+  if (mins < 60) return `خلال ${mins} دقيقة`;
+  if (mins < 1440) { const h = Math.floor(mins / 60), mm = mins % 60; return `خلال ${h} ساعة${mm ? ` و${mm} د` : ""}`; }
+  const d = Math.floor(mins / 1440); return `خلال ${d} يوم`;
+};
+
 function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [newLec, setNewLec] = useState({ course: "", day: "الأحد", time: "08:00", room: "" });
+  const [newLec, setNewLec] = useState({ course: "", day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true });
+  const [nowTick, setNowTick] = useState(0);
+  const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
   const DAY_COLORS = { "السبت": P.cyan, "الأحد": P.blue2, "الاثنين": P.purple, "الثلاثاء": P.green, "الأربعاء": P.orange, "الخميس": P.red };
-  const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
+  const todayAr = WEEK_ORDER[new Date().getDay()];
+
+  // Keep the "next lecture" countdown live.
+  useEffect(() => { const iv = setInterval(() => setNowTick(x => x + 1), 30000); return () => clearInterval(iv); }, []);
+
+  const nextLec = useMemo(() => {
+    const now = new Date();
+    const todayIdx = now.getDay();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    let best = null;
+    (schedule || []).forEach(lec => {
+      const di = WEEK_ORDER.indexOf(lec.day);
+      if (di < 0 || !lec.time) return;
+      const [h, m] = lec.time.split(":").map(Number);
+      if (isNaN(h)) return;
+      const lecMin = h * 60 + m;
+      let dayDelta = (di - todayIdx + 7) % 7;
+      if (dayDelta === 0 && lecMin <= nowMin) dayDelta = 7;
+      const total = dayDelta * 1440 + (lecMin - nowMin);
+      if (!best || total < best.total) best = { lec, total, dayDelta };
+    });
+    return best;
+  }, [schedule, nowTick]);
+
+  const enableNotifs = async () => {
+    if (typeof Notification === "undefined") { onToast?.("متصفحك لا يدعم التنبيهات", "warn"); return; }
+    try {
+      const p = await Notification.requestPermission();
+      setNotifPerm(p);
+      onToast?.(p === "granted" ? "تم تفعيل التنبيهات ✅" : "لم يتم منح إذن التنبيهات", p === "granted" ? "success" : "warn");
+    } catch { onToast?.("تعذّر تفعيل التنبيهات", "error"); }
+  };
+
   const addLecture = () => {
     if (!newLec.course.trim()) return;
     setSchedule(s => [...(s || []), { ...newLec, id: Date.now() }]);
-    setNewLec({ course: "", day: "الأحد", time: "08:00", room: "" });
+    setNewLec({ course: "", day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true });
     setShowAdd(false);
     onToast?.("تم إضافة المحاضرة", "success");
   };
   const removeLecture = (id) => setSchedule(s => (s || []).filter(l => l.id !== id));
+  const toggleRemind = (id) => setSchedule(s => (s || []).map(l => l.id === id ? { ...l, remind: l.remind === false } : l));
+
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
-      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
         <CalendarDays size={20} color={P.blue2} /> جدولي الأسبوعي
       </h2>
+
+      {/* Next lecture countdown */}
+      {nextLec && (
+        <div style={{ background: t.hero, borderRadius: 16, padding: "14px 16px", marginBottom: 14, position: "relative", overflow: "hidden" }}>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.75)", marginBottom: 3 }}>محاضرتك القادمة</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", marginBottom: 4 }}>{nextLec.lec.course}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, color: P.gold, fontWeight: 800 }}>{fmtCountdown(nextLec.total)}</span>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)" }}>• {nextLec.lec.day} {nextLec.lec.time}</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: (nextLec.lec.mode === "أونلاين" ? P.blue2 : P.green), borderRadius: 6, padding: "1px 8px" }}>{nextLec.lec.mode || "حضوري"}</span>
+          </div>
+          {nextLec.lec.mode === "أونلاين" && isUrl(nextLec.lec.room) && (
+            <a href={nextLec.lec.room} target="_blank" rel="noopener noreferrer" style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", color: "#fff", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, textDecoration: "none" }}>
+              <Play size={13} /> دخول المحاضرة
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* Notifications enable prompt */}
+      {notifPerm !== "granted" && notifPerm !== "unsupported" && (schedule || []).length > 0 && (
+        <button onClick={enableNotifs} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: `${P.gold}15`, border: `1px solid ${P.gold}40`, color: t.tx, borderRadius: 12, padding: "10px 14px", marginBottom: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700 }}>
+          <Bell size={15} color={P.gold} /> فعّل التنبيه قبل المحاضرة بـ 5 دقائق
+        </button>
+      )}
+
       {DAYS.map(day => {
         const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
         const isToday = day === todayAr;
@@ -1693,20 +1878,37 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
             {dayLecs.length === 0 ? (
               <div style={{ fontSize: 12, color: t.dim, padding: "7px 12px", background: t.s2, borderRadius: 8, border: `1px dashed ${t.bd}` }}>لا محاضرات</div>
             ) : (
-              dayLecs.map(lec => (
+              dayLecs.map(lec => {
+                const online = lec.mode === "أونلاين";
+                const mc = online ? P.blue2 : P.green;
+                return (
                 <div key={lec.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: isToday ? `${dc}10` : t.s1, borderRadius: 10, border: `1px solid ${isToday ? dc + "40" : t.bd}`, marginBottom: 5 }}>
                   <div style={{ width: 30, height: 30, borderRadius: 8, background: `${dc}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <Clock size={13} color={dc} />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{lec.course}</div>
-                    <div style={{ fontSize: 12, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {lec.course}
+                      <span style={{ fontSize: 10, fontWeight: 800, color: mc, background: `${mc}18`, borderRadius: 5, padding: "1px 6px" }}>{lec.mode || "حضوري"}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: t.mu, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {lec.time}{lec.room && !isUrl(lec.room) ? ` • ${lec.room}` : ""}
+                    </div>
                   </div>
+                  {online && isUrl(lec.room) && (
+                    <a href={lec.room} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={{ background: `${P.blue2}18`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.blue2, display: "flex" }}>
+                      <Play size={13} />
+                    </a>
+                  )}
+                  <button onClick={() => toggleRemind(lec.id)} title={lec.remind === false ? "تفعيل التذكير" : "التذكير مفعّل"} style={{ background: lec.remind === false ? `${t.mu}15` : `${P.gold}18`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: lec.remind === false ? t.mu : P.gold, display: "flex" }}>
+                    <Bell size={13} />
+                  </button>
                   <button onClick={() => removeLecture(lec.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 5, cursor: "pointer", color: P.red, display: "flex" }}>
                     <X size={12} />
                   </button>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         );
@@ -1717,6 +1919,23 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input placeholder="اسم المادة (مطلوب)" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            {/* Mode selector */}
+            <div style={{ display: "flex", gap: 8 }}>
+              {["حضوري", "أونلاين"].map(mode => {
+                const active = newLec.mode === mode;
+                const mc = mode === "أونلاين" ? P.blue2 : P.green;
+                return (
+                  <button key={mode} onClick={() => setNewLec(p => ({ ...p, mode }))} style={{
+                    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    background: active ? `${mc}18` : t.s2, border: `1.5px solid ${active ? mc : t.bd}`,
+                    color: active ? mc : t.mu, borderRadius: 9, padding: "8px 10px", cursor: "pointer",
+                    fontFamily: "inherit", fontSize: 13, fontWeight: 800,
+                  }}>
+                    {mode === "أونلاين" ? <Monitor size={14} /> : <Building2 size={14} />} {mode}
+                  </button>
+                );
+              })}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <select value={newLec.day} onChange={e => setNewLec(p => ({ ...p, day: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none" }}>
@@ -1725,8 +1944,12 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
               <input type="time" value={newLec.time} onChange={e => setNewLec(p => ({ ...p, time: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none" }} />
             </div>
-            <input placeholder="القاعة / الرابط (اختياري)" value={newLec.room} onChange={e => setNewLec(p => ({ ...p, room: e.target.value }))}
-              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <input placeholder={newLec.mode === "أونلاين" ? "رابط المحاضرة (Zoom / Teams)" : "القاعة (اختياري)"} value={newLec.room} onChange={e => setNewLec(p => ({ ...p, room: e.target.value }))}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: newLec.mode === "أونلاين" ? "ltr" : "rtl", textAlign: newLec.mode === "أونلاين" ? "left" : "right", outline: "none" }} />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.tx, cursor: "pointer", padding: "2px 2px" }}>
+              <input type="checkbox" checked={newLec.remind !== false} onChange={e => setNewLec(p => ({ ...p, remind: e.target.checked }))} style={{ accentColor: P.gold, width: 16, height: 16 }} />
+              <Bell size={14} color={P.gold} /> تذكيري قبل المحاضرة بـ 5 دقائق
+            </label>
             <div style={{ display: "flex", gap: 8 }}>
               <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
               <Btn variant="primary" size="sm" onClick={addLecture} style={{ flex: 2 }} disabled={!newLec.course.trim()}>
@@ -2274,93 +2497,6 @@ function XPBar({ xp, t }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════
-   EXAM COUNTDOWN WIDGET (Feature 2)
-   ══════════════════════════════════════════════════════════════ */
-function ExamCountdown({ exams, setExams, t, onToast, setXp }) {
-  const [showAdd, setShowAdd] = useState(false);
-  const [newExam, setNewExam] = useState({ subject: ALL_SUBJECTS_LIST[0] || "", date: "", type: "ميدترم" });
-  const today = todayKey();
-
-  const upcoming = (exams || []).filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date));
-
-  const addExam = () => {
-    if (!newExam.date) return;
-    setExams(prev => [...(prev || []), { ...newExam, id: Date.now() }]);
-    setNewExam({ subject: ALL_SUBJECTS_LIST[0] || "", date: "", type: "ميدترم" });
-    setShowAdd(false);
-    // Award XP
-    const xp = storage.get("xp", 0);
-    storage.set("xp", xp + 20);
-    setXp(xp + 20);
-    onToast?.("تم إضافة الاختبار +20 XP", "success");
-  };
-
-  const remove = (id) => setExams(prev => (prev || []).filter(e => e.id !== id));
-
-  const countdownColor = (days) => days <= 3 ? P.red : days <= 7 ? P.orange : P.green;
-
-  return (
-    <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-          <Calendar size={15} color={P.red} /> اختباراتي القادمة
-        </div>
-        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.red}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.red, fontSize: 13, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
-          <Plus size={12} /> اختبار
-        </button>
-      </div>
-      {showAdd && (
-        <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <select value={newExam.subject} onChange={e => setNewExam(p => ({ ...p, subject: e.target.value }))}
-              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }}>
-              {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <input type="date" value={newExam.date} onChange={e => setNewExam(p => ({ ...p, date: e.target.value }))}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
-              <select value={newExam.type} onChange={e => setNewExam(p => ({ ...p, type: e.target.value }))}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }}>
-                {["ميدترم", "نهائي", "مشروع"].map(tp => <option key={tp} value={tp}>{tp}</option>)}
-              </select>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
-              <Btn variant="primary" size="sm" onClick={addExam} style={{ flex: 2 }} disabled={!newExam.date}>
-                <Plus size={14} /> إضافة
-              </Btn>
-            </div>
-          </div>
-        </div>
-      )}
-      {upcoming.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "10px 0", color: t.dim, fontSize: 13 }}>لا اختبارات قادمة، أضف اختبارك الأول</div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {upcoming.slice(0, 5).map(exam => {
-            const days = Math.ceil((new Date(exam.date) - new Date(today)) / 86400000);
-            const cc = countdownColor(days);
-            return (
-              <div key={exam.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}` }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{exam.subject}</div>
-                  <div style={{ fontSize: 11.5, color: t.mu, marginTop: 1 }}>{exam.type} • {new Date(exam.date + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</div>
-                </div>
-                <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                  {days === 0 ? "اليوم!" : days === 1 ? "غداً" : `تبقى ${days} يوم`}
-                </div>
-                <button onClick={() => remove(exam.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
-                  <X size={11} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════
    MONTHLY REPORT MODAL (Feature 7)
@@ -2740,11 +2876,8 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       {/* Daily Progress */}
       <DailyProgress sessionLog={sessionLog} weeklyGoal={weeklyGoal} t={t} />
 
-      {/* Exam Countdown */}
-      <ExamCountdown exams={exams} setExams={setExams} t={t} onToast={onToast} setXp={setXp} />
-
-      {/* Task Tracker */}
-      <TaskTracker t={t} tasks={tasks} setTasks={setTasks} onToast={onToast} />
+      {/* Unified tasks + exams hub */}
+      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} />
 
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
@@ -3923,6 +4056,43 @@ function SEULinksPage({ t, content }) {
 /* ══════════════════════════════════════════════════════════════
    MAIN APP
    ══════════════════════════════════════════════════════════════ */
+// Fires a reminder 5 minutes before any lecture on the current day (while the
+// app is open): in-app toast + sound + a browser notification if permitted.
+function useLectureReminders(schedule, soundOn, push) {
+  const firedRef = useRef(null);
+  if (firedRef.current === null) firedRef.current = new Set();
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const today = WEEK_ORDER[now.getDay()];
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const dateKey = now.toISOString().slice(0, 10);
+      (schedule || []).forEach(lec => {
+        if (lec.day !== today || !lec.time || lec.remind === false) return;
+        const [h, m] = String(lec.time).split(":").map(Number);
+        if (isNaN(h)) return;
+        const diff = (h * 60 + m) - nowMin;
+        const key = `${lec.id}_${dateKey}`;
+        if (diff > 0 && diff <= 5 && !firedRef.current.has(key)) {
+          firedRef.current.add(key);
+          const where = lec.mode === "أونلاين" ? "أونلاين" : (lec.room || "");
+          const body = `${lec.course} تبدأ خلال ${diff} دقيقة${where ? " • " + where : ""}`;
+          push?.(`⏰ ${body}`, "warn");
+          if (soundOn) playBell();
+          try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification("تذكير محاضرة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
+            }
+          } catch {}
+        }
+      });
+    };
+    tick();
+    const iv = setInterval(tick, 30000);
+    return () => clearInterval(iv);
+  }, [schedule, soundOn, push]);
+}
+
 export default function App() {
   // Settings sync to the user's profile when logged in (cross-device);
   // localStorage stays the instant source of truth for everyone.
@@ -3971,6 +4141,7 @@ export default function App() {
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark);
   const toasts = useToasts();
+  useLectureReminders(schedule, soundOn, toasts.push);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
