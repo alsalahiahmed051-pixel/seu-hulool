@@ -2898,49 +2898,13 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         )}
       </div>
 
-      {/* Daily Progress */}
-      <DailyProgress sessionLog={sessionLog} weeklyGoal={weeklyGoal} t={t} />
-
       {/* Unified tasks + exams hub */}
       <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} />
 
-      <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 12, background: `linear-gradient(135deg,${P.orange},${P.orangeLight})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.orange}40` }}>
-            <Flame size={18} color="#fff" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>سلسلة الدراسة</div>
-            <div style={{ fontSize: 12, color: t.mu }}>{streak > 0 ? `${streak} يوم متواصل! استمر` : "ابدأ سلسلتك اليوم"}</div>
-          </div>
-          <div style={{ fontSize: 24, fontWeight: 900, color: P.orange }}>{streak}</div>
-        </div>
-        <StreakWeek activeDays={activeDays} t={t} />
-      </div>
-
-      <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm, display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ position: "relative", width: 60, height: 60 }}>
-          <svg width={60} height={60} style={{ transform: "rotate(-90deg)" }}>
-            <circle cx={30} cy={30} r={26} fill="none" stroke={t.s3} strokeWidth={5} />
-            <circle cx={30} cy={30} r={26} fill="none" stroke={P.green} strokeWidth={5}
-              strokeDasharray={2 * Math.PI * 26} strokeDashoffset={2 * Math.PI * 26 * (1 - goalPct / 100)}
-              strokeLinecap="round" style={{ transition: "stroke-dashoffset .8s ease" }} />
-          </svg>
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: P.green }}>{goalPct}%</div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>هدف الأسبوع</div>
-          <div style={{ fontSize: 13, color: t.mu, marginTop: 2 }}>{weekProgress} / {weeklyGoal} جلسة هذا الأسبوع</div>
-          <div style={{ fontSize: 12, color: P.green, marginTop: 4, fontWeight: 700 }}>
-            {goalPct >= 100 ? "تم تحقيق الهدف الأسبوعي!" : `يتبقى ${Math.max(0, weeklyGoal - weekProgress)} جلسة`}
-          </div>
-        </div>
-      </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
-        <StatCard Icon={Bookmark} value={12800} suffix="+" label="تجميع وملخص" color={P.gold} t={t} />
-        <StatCard Icon={Users} value={98000} suffix="+" label="طالب نشط" color={P.green} t={t} />
+        <StatCard Icon={Bookmark} value={6000} suffix="+" label="تجميع وملخص" color={P.gold} t={t} />
+        <StatCard Icon={Users} value={5000} suffix="+" label="طالب نشط" color={P.green} t={t} />
         <StatCard Icon={Trophy} value={unlocked.length} suffix={`/${ACHIEVEMENTS.length}`} label="إنجازاتك" color={P.orange} t={t} />
       </div>
 
@@ -2973,11 +2937,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         </div>
       )}
 
-      {/* XP Bar */}
-      <div style={{ marginBottom: 16 }}>
-        <XPBar xp={xp || 0} t={t} />
-      </div>
-
       {/* Quick Stats Bar */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 8 }}>
         {[
@@ -2991,26 +2950,30 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           </div>
         ))}
       </div>
-      {/* Action Cards Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-        <button onClick={onShowFocus} style={{ background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
-          <Target size={20} color="#fff" />
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
-            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.6)" }}>مؤقت + ذكاء اصطناعي</div>
+      {/* Focus mode */}
+      <div style={{ marginBottom: 16 }}>
+        <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit" }}>
+          <Target size={22} color="#fff" />
+          <div style={{ textAlign: "right", flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)" }}>مؤقت دراسة + مساعد ذكي — كل ما تحتاجه للمذاكرة</div>
           </div>
-        </button>
-        <button onClick={onShowReport} style={{ background: `${P.purple}15`, border: `1px solid ${P.purple}30`, borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
-          <FileBarChart size={20} color={P.purple} />
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>التقرير الشهري</div>
-            <div style={{ fontSize: 11.5, color: t.mu }}>إحصائيات شاملة</div>
-          </div>
+          <ChevronLeft size={18} color="rgba(255,255,255,.6)" />
         </button>
       </div>
 
       {/* Academic Calendar */}
       <AcademicCalendar t={t} />
+
+      {/* Monthly report — at the bottom */}
+      <button onClick={onShowReport} style={{ width: "100%", background: `${P.purple}12`, border: `1px solid ${P.purple}30`, borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", marginBottom: 16 }}>
+        <FileBarChart size={20} color={P.purple} />
+        <div style={{ textAlign: "right", flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>التقرير الشهري</div>
+          <div style={{ fontSize: 11.5, color: t.mu }}>ملخّص إحصائياتك خلال الشهر</div>
+        </div>
+        <ChevronLeft size={16} color={t.dim} />
+      </button>
 
       <div style={{
         background: t.s1, borderRadius: 18,
@@ -3037,12 +3000,12 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12 }}>وصول سريع</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
           {[
-            { Icon: BookOpen, label: "تجميعات", tab: "explore", color: "#1d4ed8" },
-            { Icon: Calculator, label: "المعدل", tab: "gpa", color: P.purple },
-            { Icon: AlarmClock, label: "مؤقت", tab: "timer", color: "#065f46" },
+            { Icon: BookOpen, label: "تجميعات وملخصات", tab: "explore", color: P.blue2 },
+            { Icon: FileText, label: "خطط دراسية", tab: "explore", color: P.purple },
+            { Icon: GraduationCap, label: "المقررات", tab: "explore", color: "#be123c" },
             { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold },
-            { Icon: GraduationCap, label: "مسارك", tab: "explore", color: "#be123c" },
-            { Icon: Trophy, label: "الإنجازات", tab: "profile", color: P.orange },
+            { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.green },
+            { Icon: Link2, label: "روابط الجامعة", tab: "links", color: P.cyan },
           ].map(({ Icon, label, tab, color }, i) => (
             <button key={i} onClick={() => setActiveTab(tab)} style={{
               background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14, padding: "14px 10px",
@@ -3757,9 +3720,9 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
 
   if (phase === 0) {
     const features = [
-      { Icon: Calculator, label: "حاسبة المعدل" },
-      { Icon: AlarmClock, label: "مؤقت بومودورو" },
-      { Icon: Sparkles, label: "ذكاء اصطناعي" },
+      { Icon: BookOpen, label: "تجميعات وملخصات" },
+      { Icon: FileText, label: "خطط ومقررات" },
+      { Icon: Sparkles, label: "مساعد ذكي" },
     ];
     return (
       <div style={{
@@ -4287,7 +4250,6 @@ export default function App() {
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
     { id: "fav", Icon: Star, label: "المفضلة" },
     { id: "links", Icon: Link2, label: "روابط SEU" },
-    { id: "timer", Icon: AlarmClock, label: "مؤقت" },
     { id: "profile", Icon: CircleUser, label: "حسابي" },
   ];
 
@@ -4402,17 +4364,6 @@ export default function App() {
               semesters={semesters} setSemesters={setSemesters} onToast={toasts.push} />
             <SemesterChart semesters={semesters} t={t} />
             <StudyAnalytics sessionLog={sessionLog} t={t} />
-          </div>
-        )}
-
-        {tab === "timer" && (
-          <div style={{ animation: "fadeUp .4s ease" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-              <AlarmClock size={20} color={P.blue2} /> مؤقت الدراسة
-            </h2>
-            <PomodoroTimer t={t} sessionLog={sessionLog} setSessionLog={setSessionLog}
-              totalSessions={totalSessions} setTotalSessions={setTotalSessions}
-              soundOn={soundOn} onToast={toasts.push} />
           </div>
         )}
 
