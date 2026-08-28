@@ -3606,14 +3606,14 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
     return (
       <div style={{
         position: "fixed", inset: 0, zIndex: 400,
-        background: "linear-gradient(160deg, #04091a 0%, #06164a 40%, #0a2070 70%, #050d30 100%)",
+        background: "linear-gradient(160deg, #04120c 0%, #063a27 40%, #0a5c3a 70%, #05130d 100%)",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         padding: 28, animation: "fadeIn .4s ease", overflow: "hidden",
       }}>
         {/* Background orbs */}
         <div style={{ position: "absolute", top: "10%", right: "15%", width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(10,138,88,.18) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: "15%", left: "10%", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(200,168,75,.10) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", top: "55%", right: "5%", width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,.08) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: "55%", right: "5%", width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,.08) 0%, transparent 70%)", pointerEvents: "none" }} />
 
         {/* Logo */}
         <div style={{
@@ -4112,6 +4112,7 @@ export default function App() {
         @keyframes toastIn { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
         @keyframes splashBar { from { width:0% } to { width:100% } }
         @keyframes floatOrb { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-12px) } }
+        html { -webkit-text-size-adjust:100%; text-size-adjust:100%; -moz-text-size-adjust:100% }
         * { box-sizing:border-box; margin:0; padding:0 }
         ::-webkit-scrollbar { width:5px; height:5px }
         ::-webkit-scrollbar-thumb { background:${P.blue}40; border-radius:3px }
