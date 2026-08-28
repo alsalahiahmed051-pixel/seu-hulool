@@ -2842,9 +2842,13 @@ function AcademicCalendar({ t }) {
   );
 }
 
-function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, onShowFocus, onShowReport }) {
+function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, profile, onShowFocus, onShowReport }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
+  const todayStr = (() => {
+    try { return new Date().toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
+    catch { try { return new Date().toLocaleDateString("ar", { weekday: "long", day: "numeric", month: "long" }); } catch { return ""; } }
+  })();
   const [tipIdx, setTipIdx] = useState(() => Math.floor(Date.now() / 3600000) % TIPS.length);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   useEffect(() => {
@@ -2879,15 +2883,16 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}10`, pointerEvents: "none" }} />
         <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 4 }}>{greeting} 👋</div>
+        {todayStr && <div style={{ color: P.gold, fontSize: 12, marginBottom: 8, fontWeight: 600 }}>📅 {todayStr}</div>}
         <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, margin: "0 0 6px", lineHeight: 1.3 }}>
-          مرحباً في <span style={{ color: P.gold }}>حلول</span>
+          {profile?.name ? <>مرحباً <span style={{ color: P.gold }}>{profile.name}</span></> : <>مرحباً في <span style={{ color: P.gold }}>حلول</span></>}
         </h1>
         <p style={{ color: "rgba(255,255,255,.65)", fontSize: 13, margin: 0, lineHeight: 1.7 }}>
-          بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية
+          {profile?.track ? `مسارك: ${profile.track} • بوابتك الأكاديمية الذكية` : "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية"}
         </p>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
           <Btn onClick={() => setActiveTab("explore")} size="sm" variant="gold">
-            <Target size={13} /> ابدأ الاستكشاف
+            <GradCap size={13} /> اختر مسارك
           </Btn>
           <button onClick={() => setActiveTab("gpa")} style={{
             background: "rgba(255,255,255,.1)", border: "none", borderRadius: 20,
@@ -3366,47 +3371,135 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, openCourse, openSettings }) {
-  const unlocked = ACHIEVEMENTS.filter(a => a.check(achievements));
+const STUDENT_TRACKS = ["تحضيري", "تخصص (بكالوريوس)", "دبلوم", "دراسات عليا"];
+
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, openCourse, openSettings }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
+  const [editing, setEditing] = useState(!profile);
+  const [draft, setDraft] = useState({ name: profile?.name || "", track: profile?.track || "" });
+
+  const save = () => {
+    if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
+    setProfile({ name: draft.name.trim(), track: draft.track || "تحضيري", created: profile?.created || Date.now() });
+    setEditing(false);
+    onToast?.("تم حفظ ملفك ✅", "success");
+  };
 
   const days = last7Days();
   const dayLabels = ["أحد", "اثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
   const weekData = days.map(d => sessionLog.filter(s => s.date === d).reduce((a, s) => a + s.dur, 0));
   const maxMin = Math.max(...weekData, 30);
+  const initial = (profile?.name || "ط").trim()[0] || "ط";
+
+  const quickActions = [
+    { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.blue2 },
+    { Icon: CheckCircle, label: "مهامي", tab: "home", color: P.green },
+    { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold },
+    { Icon: Compass, label: "استكشاف", tab: "explore", color: P.purple },
+  ];
 
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
+      {/* Identity hero */}
       <div style={{
         background: t.hero, borderRadius: 22, padding: 24, marginBottom: 16,
         position: "relative", overflow: "hidden",
       }}>
-        <div style={{ position: "absolute", top: -50, right: -50, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,.04)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: -50, right: -50, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,.05)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{
-            width: 64, height: 64, borderRadius: 20, background: `linear-gradient(135deg,${P.gold},#e8bf5c)`,
+            width: 66, height: 66, borderRadius: 22, background: `linear-gradient(135deg,${P.gold},#e8bf5c)`,
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: `0 8px 24px ${P.gold}50`,
+            boxShadow: `0 8px 24px ${P.gold}55`, fontSize: 30, fontWeight: 900, color: "#3a2e05",
           }}>
-            <User size={32} color="#fff" />
+            {profile?.name ? initial : <User size={32} color="#3a2e05" />}
           </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "#fff" }}>طالب SEU</div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,.7)", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-              <Trophy size={12} color={P.gold} /> {unlocked.length} إنجاز • {totalHours} ساعة دراسة
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{profile.track}</span>}
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", gap: 5 }}><Clock size={12} color={P.gold} /> {totalHours} ساعة دراسة</span>
             </div>
           </div>
-          <button onClick={openSettings} style={{
-            background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)",
-            borderRadius: 12, padding: 10, cursor: "pointer", display: "flex", color: "#fff",
-          }}>
-            <Settings size={18} />
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button onClick={() => { setDraft({ name: profile?.name || "", track: profile?.track || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+              <Edit3 size={16} />
+            </button>
+            <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+              <Settings size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Setup / edit card (no email, no password) */}
+      {editing && (
+        <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm, animation: "fadeUp .3s ease" }}>
+          <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, marginBottom: 4 }}>{profile ? "تعديل ملفك الدراسي" : "أنشئ ملفك الدراسي"}</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>بدون بريد أو كلمة مرور — فقط اسمك ومسارك، ويُحفظ على جهازك.</div>
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
+          <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="اكتب اسمك"
+            style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار / التخصص</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+            {STUDENT_TRACKS.map(tr => {
+              const active = draft.track === tr;
+              return (
+                <button key={tr} onClick={() => setDraft(d => ({ ...d, track: tr }))} style={{
+                  padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                  background: active ? `${P.blue2}18` : t.s2, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
+                }}>{tr}</button>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {profile && <Btn variant="ghost" size="sm" onClick={() => setEditing(false)} style={{ flex: 1 }}>إلغاء</Btn>}
+            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim()}>
+              <CheckCircle size={15} /> {profile ? "حفظ" : "إنشاء الملف"}
+            </Btn>
+          </div>
+        </div>
+      )}
 
+      {/* Quick actions dashboard */}
+      {!editing && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
+          {quickActions.map(({ Icon, label, tab, color }) => (
+            <button key={label} onClick={() => setActiveTab(tab)} style={{
+              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "14px 6px",
+              cursor: "pointer", textAlign: "center", fontFamily: "inherit", boxShadow: t.shSm, transition: "all .2s",
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 7px" }}>
+                <Icon size={19} color={color} strokeWidth={2} />
+              </div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{label}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Snapshot stats */}
+      {!editing && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
+          {[
+            { Icon: Flame, label: "سلسلة أيام", value: streak || 0, color: P.orange },
+            { Icon: Clock, label: "ساعات الدراسة", value: totalHours, color: P.blue2 },
+            { Icon: Star, label: "المفضلة", value: favorites.length, color: P.gold },
+          ].map(({ Icon, label, value, color }) => (
+            <div key={label} style={{ background: t.s1, borderRadius: 16, padding: "14px 8px", border: `1px solid ${t.bd}`, textAlign: "center", boxShadow: t.shSm }}>
+              <Icon size={17} color={color} style={{ marginBottom: 6 }} />
+              <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
+              <div style={{ fontSize: 11, color: t.mu, marginTop: 3 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!editing && (
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
@@ -3433,8 +3526,9 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           })}
         </div>
       </div>
+      )}
 
-      {recent.length > 0 && (
+      {!editing && recent.length > 0 && (
         <div>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
             <History size={15} color={t.mu} /> النشاط الأخير
@@ -3906,7 +4000,12 @@ function SEULinksPage({ t, content }) {
   const footer = C.footer || DEFAULT_LINKS.footer;
 
   const openLink = (url) => {
-    window.open(url, "_blank", "noopener,noreferrer");
+    let u = String(url || "").trim();
+    if (!u) return;
+    // Admin may enter a bare domain (no scheme); make it absolute so it opens
+    // the real site instead of a relative path on our own domain.
+    if (!/^(https?:|tel:|mailto:)/i.test(u)) u = "https://" + u.replace(/^\/+/, "");
+    window.open(u, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -4085,6 +4184,8 @@ export default function App() {
   const { data: themeContent } = useSiteContent("theme");
   const brandPreset = getPreset(themeContent?.preset);
   applyBrand(brandPreset); // recolour P for this render
+  // Lightweight local student profile — name + track, no email/password.
+  const [profile, setProfile] = useStored("student_profile", null);
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -4325,7 +4426,7 @@ export default function App() {
           activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
           achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
-          exams={exams} setExams={setExams} xp={xp} setXp={setXp}
+          exams={exams} setExams={setExams} xp={xp} setXp={setXp} profile={profile}
           onShowFocus={() => setShowFocus(true)} onShowReport={() => setShowMonthlyReport(true)} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} />}
@@ -4357,7 +4458,8 @@ export default function App() {
         {tab === "profile" && <ProfilePage
           t={t} achievements={achievementsState} recent={recent}
           favorites={favorites} totalSessions={totalSessions}
-          sessionLog={sessionLog} streak={streak}
+          sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
+          setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
           openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
