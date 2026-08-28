@@ -100,6 +100,7 @@ const TABS = [
   { id: 'links', label: 'الروابط', Icon: Link2 },
   { id: 'calendar', label: 'التقويم', Icon: CalendarDays },
   { id: 'theme', label: 'الثيم', Icon: Palette },
+  { id: 'students', label: 'الطلاب', Icon: GraduationCap },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
@@ -248,6 +249,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'links' && <LinksTab flash={flash} />}
         {tab === 'calendar' && <CalendarTab flash={flash} />}
         {tab === 'theme' && <ThemeTab flash={flash} />}
+        {tab === 'students' && <StudentsTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -926,6 +928,58 @@ function CalendarTab({ flash }) {
         </div>
       ))}
       <button onClick={addEv} style={{ ...S.btn(P.blue2), width: '100%', marginBottom: 16 }}><Plus size={14} /> إضافة حدث</button>
+    </div>
+  )
+}
+
+/* ══════════════ STUDENTS (sign-ups) ══════════════ */
+function StudentsTab({ flash }) {
+  const [students, setStudents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { ok, data } = await apiJSON('/api/admin/students')
+    if (ok) setStudents(data.students || [])
+    else flash(data.error || 'تعذّر التحميل', 'error')
+    setLoading(false)
+  }, [flash])
+  useEffect(() => { load() }, [load])
+
+  async function remove(s) {
+    if (!confirm(`حذف الطالب "${s.full_name}"؟`)) return
+    const { ok, data } = await apiJSON('/api/admin/students', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id }) })
+    if (ok) { flash('تم الحذف'); setStudents(xs => xs.filter(x => x.id !== s.id)) }
+    else flash(data.error || 'فشل الحذف', 'error')
+  }
+
+  const filtered = students.filter(s => {
+    if (!q.trim()) return true
+    const v = q.toLowerCase()
+    return (s.full_name || '').toLowerCase().includes(v) || (s.track || '').toLowerCase().includes(v)
+  })
+
+  return (
+    <div>
+      <SectionHeader title={`الطلاب المسجّلون (${students.length})`} onRefresh={load} />
+      <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
+        <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+        <div>هؤلاء الطلاب الذين أنشأوا حساباً في التطبيق (الاسم + المسار + الخطة). يتطلّب تشغيل migration <strong>009_students.sql</strong> في Supabase.</div>
+      </div>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث بالاسم أو المسار..." style={{ ...S.input, marginBottom: 12 }} />
+      {loading ? <Loader /> : filtered.length === 0 ? <Empty text="لا طلاب مسجّلون بعد" /> : filtered.map(s => (
+        <div key={s.id} style={rowStyle}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${P.blue2}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15, fontWeight: 800, color: P.blue2 }}>{(s.full_name || '؟')[0]}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={ellipsis}>{s.full_name}</div>
+            <div style={{ fontSize: 11, color: 'var(--mu)' }}>
+              {s.track || '—'}{s.plan ? ` • ${s.plan}` : ''} • {fmtDate(s.created_at)}
+            </div>
+          </div>
+          <button onClick={() => remove(s)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+        </div>
+      ))}
     </div>
   )
 }
