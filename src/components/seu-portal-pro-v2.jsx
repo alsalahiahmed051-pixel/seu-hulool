@@ -2783,50 +2783,59 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
   );
 }
 
-const SEU_CALENDAR = [
-  { label: "الاختبارات النهائية — الفصل الثاني 1447", date: "2026-06-07", color: P.red, CIcon: Flame },
-  { label: "نتائج الفصل الثاني 1447", date: "2026-06-28", color: P.green, CIcon: Trophy },
-  { label: "التسجيل للفصل الأول 1448", date: "2026-07-20", color: P.purple, CIcon: FileText },
-  { label: "بداية الفصل الأول 1448", date: "2026-09-06", color: P.blue2, CIcon: GraduationCap },
-  { label: "اختبارات الميدترم — الفصل الأول 1448", date: "2026-10-25", color: P.gold, CIcon: PenLine },
-  { label: "الاختبارات النهائية — الفصل الأول 1448", date: "2026-12-13", color: P.red, CIcon: Flame },
-];
+// Icons an admin can pick for a calendar event (JSON stores the name).
+const CAL_ICONS = { Flame, Trophy, FileText, GraduationCap, PenLine, Calendar, Award, Bell, Star, BookOpen, CheckCircle, CreditCard };
+const CAL_ICON_NAMES = Object.keys(CAL_ICONS);
+// Default academic calendar — admin edits override this via site_content.
+const DEFAULT_CALENDAR = {
+  events: [
+    { label: "الاختبارات النهائية — الفصل الثاني 1447", date: "2026-06-07", color: "#dc2626", icon: "Flame" },
+    { label: "نتائج الفصل الثاني 1447", date: "2026-06-28", color: "#059669", icon: "Trophy" },
+    { label: "التسجيل للفصل الأول 1448", date: "2026-07-20", color: "#7c3aed", icon: "FileText" },
+    { label: "بداية الفصل الأول 1448", date: "2026-09-06", color: "#2563eb", icon: "GraduationCap" },
+    { label: "اختبارات الميدترم — الفصل الأول 1448", date: "2026-10-25", color: "#c8a84b", icon: "PenLine" },
+    { label: "الاختبارات النهائية — الفصل الأول 1448", date: "2026-12-13", color: "#dc2626", icon: "Flame" },
+  ],
+};
 
+// Bottom strip showing ALL calendar events horizontally; content comes from
+// the admin panel (site_content['calendar']) with a built-in fallback.
 function AcademicCalendar({ t }) {
+  const { data: content } = useSiteContent("calendar");
   const now = new Date();
-  const upcoming = SEU_CALENDAR
-    .map(e => ({ ...e, days: Math.ceil((new Date(e.date) - now) / 86400000) }))
-    .filter(e => e.days > -7)
-    .slice(0, 4);
+  const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
+    .map(e => ({ ...e, days: Math.ceil((new Date(e.date + "T00:00:00") - now) / 86400000) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   return (
-    <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16 }}>
+    <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي 1447/1448
+        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {upcoming.map((e, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-              background: `${e.color}18`, display: "flex", alignItems: "center", justifyContent: "center",
-              border: `1px solid ${e.color}30`,
+      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
+        {events.map((e, i) => {
+          const Ic = CAL_ICONS[e.icon] || Calendar;
+          const col = e.color || P.blue2;
+          const chipBg = e.days <= 0 ? `${P.green}20` : e.days <= 14 ? `${P.red}20` : `${col}15`;
+          const chipCol = e.days <= 0 ? P.green : e.days <= 14 ? P.red : col;
+          return (
+            <div key={i} style={{
+              flexShrink: 0, width: 158, background: t.s2, borderRadius: 14,
+              border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
             }}>
-              <e.CIcon size={16} color={e.color} strokeWidth={2} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${col}30` }}>
+                  <Ic size={16} color={col} strokeWidth={2} />
+                </div>
+                <div style={{ background: chipBg, color: chipCol, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>
+                  {e.days <= 0 ? "انتهى" : e.days === 1 ? "غداً" : `${e.days} يوم`}
+                </div>
+              </div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.5, minHeight: 36 }}>{e.label}</div>
+              <div style={{ fontSize: 11.5, color: t.mu }}>{new Date(e.date + "T00:00:00").toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" })}</div>
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{e.label}</div>
-              <div style={{ fontSize: 12, color: t.mu }}>{new Date(e.date).toLocaleDateString("ar-SA", { month: "long", day: "numeric" })}</div>
-            </div>
-            <div style={{
-              background: e.days <= 0 ? `${P.green}20` : e.days <= 14 ? `${P.red}20` : `${e.color}15`,
-              color: e.days <= 0 ? P.green : e.days <= 14 ? P.red : e.color,
-              borderRadius: 8, padding: "3px 8px", fontSize: 12, fontWeight: 800, flexShrink: 0,
-            }}>
-              {e.days <= 0 ? "انتهى" : e.days === 1 ? "غداً" : `${e.days} يوم`}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
-  Link2, Save, Moon, Sun, Palette, Check,
+  Link2, Save, Moon, Sun, Palette, Check, CalendarDays,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -98,9 +98,23 @@ const TABS = [
   { id: 'colleges', label: 'الكليات', Icon: Building2 },
   { id: 'notifications', label: 'الإشعارات', Icon: Bell },
   { id: 'links', label: 'الروابط', Icon: Link2 },
+  { id: 'calendar', label: 'التقويم', Icon: CalendarDays },
   { id: 'theme', label: 'الثيم', Icon: Palette },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
+
+// Icons an admin can assign to a calendar event (mirror CAL_ICONS in the app).
+const CAL_ICON_NAMES = ['Flame', 'Trophy', 'FileText', 'GraduationCap', 'PenLine', 'Calendar', 'Award', 'Bell', 'Star', 'BookOpen', 'CheckCircle', 'CreditCard']
+const CAL_SEED = {
+  events: [
+    { label: 'الاختبارات النهائية — الفصل الثاني 1447', date: '2026-06-07', color: '#dc2626', icon: 'Flame' },
+    { label: 'نتائج الفصل الثاني 1447', date: '2026-06-28', color: '#059669', icon: 'Trophy' },
+    { label: 'التسجيل للفصل الأول 1448', date: '2026-07-20', color: '#7c3aed', icon: 'FileText' },
+    { label: 'بداية الفصل الأول 1448', date: '2026-09-06', color: '#2563eb', icon: 'GraduationCap' },
+    { label: 'اختبارات الميدترم — الفصل الأول 1448', date: '2026-10-25', color: '#c8a84b', icon: 'PenLine' },
+    { label: 'الاختبارات النهائية — الفصل الأول 1448', date: '2026-12-13', color: '#dc2626', icon: 'Flame' },
+  ],
+}
 
 // Icon names the admin can assign to a link (must match LINK_ICONS in
 // seu-portal-pro-v2.jsx). Stored as a name string in site_content.
@@ -231,6 +245,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'colleges' && <CollegesTab flash={flash} />}
         {tab === 'notifications' && <NotificationsTab flash={flash} />}
         {tab === 'links' && <LinksTab flash={flash} />}
+        {tab === 'calendar' && <CalendarTab flash={flash} />}
         {tab === 'theme' && <ThemeTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
@@ -844,6 +859,72 @@ function LinksTab({ flash }) {
       </div>
 
       {saveBar}
+    </div>
+  )
+}
+
+/* ══════════════ CALENDAR ══════════════ */
+function CalendarTab({ flash }) {
+  const [events, setEvents] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { ok, data } = await apiJSON('/api/admin/site-content?key=calendar')
+    const seed = JSON.parse(JSON.stringify(CAL_SEED))
+    setEvents(ok && Array.isArray(data.data?.events) && data.data.events.length ? data.data.events : seed.events)
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function save() {
+    setSaving(true)
+    const { ok, data } = await apiJSON('/api/admin/site-content', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'calendar', data: { events } }),
+    })
+    setSaving(false)
+    if (ok) flash('تم حفظ التقويم — سيظهر للطلاب فوراً')
+    else flash(data.error || 'فشل الحفظ', 'error')
+  }
+
+  if (loading || !events) return <Loader />
+
+  const set = (i, patch) => setEvents(evs => evs.map((e, j) => j === i ? { ...e, ...patch } : e))
+  const removeEv = (i) => setEvents(evs => evs.filter((_, j) => j !== i))
+  const addEv = () => setEvents(evs => [...evs, { label: 'حدث جديد', date: new Date().toISOString().slice(0, 10), color: '#2563eb', icon: 'Calendar' }])
+  const sorted = [...events].map((e, i) => ({ e, i })).sort((a, b) => (a.e.date || '').localeCompare(b.e.date || ''))
+
+  return (
+    <div>
+      <SectionHeader title="التقويم الأكاديمي" onRefresh={load} action={{ label: 'إضافة حدث', onClick: addEv }} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button onClick={save} disabled={saving} style={{ ...S.btn(P.green), flex: 1, opacity: saving ? 0.5 : 1 }}>
+          {saving ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> جارٍ الحفظ...</> : <><Save size={14} /> حفظ ونشر</>}
+        </button>
+      </div>
+      {events.length === 0 ? <Empty text="لا أحداث — أضف أول حدث" /> : sorted.map(({ e, i }) => (
+        <div key={i} style={{ ...S.card, padding: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ width: 12, height: 12, borderRadius: 4, background: e.color || P.blue2, flexShrink: 0 }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--mu)', flex: 1 }}>حدث</span>
+            <button onClick={() => removeEv(i)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+          </div>
+          <label style={S.label}>العنوان</label>
+          <input value={e.label} onChange={ev => set(i, { label: ev.target.value })} style={{ ...S.input, marginBottom: 10 }} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10 }}>
+            <div><label style={S.label}>التاريخ</label><input type="date" value={e.date} onChange={ev => set(i, { date: ev.target.value })} style={S.input} /></div>
+            <div><label style={S.label}>الأيقونة</label>
+              <select value={e.icon} onChange={ev => set(i, { icon: ev.target.value })} style={S.input}>
+                {CAL_ICON_NAMES.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div><label style={S.label}>اللون</label><input type="color" value={e.color || '#2563eb'} onChange={ev => set(i, { color: ev.target.value })} style={{ ...S.input, padding: 4, width: 52, height: 38 }} /></div>
+          </div>
+        </div>
+      ))}
+      <button onClick={addEv} style={{ ...S.btn(P.blue2), width: '100%', marginBottom: 16 }}><Plus size={14} /> إضافة حدث</button>
     </div>
   )
 }
