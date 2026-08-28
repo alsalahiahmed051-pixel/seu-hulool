@@ -83,26 +83,63 @@ const P = {
   cyan: "#0891b2", pink: "#db2777",
 };
 
-const T = (d) => ({
-  bg: d ? "#08130d" : "#eef5f0",
+// Admin-selectable colour themes. Each recolours the primary brand (buttons,
+// icons, headers), the page background/mesh and the hero gradients. Neutrals
+// (cards, text) stay clean. Applied by mutating P + parametrising T.
+const THEME_PRESETS = [
+  { id: "green", name: "أخضر", sw: "#0a8a58",
+    brand: { navy: "#043d2a", navyDeep: "#021f15", blue: "#066b45", blue2: "#0a8a58", blueLight: "#34d399" },
+    rgb: "10,138,88", bgL: "#eef5f0", bgD: "#08130d",
+    heroL: "linear-gradient(135deg, #043d2a 0%, #066b45 55%, #0a8a58 100%)",
+    heroD: "linear-gradient(135deg, #05130d 0%, #0a3d29 45%, #0e5638 100%)" },
+  { id: "blue", name: "أزرق", sw: "#2563eb",
+    brand: { navy: "#0a2a6b", navyDeep: "#04143a", blue: "#1746b0", blue2: "#2563eb", blueLight: "#60a5fa" },
+    rgb: "37,99,235", bgL: "#eef2fb", bgD: "#080f1f",
+    heroL: "linear-gradient(135deg, #0a2a6b 0%, #1746b0 55%, #2563eb 100%)",
+    heroD: "linear-gradient(135deg, #050b1c 0%, #0c2352 45%, #123084 100%)" },
+  { id: "purple", name: "بنفسجي", sw: "#7c3aed",
+    brand: { navy: "#3b1673", navyDeep: "#1f0a3f", blue: "#6d28d9", blue2: "#7c3aed", blueLight: "#a78bfa" },
+    rgb: "124,58,237", bgL: "#f3effb", bgD: "#0f0a1c",
+    heroL: "linear-gradient(135deg, #3b1673 0%, #6d28d9 55%, #7c3aed 100%)",
+    heroD: "linear-gradient(135deg, #0f0720 0%, #2e1259 45%, #43209a 100%)" },
+  { id: "gold", name: "ذهبي", sw: "#c8a84b",
+    brand: { navy: "#5c4708", navyDeep: "#2e2404", blue: "#a3811a", blue2: "#c8a84b", blueLight: "#e6c964" },
+    rgb: "200,168,75", bgL: "#f7f3e8", bgD: "#161206",
+    heroL: "linear-gradient(135deg, #5c4708 0%, #a3811a 55%, #c8a84b 100%)",
+    heroD: "linear-gradient(135deg, #120e04 0%, #3d3008 45%, #5c4708 100%)" },
+  { id: "rose", name: "وردي", sw: "#e11d48",
+    brand: { navy: "#7a132f", navyDeep: "#3f0a19", blue: "#be123c", blue2: "#e11d48", blueLight: "#fb7185" },
+    rgb: "225,29,72", bgL: "#fbeef1", bgD: "#1c0810",
+    heroL: "linear-gradient(135deg, #7a132f 0%, #be123c 55%, #e11d48 100%)",
+    heroD: "linear-gradient(135deg, #1a0710 0%, #560d22 45%, #7a132f 100%)" },
+  { id: "teal", name: "فيروزي", sw: "#0891b2",
+    brand: { navy: "#0a4a5c", navyDeep: "#04262e", blue: "#0e7490", blue2: "#0891b2", blueLight: "#22d3ee" },
+    rgb: "8,145,178", bgL: "#e9f5f8", bgD: "#06141a",
+    heroL: "linear-gradient(135deg, #0a4a5c 0%, #0e7490 55%, #0891b2 100%)",
+    heroD: "linear-gradient(135deg, #04121a 0%, #0a3a4a 45%, #0e5a70 100%)" },
+];
+const getPreset = (id) => THEME_PRESETS.find(p => p.id === id) || THEME_PRESETS[0];
+// Mutate the shared P so every P.blue/blue2/navy usage recolours at once.
+const applyBrand = (preset) => { Object.assign(P, preset.brand); };
+
+const T = (d, br = THEME_PRESETS[0]) => ({
+  bg: d ? br.bgD : br.bgL,
   bgMesh: d
-    ? "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(10,138,88,0.20) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(5,150,105,0.08) 0%, transparent 45%), #08130d"
-    : "radial-gradient(ellipse 70% 50% at 50% -10%, rgba(10,138,88,0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.07) 0%, transparent 50%), #eef5f0",
-  s1: d ? "#0f1d16" : "#ffffff",
-  s2: d ? "#16281e" : "#f3f9f5",
-  s3: d ? "#1e3629" : "#e7f2eb",
-  s4: d ? "#284a38" : "#d8ebe0",
-  bd: d ? "rgba(90,175,130,0.16)" : "#d3e6da",
-  tx: d ? "#eefaf3" : "#082016",
-  mu: d ? "#9ccbb2" : "#425f52",
-  dim: d ? "#5a8571" : "#78968a",
-  sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,80,45,.10), 0 2px 10px rgba(0,80,45,.05)",
-  shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,80,45,.07)",
-  grad: d ? `linear-gradient(135deg,#0f1d16,#16281e)` : `linear-gradient(135deg,#f3f9f5,#e7f2eb)`,
-  hero: d
-    ? `linear-gradient(135deg, #05130d 0%, #0a3d29 45%, #0e5638 100%)`
-    : `linear-gradient(135deg, #043d2a 0%, #066b45 55%, #0a8a58 100%)`,
-  inp: d ? "#0f1d16" : "#ffffff",
+    ? `radial-gradient(ellipse 80% 60% at 50% -5%, rgba(${br.rgb},0.20) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(${br.rgb},0.08) 0%, transparent 45%), ${br.bgD}`
+    : `radial-gradient(ellipse 70% 50% at 50% -10%, rgba(${br.rgb},0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.07) 0%, transparent 50%), ${br.bgL}`,
+  s1: d ? "#0f1a16" : "#ffffff",
+  s2: d ? "#17241e" : "#f5f7f6",
+  s3: d ? "#1f332a" : "#eaeeec",
+  s4: d ? "#2b473a" : "#dbe3df",
+  bd: d ? "rgba(130,150,140,0.16)" : "#dde3e0",
+  tx: d ? "#f0f6f2" : "#0c1712",
+  mu: d ? "#9fb4a9" : "#4b5a53",
+  dim: d ? "#657a70" : "#8a978f",
+  sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,0,0,.08), 0 2px 10px rgba(0,0,0,.04)",
+  shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,0,0,.06)",
+  grad: d ? `linear-gradient(135deg,#0f1a16,#17241e)` : `linear-gradient(135deg,#f5f7f6,#eaeeec)`,
+  hero: d ? br.heroD : br.heroL,
+  inp: d ? "#0f1a16" : "#ffffff",
 });
 
 // Strip markdown markers so AI text reads cleanly in plain containers
@@ -4098,6 +4135,9 @@ export default function App() {
   const [notes, setNotes] = useSyncedNotes();
   // Admin-editable Links page content (falls back to DEFAULT_LINKS).
   const { data: linksContent } = useSiteContent("links");
+  const { data: themeContent } = useSiteContent("theme");
+  const brandPreset = getPreset(themeContent?.preset);
+  applyBrand(brandPreset); // recolour P for this render
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -4127,7 +4167,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showAI, setShowAI] = useState(false);
   const [showOnboard, setShowOnboard] = useState(true);
-  const t = T(dark);
+  const t = T(dark, brandPreset);
   const toasts = useToasts();
   useLectureReminders(schedule, soundOn, toasts.push);
   const unread = (notifs || []).filter(n => !n.read).length;
