@@ -94,8 +94,8 @@ const T = (d) => ({
   s4: d ? "#284a38" : "#d8ebe0",
   bd: d ? "rgba(90,175,130,0.16)" : "#d3e6da",
   tx: d ? "#eefaf3" : "#082016",
-  mu: d ? "#85bfa0" : "#4d6b5c",
-  dim: d ? "#486d5b" : "#93b0a1",
+  mu: d ? "#9ccbb2" : "#425f52",
+  dim: d ? "#5a8571" : "#78968a",
   sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,80,45,.10), 0 2px 10px rgba(0,80,45,.05)",
   shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,80,45,.07)",
   grad: d ? `linear-gradient(135deg,#0f1d16,#16281e)` : `linear-gradient(135deg,#f3f9f5,#e7f2eb)`,
@@ -372,10 +372,10 @@ function Btn({ children, onClick, variant = "primary", size = "md", style = {}, 
     ghost: { background: "transparent", color: P.blue2, border: `1.5px solid ${P.blue2}40` },
     gold: { background: `linear-gradient(135deg,${P.gold},#e8bf5c)`, color: "#fff", boxShadow: `0 4px 16px ${P.gold}40` },
     danger: { background: "#dc2626", color: "#fff" },
-    soft: { background: "rgba(26,86,219,.12)", color: P.blue2 },
+    soft: { background: "rgba(10,138,88,.12)", color: P.blue2 },
   };
   const sizes = {
-    sm: { padding: "6px 14px", borderRadius: 20, fontSize: 12 },
+    sm: { padding: "6px 14px", borderRadius: 20, fontSize: 13 },
     md: { padding: "10px 20px", borderRadius: 24, fontSize: 14 },
     lg: { padding: "14px 32px", borderRadius: 28, fontSize: 16 },
   };
@@ -398,7 +398,7 @@ function StatCard({ Icon, value, suffix = "", label, color, t }) {
         <Icon size={20} color={color} strokeWidth={2.5} />
       </div>
       <div style={{ fontSize: 22, fontWeight: 900, color: color, letterSpacing: -0.5, position: "relative" }}>{v.toLocaleString()}{suffix}</div>
-      <div style={{ fontSize: 11, color: t.mu, marginTop: 4, fontWeight: 500, position: "relative" }}>{label}</div>
+      <div style={{ fontSize: 12, color: t.mu, marginTop: 4, fontWeight: 500, position: "relative" }}>{label}</div>
     </div>
   );
 }
@@ -428,26 +428,26 @@ function FileItem({ name, sz, views, dl, date, r, t, onToast }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{name}</div>
-          <div style={{ fontSize: 11, color: t.mu, marginTop: 3 }}>PDF • {sz} • {date}</div>
+          <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>PDF • {sz} • {date}</div>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: t.mu }}><Eye size={11} /> {fmt(views)}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: t.mu }}><Download size={11} /> {fmt(dl)}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: t.mu }}><Eye size={11} /> {fmt(views)}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: t.mu }}><Download size={11} /> {fmt(dl)}</span>
         <div style={{ display: "flex", gap: 2, marginRight: "auto", alignItems: "center" }}>
           {[1, 2, 3, 4, 5].map(i => (
             <span key={i}
               onClick={() => rateFile(i)}
               onMouseEnter={() => setHoverRating(i)}
               onMouseLeave={() => setHoverRating(0)}
-              style={{ fontSize: 12, color: i <= (hoverRating || Math.round(myRating > 0 ? displayRating : r)) ? P.gold : "#ccc", cursor: "pointer", transition: "color .1s" }}>★</span>
+              style={{ fontSize: 13, color: i <= (hoverRating || Math.round(myRating > 0 ? displayRating : r)) ? P.gold : "#ccc", cursor: "pointer", transition: "color .1s" }}>★</span>
           ))}
         </div>
         <button
           onClick={() => { setDlAnim(true); onToast?.("بدأ التحميل…", "success"); setTimeout(() => setDlAnim(false), 1500); }}
           style={{
             background: dlAnim ? `${P.green}20` : `${P.blue}15`, border: "none", borderRadius: 8,
-            padding: "5px 10px", cursor: "pointer", fontSize: 11, fontWeight: 700,
+            padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700,
             color: dlAnim ? P.green : P.blue2, display: "flex", alignItems: "center", gap: 4, transition: "all .3s",
           }}>
           <Download size={11} />{dlAnim ? "✓ تم" : "تحميل"}
@@ -519,7 +519,7 @@ function StreakWeek({ activeDays, t }) {
             }}>
               {active && <Flame size={15} color="#fff" />}
             </div>
-            <div style={{ fontSize: 9, color: isToday ? P.gold : t.mu, marginTop: 4, fontWeight: isToday ? 700 : 500 }}>{labels[dow]}</div>
+            <div style={{ fontSize: 11, color: isToday ? P.gold : t.mu, marginTop: 4, fontWeight: isToday ? 700 : 500 }}>{labels[dow]}</div>
           </div>
         );
       })}
@@ -717,24 +717,24 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ color: "#fff", fontWeight: 800, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>مساعد {subject}</div>
-            <div style={{ color: "#4ade80", fontSize: 11, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
+            <div style={{ color: "#4ade80", fontSize: 12, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", display: "inline-block", flexShrink: 0 }} />
               {fileCount > 0 ? `يستخدم ${fileCount} ملف من المادة` : "متصل الآن"}
             </div>
           </div>
           {fileCount > 0 && (
-            <div style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: P.gold, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, flexShrink: 0, whiteSpace: "nowrap" }}>
+            <div style={{ background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 20, padding: "3px 10px", fontSize: 12, color: P.gold, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, flexShrink: 0, whiteSpace: "nowrap" }}>
               <FileText size={11} /> {fileCount}
             </div>
           )}
-          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
+          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
         </div>
       )}
 
       {menuId && <div onClick={() => setMenuId(null)} style={{ position: "fixed", inset: 0, zIndex: 90 }} />}
 
       {copied && (
-        <div style={{ position: "fixed", top: 80, left: "50%", transform: "translateX(-50%)", background: "rgba(15,28,51,.95)", color: "#fff", padding: "8px 18px", borderRadius: 20, fontSize: 12, fontWeight: 700, zIndex: 9999, pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ position: "fixed", top: 80, left: "50%", transform: "translateX(-50%)", background: "rgba(15,28,51,.95)", color: "#fff", padding: "8px 18px", borderRadius: 20, fontSize: 13, fontWeight: 700, zIndex: 9999, pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}>
           <CheckCircle size={13} color={P.green} /> تم النسخ
         </div>
       )}
@@ -798,7 +798,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
                 </div>
               )}
 
-              <div style={{ fontSize: 10, color: t.dim, marginTop: 3, paddingLeft: isUser ? 40 : 0, paddingRight: isUser ? 0 : 40 }}>
+              <div style={{ fontSize: 11.5, color: t.dim, marginTop: 3, paddingLeft: isUser ? 40 : 0, paddingRight: isUser ? 0 : 40 }}>
                 {fmtTime(m.ts)}{isUser && <span style={{ marginRight: 4, color: P.blue2 }}>✓✓</span>}
               </div>
             </div>
@@ -826,7 +826,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
             <button key={i} onClick={() => send(s)} style={{
               whiteSpace: "nowrap", background: i < fileSugs.length ? `${P.blue}10` : t.s2,
               border: `1px solid ${i < fileSugs.length ? P.blue2 + "50" : t.bd}`,
-              borderRadius: 20, padding: "5px 13px", fontSize: 11,
+              borderRadius: 20, padding: "5px 13px", fontSize: 12,
               color: i < fileSugs.length ? P.blue2 : t.mu,
               cursor: "pointer", fontFamily: "inherit", transition: "all .2s", flexShrink: 0,
             }}
@@ -923,7 +923,7 @@ function QuizMode({ subject, t, onToast }) {
           <FileQuestion size={28} color={P.purple} />
         </div>
         <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, marginBottom: 8 }}>اختبار بالذكاء الاصطناعي</div>
-        <div style={{ fontSize: 12, color: t.mu, marginBottom: 20, lineHeight: 1.7 }}>سيولّد الذكاء الاصطناعي 5 أسئلة اختيار من متعدد عن مادة {subject}</div>
+        <div style={{ fontSize: 13, color: t.mu, marginBottom: 20, lineHeight: 1.7 }}>سيولّد الذكاء الاصطناعي 5 أسئلة اختيار من متعدد عن مادة {subject}</div>
         <Btn variant="primary" onClick={startQuiz}>
           <Brain size={15} /> ابدأ اختبار جديد
         </Btn>
@@ -953,7 +953,7 @@ function QuizMode({ subject, t, onToast }) {
         </div>
         <div style={{ fontSize: 16, fontWeight: 800, color: t.tx, marginBottom: 6 }}>حصلت على {finalScore} من {quiz.length}</div>
         <div style={{ fontSize: 13, color: col, fontWeight: 700, marginBottom: 20 }}>{msg}</div>
-        <div style={{ fontSize: 11, color: t.mu, marginBottom: 16 }}>+50 XP أُضيفت لرصيدك</div>
+        <div style={{ fontSize: 12, color: t.mu, marginBottom: 16 }}>+50 XP أُضيفت لرصيدك</div>
         <Btn variant="primary" onClick={startQuiz}>
           <RotateCcw size={14} /> إعادة الاختبار
         </Btn>
@@ -966,8 +966,8 @@ function QuizMode({ subject, t, onToast }) {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <div style={{ fontSize: 12, color: t.mu }}>السؤال {current + 1} / {quiz.length}</div>
-        <div style={{ fontSize: 12, color: P.green, fontWeight: 700 }}>{score} صحيح</div>
+        <div style={{ fontSize: 13, color: t.mu }}>السؤال {current + 1} / {quiz.length}</div>
+        <div style={{ fontSize: 13, color: P.green, fontWeight: 700 }}>{score} صحيح</div>
       </div>
       <div style={{ height: 4, background: t.s3, borderRadius: 2, marginBottom: 16, overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${((current) / quiz.length) * 100}%`, background: `linear-gradient(90deg,${P.purple},${P.blue2})`, borderRadius: 2, transition: "width .4s" }} />
@@ -992,7 +992,7 @@ function QuizMode({ subject, t, onToast }) {
               textAlign: "right", transition: "all .2s",
             }}>
               <div style={{ width: 26, height: 26, borderRadius: 8, background: `${border}20`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: border }}>{optLetters[i]}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: border }}>{optLetters[i]}</span>
               </div>
               <span style={{ fontSize: 13, color, flex: 1 }}>{opt}</span>
               {selected !== null && isCorrect && <CheckCircle size={16} color={P.green} />}
@@ -1051,7 +1051,7 @@ function NotesEditor({ subject, notes, setNotes, t, onToast }) {
           <Trash2 size={13} /> مسح
         </Btn>}
       </div>
-      <div style={{ fontSize: 11, color: t.dim, marginTop: 8, textAlign: "center" }}>
+      <div style={{ fontSize: 12, color: t.dim, marginTop: 8, textAlign: "center" }}>
         {text.length} حرف • ملاحظاتك محفوظة محلياً
       </div>
     </div>
@@ -1110,10 +1110,10 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
         <div style={{ position: "relative" }}>
           <div style={{ fontSize: 13, color: "rgba(255,255,255,.6)", marginBottom: 4 }}>معدلك التراكمي</div>
           <div style={{ fontSize: 56, fontWeight: 900, color: gpaColor, textShadow: `0 0 30px ${gpaColor}60`, lineHeight: 1 }}>{gpa}</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 4 }}>من 5.00 • {totalHrs} ساعة</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)", marginTop: 4 }}>من 5.00 • {totalHrs} ساعة</div>
           <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
             {GRADE_SCALE.map(g => (
-              <div key={g.label} style={{ background: `${g.color}25`, border: `1px solid ${g.color}40`, borderRadius: 8, padding: "3px 8px", fontSize: 10, color: "#fff", fontWeight: 700 }}>
+              <div key={g.label} style={{ background: `${g.color}25`, border: `1px solid ${g.color}40`, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, color: "#fff", fontWeight: 700 }}>
                 {g.label}: {g.pts.toFixed(2)}
               </div>
             ))}
@@ -1144,13 +1144,13 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
             <div>
-              <div style={{ fontSize: 11, color: t.mu, marginBottom: 4 }}>المعدل المستهدف</div>
+              <div style={{ fontSize: 12, color: t.mu, marginBottom: 4 }}>المعدل المستهدف</div>
               <input type="number" step="0.1" min="0" max="5" value={targetGPA}
                 onChange={e => setTargetGPA(+e.target.value)}
                 style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
             </div>
             <div>
-              <div style={{ fontSize: 11, color: t.mu, marginBottom: 4 }}>الساعات القادمة</div>
+              <div style={{ fontSize: 12, color: t.mu, marginBottom: 4 }}>الساعات القادمة</div>
               <input type="number" min="1" max="60" value={extraHrs}
                 onChange={e => setExtraHrs(+e.target.value)}
                 style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
@@ -1162,7 +1162,7 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
           }}>
             {achievable ? (
               <>
-                <div style={{ fontSize: 12, color: P.green, fontWeight: 700, marginBottom: 4 }}>✓ ممكن تحقيقه</div>
+                <div style={{ fontSize: 13, color: P.green, fontWeight: 700, marginBottom: 4 }}>✓ ممكن تحقيقه</div>
                 <div style={{ fontSize: 13, color: t.tx, lineHeight: 1.7 }}>
                   تحتاج معدل تقديري <strong style={{ color: neededGrade.color }}>{neededGrade.label}</strong>
                   {" "}({neededAvgPoint.toFixed(2)} من 5.00) في الـ {extraHrs} ساعة القادمة
@@ -1170,8 +1170,8 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
               </>
             ) : (
               <>
-                <div style={{ fontSize: 12, color: P.red, fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} /> غير قابل للتحقيق</div>
-                <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 13, color: P.red, fontWeight: 700, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}><AlertTriangle size={12} /> غير قابل للتحقيق</div>
+                <div style={{ fontSize: 13, color: t.mu, lineHeight: 1.6 }}>
                   جرّب رفع عدد الساعات أو خفّض المعدل المستهدف
                 </div>
               </>
@@ -1193,10 +1193,10 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
             }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{sem.name}</div>
-                <div style={{ fontSize: 11, color: t.mu }}>{sem.date} • {sem.totalHrs} ساعة</div>
+                <div style={{ fontSize: 12, color: t.mu }}>{sem.date} • {sem.totalHrs} ساعة</div>
               </div>
               <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, minWidth: 50, textAlign: "center" }}>{sem.gpa}</div>
-              <button onClick={() => loadSemester(sem)} style={{ background: `${P.blue2}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit" }}>تحميل</button>
+              <button onClick={() => loadSemester(sem)} style={{ background: `${P.blue2}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>تحميل</button>
               <button onClick={() => deleteSemester(i)} style={{ background: `${P.red}15`, border: "none", borderRadius: 8, padding: 6, cursor: "pointer", display: "flex", color: P.red }}><X size={12} /></button>
             </div>
           ))}
@@ -1211,20 +1211,20 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input value={c.name} onChange={e => update(i, "name", e.target.value)}
                   style={{ flex: 1, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
-                <div style={{ background: `${g.color}20`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 800, color: g.color, minWidth: 36, textAlign: "center" }}>{g.label}</div>
+                <div style={{ background: `${g.color}20`, borderRadius: 8, padding: "4px 10px", fontSize: 13, fontWeight: 800, color: g.color, minWidth: 36, textAlign: "center" }}>{g.label}</div>
                 <button onClick={() => removeCourse(i)} style={{ background: "#dc262615", border: "none", borderRadius: 8, padding: 6, cursor: "pointer", color: "#dc2626", display: "flex" }}>
                   <X size={14} />
                 </button>
               </div>
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 11, color: t.mu, marginBottom: 4 }}>الدرجة: {c.score}</div>
+                  <div style={{ fontSize: 12, color: t.mu, marginBottom: 4 }}>الدرجة: {c.score}</div>
                   <input type="range" min={0} max={100} value={c.score}
                     onChange={e => update(i, "score", +e.target.value)}
                     style={{ width: "100%", accentColor: g.color }} />
                 </div>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 11, color: t.mu, marginBottom: 4 }}>الساعات</div>
+                  <div style={{ fontSize: 12, color: t.mu, marginBottom: 4 }}>الساعات</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <button onClick={() => update(i, "hrs", Math.max(1, c.hrs - 1))}
                       style={{ background: t.s3, border: `1px solid ${t.bd}`, borderRadius: 6, width: 26, height: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: t.tx }}>
@@ -1308,7 +1308,7 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
               <button key={m} onClick={() => changeMode(m)} style={{
                 background: mode === m ? "rgba(255,255,255,.2)" : "transparent",
                 border: `1px solid rgba(255,255,255,${mode === m ? .4 : .15})`, borderRadius: 20,
-                padding: "5px 12px", cursor: "pointer", fontSize: 11, color: "rgba(255,255,255,.9)", fontFamily: "inherit"
+                padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,.9)", fontFamily: "inherit"
               }}>
                 {l}
               </button>
@@ -1324,7 +1324,7 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
             </svg>
             <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
               <div style={{ fontSize: 30, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 2 }}>{mm}:{ss}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,.5)", marginTop: 2 }}>{mode === "work" ? "دراسة" : mode === "short" ? "راحة" : "راحة طويلة"}</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 2 }}>{mode === "work" ? "دراسة" : mode === "short" ? "راحة" : "راحة طويلة"}</div>
             </div>
           </div>
 
@@ -1354,12 +1354,12 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
 
       {showSettings && (
         <div style={{ background: t.s1, borderRadius: 14, padding: 14, marginBottom: 12, border: `1px solid ${t.bd}`, animation: "fadeUp .3s ease" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 10 }}>إعدادات المؤقت</div>
-          <div style={{ fontSize: 11, color: t.mu, marginBottom: 6 }}>مدة جلسة الدراسة: {customWork} دقيقة</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 10 }}>إعدادات المؤقت</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 6 }}>مدة جلسة الدراسة: {customWork} دقيقة</div>
           <input type="range" min={10} max={60} step={5} value={customWork}
             onChange={e => setCustomWork(+e.target.value)}
             style={{ width: "100%", accentColor: P.blue2 }} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.dim, marginTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.dim, marginTop: 4 }}>
             <span>10د</span><span>60د</span>
           </div>
         </div>
@@ -1368,16 +1368,16 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
         <div style={{ background: t.s1, borderRadius: 14, padding: "14px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
           <div style={{ fontSize: 26, fontWeight: 900, color: P.blue2 }}>{todaySessions}</div>
-          <div style={{ fontSize: 11, color: t.mu }}>جلسات اليوم</div>
+          <div style={{ fontSize: 12, color: t.mu }}>جلسات اليوم</div>
         </div>
         <div style={{ background: t.s1, borderRadius: 14, padding: "14px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
           <div style={{ fontSize: 26, fontWeight: 900, color: P.gold }}>{todayMins}</div>
-          <div style={{ fontSize: 11, color: t.mu }}>دقيقة دراسة</div>
+          <div style={{ fontSize: 12, color: t.mu }}>دقيقة دراسة</div>
         </div>
       </div>
 
       <div style={{ background: t.s1, borderRadius: 14, padding: "12px 14px", border: `1px solid ${t.bd}`, marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: t.mu, marginBottom: 6 }}>مادة الدراسة الحالية</div>
+        <div style={{ fontSize: 12, color: t.mu, marginBottom: 6 }}>مادة الدراسة الحالية</div>
         <input value={subject} onChange={e => setSubject(e.target.value)}
           style={{
             width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "8px 12px",
@@ -1390,8 +1390,8 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
         <div style={{ background: t.s1, borderRadius: 14, padding: 14, border: `1px solid ${t.bd}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
             <History size={14} color={t.mu} />
-            <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>آخر الجلسات</div>
-            <div style={{ marginRight: "auto", fontSize: 11, color: t.dim }}>الإجمالي: {totalSessions}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>آخر الجلسات</div>
+            <div style={{ marginRight: "auto", fontSize: 12, color: t.dim }}>الإجمالي: {totalSessions}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
             {[...sessionLog].reverse().slice(0, 8).map((s, i) => (
@@ -1400,10 +1400,10 @@ function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSe
                   <Clock size={13} color={P.blue2} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{s.subject}</div>
-                  <div style={{ fontSize: 10, color: t.mu }}>{new Date(s.t).toLocaleString("ar-SA", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{s.subject}</div>
+                  <div style={{ fontSize: 11.5, color: t.mu }}>{new Date(s.t).toLocaleString("ar-SA", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</div>
                 </div>
-                <div style={{ fontSize: 12, color: P.green, fontWeight: 700 }}>{s.dur}د</div>
+                <div style={{ fontSize: 13, color: P.green, fontWeight: 700 }}>{s.dur}د</div>
               </div>
             ))}
           </div>
@@ -1436,13 +1436,13 @@ function GradeCalc({ subject, t }) {
   const totalColor = total >= 90 ? P.green : total >= 60 ? P.orange : P.red;
   return (
     <div style={{ background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`, marginBottom: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
         <Calculator size={13} color={P.gold} /> حاسبة الدرجات
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: filledCount > 0 ? 10 : 0 }}>
         {fields.map(f => (
           <div key={f.id}>
-            <div style={{ fontSize: 10, color: t.mu, marginBottom: 3 }}>{f.label} ({f.pct})</div>
+            <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 3 }}>{f.label} ({f.pct})</div>
             <input type="number" min="0" max="100" step="0.5" placeholder="—"
               value={grades[f.id]}
               onChange={e => setGrades(g => ({ ...g, [f.id]: e.target.value }))}
@@ -1453,11 +1453,11 @@ function GradeCalc({ subject, t }) {
       {filledCount > 0 && (
         <div style={{ background: `${totalColor}12`, borderRadius: 10, padding: "10px 12px", border: `1px solid ${totalColor}30` }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: t.mu }}>المجموع الحالي</span>
+            <span style={{ fontSize: 13, color: t.mu }}>المجموع الحالي</span>
             <span style={{ fontSize: 18, fontWeight: 900, color: totalColor }}>{total.toFixed(1)}</span>
           </div>
           {n90 !== null && (
-            <div style={{ fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.6 }}>
               {n90 <= 100 && n90 >= 0
                 ? <span style={{ color: P.blue2 }}>تحتاج <strong>{n90.toFixed(1)}</strong> في النهائي للممتاز (90+)</span>
                 : n90 < 0 ? <span style={{ color: P.green }}>ممتاز مضمون حتى بدون النهائي!</span>
@@ -1465,7 +1465,7 @@ function GradeCalc({ subject, t }) {
             </div>
           )}
           {n60 !== null && n60 > 0 && n60 <= 100 && (
-            <div style={{ fontSize: 11, color: P.orange, marginTop: 3 }}>
+            <div style={{ fontSize: 12, color: P.orange, marginTop: 3 }}>
               تحتاج على الأقل <strong>{n60.toFixed(1)}</strong> في النهائي للنجاح
             </div>
           )}
@@ -1502,7 +1502,7 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
           <CheckCircle size={15} color={P.blue2} /> مهامي القادمة
         </div>
-        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.blue2}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.blue2}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.blue2, fontSize: 13, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
           <Plus size={12} /> مهمة
         </button>
       </div>
@@ -1519,7 +1519,7 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               {["عالي", "متوسط", "منخفض"].map(p => (
-                <button key={p} onClick={() => setNewTask(nt => ({ ...nt, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${newTask.priority === p ? prioColor[p] : t.bd}`, background: newTask.priority === p ? `${prioColor[p]}15` : t.s1, color: newTask.priority === p ? prioColor[p] : t.mu, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
+                <button key={p} onClick={() => setNewTask(nt => ({ ...nt, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${newTask.priority === p ? prioColor[p] : t.bd}`, background: newTask.priority === p ? `${prioColor[p]}15` : t.s1, color: newTask.priority === p ? prioColor[p] : t.mu, fontSize: 13, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
                   {p}
                 </button>
               ))}
@@ -1534,7 +1534,7 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
         </div>
       )}
       {sorted.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "12px 0", color: t.dim, fontSize: 12 }}>لا مهام بعد — أضف مهمتك الأولى!</div>
+        <div style={{ textAlign: "center", padding: "12px 0", color: t.dim, fontSize: 13 }}>لا مهام بعد — أضف مهمتك الأولى!</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
           {sorted.slice(0, 6).map(task => {
@@ -1547,8 +1547,8 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
                   {task.done && <Check size={12} color={P.green} />}
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
-                  <div style={{ fontSize: 10, color: t.mu, display: "flex", gap: 6, marginTop: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
+                  <div style={{ fontSize: 11.5, color: t.mu, display: "flex", gap: 6, marginTop: 1 }}>
                     {task.subject && <span>{task.subject}</span>}
                     {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</span>}
                     {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
@@ -1581,12 +1581,12 @@ function DailyProgress({ sessionLog, weeklyGoal, t }) {
         <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
           <Activity size={14} color={barColor} /> إنجاز اليوم
         </div>
-        <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{pct}%</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{pct}%</span>
       </div>
       <div style={{ height: 8, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 5 }}>
         <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barColor},${barColor}cc)`, borderRadius: 4, transition: "width .6s ease" }} />
       </div>
-      <div style={{ fontSize: 11, color: t.mu }}>{todayMins} دقيقة من {goalMins} دقيقة</div>
+      <div style={{ fontSize: 12, color: t.mu }}>{todayMins} دقيقة من {goalMins} دقيقة</div>
     </div>
   );
 }
@@ -1613,10 +1613,10 @@ function SemesterChart({ semesters, t }) {
           const tc = trend === "↑" ? P.green : trend === "↓" ? P.red : t.mu;
           return (
             <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              <span style={{ fontSize: 11, color: tc, fontWeight: 700, height: 16 }}>{trend || ""}</span>
-              <span style={{ fontSize: 10, color: bc, fontWeight: 700 }}>{gpa.toFixed(2)}</span>
+              <span style={{ fontSize: 12, color: tc, fontWeight: 700, height: 16 }}>{trend || ""}</span>
+              <span style={{ fontSize: 11.5, color: bc, fontWeight: 700 }}>{gpa.toFixed(2)}</span>
               <div style={{ width: "100%", height: `${barH}%`, borderRadius: "6px 6px 0 0", background: `linear-gradient(180deg,${bc},${bc}88)`, transition: "height .8s ease", minHeight: 8, boxShadow: `0 4px 12px ${bc}30` }} />
-              <div style={{ fontSize: 9, color: t.mu, textAlign: "center", lineHeight: 1.3, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sem.name}</div>
+              <div style={{ fontSize: 11, color: t.mu, textAlign: "center", lineHeight: 1.3, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sem.name}</div>
             </div>
           );
         })}
@@ -1656,11 +1656,11 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
               <div style={{ width: 3, height: 16, borderRadius: 2, background: dc }} />
               <span style={{ fontSize: 13, fontWeight: 800, color: isToday ? dc : t.tx }}>{day}</span>
-              {isToday && <span style={{ background: `${dc}20`, color: dc, borderRadius: 6, padding: "1px 8px", fontSize: 10, fontWeight: 800 }}>اليوم</span>}
-              <span style={{ fontSize: 11, color: t.mu }}>({dayLecs.length})</span>
+              {isToday && <span style={{ background: `${dc}20`, color: dc, borderRadius: 6, padding: "1px 8px", fontSize: 11.5, fontWeight: 800 }}>اليوم</span>}
+              <span style={{ fontSize: 12, color: t.mu }}>({dayLecs.length})</span>
             </div>
             {dayLecs.length === 0 ? (
-              <div style={{ fontSize: 11, color: t.dim, padding: "7px 12px", background: t.s2, borderRadius: 8, border: `1px dashed ${t.bd}` }}>لا محاضرات</div>
+              <div style={{ fontSize: 12, color: t.dim, padding: "7px 12px", background: t.s2, borderRadius: 8, border: `1px dashed ${t.bd}` }}>لا محاضرات</div>
             ) : (
               dayLecs.map(lec => (
                 <div key={lec.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: isToday ? `${dc}10` : t.s1, borderRadius: 10, border: `1px solid ${isToday ? dc + "40" : t.bd}`, marginBottom: 5 }}>
@@ -1669,7 +1669,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{lec.course}</div>
-                    <div style={{ fontSize: 11, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
+                    <div style={{ fontSize: 12, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
                   </div>
                   <button onClick={() => removeLecture(lec.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 5, cursor: "pointer", color: P.red, display: "flex" }}>
                     <X size={12} />
@@ -1682,7 +1682,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
       })}
       {showAdd ? (
         <div style={{ background: t.s1, borderRadius: 16, padding: 14, border: `1px solid ${t.bd}`, marginTop: 8, animation: "fadeUp .3s ease" }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, marginBottom: 10 }}>إضافة محاضرة جديدة</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>إضافة محاضرة جديدة</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <input placeholder="اسم المادة *" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
@@ -1727,11 +1727,11 @@ function PDFViewer({ file, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "#050a16", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#0a1426", borderBottom: "1px solid #1c2e48", flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
           <ArrowLeft size={14} /> رجوع
         </button>
-        <div style={{ flex: 1, color: "#e4ecf8", fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
-        <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+        <div style={{ flex: 1, color: "#e4ecf8", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+        <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 13, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
           <Download size={12} /> تحميل
         </a>
       </div>
@@ -1783,10 +1783,10 @@ function RealFileItem({ file, t, onToast }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-            <span style={{ background: P.blue2, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>جديد</span>
+            <span style={{ background: P.blue2, color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>جديد</span>
             <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
           </div>
-          <div style={{ fontSize: 11, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
+          <div style={{ fontSize: 12, color: t.mu }}>{file.sizeLabel} • {new Date(file.uploadedAt).toLocaleDateString("ar-SA")}</div>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1798,16 +1798,16 @@ function RealFileItem({ file, t, onToast }) {
               onMouseLeave={() => setHoverRating(0)}
               style={{ fontSize: 15, color: i <= (hoverRating || myRating) ? P.gold : t.dim, cursor: "pointer", transition: "color .1s", lineHeight: 1 }}>★</span>
           ))}
-          {myRating > 0 && <span style={{ fontSize: 10, color: t.mu, marginRight: 4 }}>({myRating}/5)</span>}
+          {myRating > 0 && <span style={{ fontSize: 11.5, color: t.mu, marginRight: 4 }}>({myRating}/5)</span>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button onClick={shareFile} style={{ background: `${P.purple}12`, border: `1px solid ${P.purple}25`, borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: P.purple, display: "flex", alignItems: "center", gap: 3 }}>
             <Share2 size={12} />
           </button>
-          <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
+          <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
             <Eye size={12} /> قراءة
           </button>
-          <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+          <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
             <Download size={12} /> تحميل
           </a>
         </div>
@@ -1841,10 +1841,10 @@ function FlashCards({ subject, t }) {
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <button onClick={() => { setMode("list"); setIdx(0); setFlipped(false); }}
-            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 12, fontFamily: "inherit" }}>
+            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 13, fontFamily: "inherit" }}>
             ← رجوع
           </button>
-          <span style={{ fontSize: 12, color: t.mu }}>{idx + 1} / {cards.length}</span>
+          <span style={{ fontSize: 13, color: t.mu }}>{idx + 1} / {cards.length}</span>
         </div>
         <div onClick={() => setFlipped(f => !f)} style={{
           background: flipped ? `${P.green}12` : t.s2, border: `2px solid ${flipped ? P.green : t.bd}`,
@@ -1852,7 +1852,7 @@ function FlashCards({ subject, t }) {
           minHeight: 140, display: "flex", flexDirection: "column", alignItems: "center",
           justifyContent: "center", transition: "all .3s", marginBottom: 14,
         }}>
-          <div style={{ fontSize: 10, color: t.mu, marginBottom: 8 }}>{flipped ? "الجواب" : "السؤال"} — اضغط للقلب</div>
+          <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 8 }}>{flipped ? "الجواب" : "السؤال"} — اضغط للقلب</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: t.tx, lineHeight: 1.6 }}>
             {flipped ? card.a : card.q}
           </div>
@@ -1869,7 +1869,7 @@ function FlashCards({ subject, t }) {
     <div>
       {mode === "add" ? (
         <div>
-          <button onClick={() => setMode("list")} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 12, fontFamily: "inherit", marginBottom: 14 }}>← رجوع</button>
+          <button onClick={() => setMode("list")} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 13, fontFamily: "inherit", marginBottom: 14 }}>← رجوع</button>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <textarea placeholder="السؤال..." value={q} onChange={e => setQ(e.target.value)} rows={2}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 10, padding: 10, fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
@@ -1884,8 +1884,8 @@ function FlashCards({ subject, t }) {
       ) : (
         <div>
           <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <button onClick={() => setMode("add")} style={{ flex: 1, background: `${P.blue2}15`, border: `1px solid ${P.blue2}40`, borderRadius: 10, padding: 9, cursor: "pointer", color: P.blue2, fontSize: 12, fontFamily: "inherit", fontWeight: 700 }}>+ بطاقة جديدة</button>
-            {cards.length > 0 && <button onClick={() => { setIdx(0); setFlipped(false); setMode("review"); }} style={{ flex: 1, background: `${P.green}15`, border: `1px solid ${P.green}40`, borderRadius: 10, padding: 9, cursor: "pointer", color: P.green, fontSize: 12, fontFamily: "inherit", fontWeight: 700 }}>▶ مراجعة ({cards.length})</button>}
+            <button onClick={() => setMode("add")} style={{ flex: 1, background: `${P.blue2}15`, border: `1px solid ${P.blue2}40`, borderRadius: 10, padding: 9, cursor: "pointer", color: P.blue2, fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>+ بطاقة جديدة</button>
+            {cards.length > 0 && <button onClick={() => { setIdx(0); setFlipped(false); setMode("review"); }} style={{ flex: 1, background: `${P.green}15`, border: `1px solid ${P.green}40`, borderRadius: 10, padding: 9, cursor: "pointer", color: P.green, fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>▶ مراجعة ({cards.length})</button>}
           </div>
           {cards.length === 0 ? (
             <div style={{ textAlign: "center", padding: "20px 0", color: t.mu, fontSize: 13 }}>لا توجد بطاقات بعد — أضف سؤالاً وجواباً</div>
@@ -1893,8 +1893,8 @@ function FlashCards({ subject, t }) {
             cards.map(c => (
               <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}`, marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>س: {c.q}</div>
-                  <div style={{ fontSize: 12, color: t.tx }}>ج: {c.a}</div>
+                  <div style={{ fontSize: 13, color: t.mu, marginBottom: 2 }}>س: {c.q}</div>
+                  <div style={{ fontSize: 13, color: t.tx }}>ج: {c.a}</div>
                 </div>
                 <button onClick={() => del(c.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.red, display: "flex" }}><X size={12} /></button>
               </div>
@@ -1918,10 +1918,10 @@ function CourseProgress({ subject, t }) {
       marginBottom: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
           <Activity size={13} color={P.blue2} /> تقدم الدراسة
         </div>
-        <div style={{ fontSize: 12, fontWeight: 900, color: pct === 100 ? P.green : P.blue2 }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: pct === 100 ? P.green : P.blue2 }}>
           {pct}%
         </div>
       </div>
@@ -1945,7 +1945,7 @@ function CourseProgress({ subject, t }) {
             }}>
               {checked
                 ? <CheckCircle size={13} color={P.blue2} />
-                : <span style={{ fontSize: 10, fontWeight: 700, color: t.dim }}>{u}</span>}
+                : <span style={{ fontSize: 11.5, fontWeight: 700, color: t.dim }}>{u}</span>}
             </button>
           );
         })}
@@ -2016,7 +2016,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
         <div style={{ position: "absolute", bottom: -20, right: 40, width: 100, height: 100, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
         <button onClick={onBack} style={{
           background: "rgba(255,255,255,.12)", border: "none", color: "rgba(255,255,255,.8)",
-          padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontSize: 12,
+          padding: "7px 14px", borderRadius: 20, cursor: "pointer", fontSize: 13,
           display: "flex", alignItems: "center", gap: 6, marginBottom: 18, fontFamily: "inherit",
         }}>
           <ArrowLeft size={13} /> رجوع
@@ -2031,7 +2031,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
           </div>
           <div style={{ flex: 1 }}>
             <h2 style={{ color: "#fff", margin: 0, fontSize: 22, fontWeight: 900 }}>{subject}</h2>
-            <div style={{ color: P.gold, fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ color: P.gold, fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
               <Award size={12} /> الجامعة السعودية الإلكترونية
             </div>
           </div>
@@ -2068,7 +2068,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>{sec.label}</div>
-                  <div style={{ fontSize: 11, color: t.mu, marginTop: 1 }}>{sec.desc}</div>
+                  <div style={{ fontSize: 12, color: t.mu, marginTop: 1 }}>{sec.desc}</div>
                 </div>
                 <div style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .3s", color: t.dim }}>
                   <ChevronDown size={18} />
@@ -2098,7 +2098,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                           </div>
                           <div>
                             <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{item.label}</div>
-                            <div style={{ fontSize: 12, color: item.color }}>{item.val}</div>
+                            <div style={{ fontSize: 13, color: item.color }}>{item.val}</div>
                           </div>
                         </a>
                       ))}
@@ -2116,7 +2116,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                             placeholder="ابحث في الملفات..."
                             value={fileFilter[sec.id] || ""}
                             onChange={e => setFileFilter(prev => ({ ...prev, [sec.id]: e.target.value }))}
-                            style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 12, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
+                            style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 13, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
                           />
                           {fileFilter[sec.id] && (
                             <button onClick={() => setFileFilter(prev => ({ ...prev, [sec.id]: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: t.mu, display: "flex", padding: 2 }}>
@@ -2128,13 +2128,13 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                           <RealFileItem key={`real-${i}`} file={f} t={t} onToast={onToast} />
                         ))}
                         {(realFiles[sec.id] || []).length === 0 && !realLoading && !fq && (
-                          <div style={{ fontSize: 12, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
+                          <div style={{ fontSize: 13, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
                             لا توجد ملفات حقيقية بعد
                           </div>
                         )}
                         {filteredMock.map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
                         {fq && filteredReal.length === 0 && filteredMock.length === 0 && (
-                          <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 12 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
+                          <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
                       </div>
                     );
@@ -2177,7 +2177,7 @@ function StudyAnalytics({ sessionLog, t }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
           <BarChart size={15} color={P.purple} /> إحصائيات المذاكرة
         </div>
-        <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 12, lineHeight: 1.7 }}>
+        <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13, lineHeight: 1.7 }}>
           لم تسجّل أي جلسات مذاكرة هذا الأسبوع — استخدم مؤقت البومودورو
         </div>
       </div>
@@ -2189,7 +2189,7 @@ function StudyAnalytics({ sessionLog, t }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
           <BarChart size={15} color={P.purple} /> إحصائيات المذاكرة
         </div>
-        <div style={{ fontSize: 11, color: t.mu }}>{totalMins} دقيقة هذا الأسبوع</div>
+        <div style={{ fontSize: 12, color: t.mu }}>{totalMins} دقيقة هذا الأسبوع</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {sorted.map(([subject, mins]) => {
@@ -2197,8 +2197,8 @@ function StudyAnalytics({ sessionLog, t }) {
           return (
             <div key={subject}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 12, color: t.tx, fontWeight: 600 }}>{subject}</span>
-                <span style={{ fontSize: 11, color: t.mu }}>{mins}د</span>
+                <span style={{ fontSize: 13, color: t.tx, fontWeight: 600 }}>{subject}</span>
+                <span style={{ fontSize: 12, color: t.mu }}>{mins}د</span>
               </div>
               <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${P.purple},${P.blue2})`, borderRadius: 3, transition: "width .6s" }} />
@@ -2225,7 +2225,7 @@ function XPBar({ xp, t }) {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{level.stars} {level.name}</div>
-          <div style={{ fontSize: 11, color: t.mu }}>{xp} XP{level.next ? ` / ${level.next}` : " (أقصى مستوى)"}</div>
+          <div style={{ fontSize: 12, color: t.mu }}>{xp} XP{level.next ? ` / ${level.next}` : " (أقصى مستوى)"}</div>
         </div>
         <div style={{ fontSize: 22, fontWeight: 900, color: P.gold }}>{xp}</div>
       </div>
@@ -2234,7 +2234,7 @@ function XPBar({ xp, t }) {
           <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${progress}%`, background: `linear-gradient(90deg,${P.gold},${P.orange})`, borderRadius: 3, transition: "width .6s" }} />
           </div>
-          <div style={{ fontSize: 10, color: t.mu, marginTop: 4 }}>
+          <div style={{ fontSize: 11.5, color: t.mu, marginTop: 4 }}>
             {level.next - xp} XP للمستوى التالي
           </div>
         </div>
@@ -2275,7 +2275,7 @@ function ExamCountdown({ exams, setExams, t, onToast, setXp }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
           <Calendar size={15} color={P.red} /> اختباراتي القادمة
         </div>
-        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.red}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.red, fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+        <button onClick={() => setShowAdd(s => !s)} style={{ background: `${P.red}15`, border: "none", borderRadius: 8, padding: "5px 10px", cursor: "pointer", color: P.red, fontSize: 13, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
           <Plus size={12} /> اختبار
         </button>
       </div>
@@ -2304,7 +2304,7 @@ function ExamCountdown({ exams, setExams, t, onToast, setXp }) {
         </div>
       )}
       {upcoming.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "10px 0", color: t.dim, fontSize: 12 }}>لا اختبارات قادمة — أضف اختبارك الأول!</div>
+        <div style={{ textAlign: "center", padding: "10px 0", color: t.dim, fontSize: 13 }}>لا اختبارات قادمة — أضف اختبارك الأول!</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {upcoming.slice(0, 5).map(exam => {
@@ -2313,10 +2313,10 @@ function ExamCountdown({ exams, setExams, t, onToast, setXp }) {
             return (
               <div key={exam.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}` }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{exam.subject}</div>
-                  <div style={{ fontSize: 10, color: t.mu, marginTop: 1 }}>{exam.type} • {new Date(exam.date + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{exam.subject}</div>
+                  <div style={{ fontSize: 11.5, color: t.mu, marginTop: 1 }}>{exam.type} • {new Date(exam.date + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</div>
                 </div>
-                <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
                   {days === 0 ? "اليوم!" : days === 1 ? "غداً" : `تبقى ${days} يوم`}
                 </div>
                 <button onClick={() => remove(exam.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
@@ -2379,7 +2379,7 @@ function MonthlyReportModal({ t, sessionLog, tasks, semesters, onClose }) {
 
         <div style={{ background: t.hero, borderRadius: 16, padding: 16, marginBottom: 16, textAlign: "center" }}>
           <div style={{ fontSize: 22, fontWeight: 900, color: P.gold }}>{monthName} {now.getFullYear()}</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,.6)", marginTop: 4 }}>التقرير الشهري الأكاديمي</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.6)", marginTop: 4 }}>التقرير الشهري الأكاديمي</div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -2394,13 +2394,13 @@ function MonthlyReportModal({ t, sessionLog, tasks, semesters, onClose }) {
                 <Ic size={15} color={color} />
               </div>
               <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
-              <div style={{ fontSize: 10, color: t.mu, marginTop: 2 }}>{label}</div>
+              <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2 }}>{label}</div>
             </div>
           ))}
         </div>
 
         <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 16, border: `1px solid ${t.bd}` }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, marginBottom: 4 }}>المادة الأكثر مذاكرة</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>المادة الأكثر مذاكرة</div>
           <div style={{ fontSize: 14, fontWeight: 800, color: P.blue2 }}>{topSubject}</div>
         </div>
 
@@ -2411,9 +2411,9 @@ function MonthlyReportModal({ t, sessionLog, tasks, semesters, onClose }) {
               const h = Math.max(4, (v / maxWeekMins) * 100);
               return (
                 <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <div style={{ fontSize: 9, color: t.dim }}>{v}</div>
+                  <div style={{ fontSize: 11, color: t.dim }}>{v}</div>
                   <div style={{ width: "100%", height: `${h}%`, borderRadius: "4px 4px 0 0", background: `linear-gradient(180deg,${P.blue2},${P.blue})`, minHeight: 4 }} />
-                  <div style={{ fontSize: 9, color: t.mu }}>أ{i + 1}</div>
+                  <div style={{ fontSize: 11, color: t.mu }}>أ{i + 1}</div>
                 </div>
               );
             })}
@@ -2495,7 +2495,7 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", maxWidth: 480, margin: "0 auto", width: "100%" }}>
         {/* Subject selector */}
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
           <select value={focusSubject} onChange={e => setFocusSubject(e.target.value)}
             style={{ width: "100%", background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "10px 14px", fontSize: 14, fontFamily: "inherit", direction: "rtl", outline: "none", fontWeight: 700 }}>
             {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s} style={{ background: "#0a3d29" }}>{s}</option>)}
@@ -2506,7 +2506,7 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
         <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 20, padding: 24, marginBottom: 20, textAlign: "center", border: "1px solid rgba(255,255,255,.08)" }}>
           <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 20 }}>
             {[["work", "⚡ دراسة"], ["short", "☕ راحة"]].map(([m, l]) => (
-              <button key={m} onClick={() => changeMode(m)} style={{ background: mode === m ? "rgba(255,255,255,.2)" : "transparent", border: `1px solid rgba(255,255,255,${mode === m ? .4 : .12})`, borderRadius: 20, padding: "5px 14px", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,.9)", fontFamily: "inherit" }}>{l}</button>
+              <button key={m} onClick={() => changeMode(m)} style={{ background: mode === m ? "rgba(255,255,255,.2)" : "transparent", border: `1px solid rgba(255,255,255,${mode === m ? .4 : .12})`, borderRadius: 20, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: "rgba(255,255,255,.9)", fontFamily: "inherit" }}>{l}</button>
             ))}
           </div>
           <div style={{ position: "relative", display: "inline-block", marginBottom: 16 }}>
@@ -2538,13 +2538,13 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <input value={focusQ} onChange={e => setFocusQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
               placeholder="اكتب سؤالك..."
-              style={{ flex: 1, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "8px 12px", color: "#fff", fontSize: 12, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
-            <button onClick={askAI} disabled={focusLoading || !focusQ.trim()} style={{ background: focusLoading || !focusQ.trim() ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontFamily: "inherit", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+              style={{ flex: 1, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "8px 12px", color: "#fff", fontSize: 13, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <button onClick={askAI} disabled={focusLoading || !focusQ.trim()} style={{ background: focusLoading || !focusQ.trim() ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
               {focusLoading ? "…" : <Send size={13} />}
             </button>
           </div>
           {focusA && (
-            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 12, color: "rgba(255,255,255,.8)", lineHeight: 1.7, maxHeight: 150, overflowY: "auto" }}>
+            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 13, color: "rgba(255,255,255,.8)", lineHeight: 1.7, maxHeight: 150, overflowY: "auto" }}>
               {focusA}
             </div>
           )}
@@ -2586,13 +2586,13 @@ function AcademicCalendar({ t }) {
               <e.CIcon size={16} color={e.color} strokeWidth={2} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{e.label}</div>
-              <div style={{ fontSize: 11, color: t.mu }}>{new Date(e.date).toLocaleDateString("ar-SA", { month: "long", day: "numeric" })}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{e.label}</div>
+              <div style={{ fontSize: 12, color: t.mu }}>{new Date(e.date).toLocaleDateString("ar-SA", { month: "long", day: "numeric" })}</div>
             </div>
             <div style={{
               background: e.days <= 0 ? `${P.green}20` : e.days <= 14 ? `${P.red}20` : `${e.color}15`,
               color: e.days <= 0 ? P.green : e.days <= 14 ? P.red : e.color,
-              borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800, flexShrink: 0,
+              borderRadius: 8, padding: "3px 8px", fontSize: 12, fontWeight: 800, flexShrink: 0,
             }}>
               {e.days <= 0 ? "انتهى" : e.days === 1 ? "غداً" : `${e.days} يوم`}
             </div>
@@ -2639,7 +2639,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       <div style={{ background: t.hero, borderRadius: 22, padding: "22px", marginBottom: 16, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}10`, pointerEvents: "none" }} />
-        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginBottom: 4 }}>{greeting} 👋</div>
+        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 4 }}>{greeting} 👋</div>
         <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, margin: "0 0 6px", lineHeight: 1.3 }}>
           مرحباً في <span style={{ color: P.gold }}>حلول</span>
         </h1>
@@ -2652,14 +2652,14 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           </Btn>
           <button onClick={() => setActiveTab("gpa")} style={{
             background: "rgba(255,255,255,.1)", border: "none", borderRadius: 20,
-            padding: "6px 14px", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,.8)",
+            padding: "6px 14px", cursor: "pointer", fontSize: 13, color: "rgba(255,255,255,.8)",
             fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
           }}>
             <Calculator size={12} /> احسب معدلك
           </button>
           <button onClick={onOpenAI} style={{
             background: `linear-gradient(135deg,${P.gold}22,${P.gold}44)`, border: `1px solid ${P.gold}60`,
-            borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 12,
+            borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 13,
             color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
           }}>
             <Sparkles size={12} /> المساعد الذكي
@@ -2667,7 +2667,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           {pwaPrompt && (
             <button onClick={installPwa} style={{
               background: `${P.green}25`, border: `1px solid ${P.green}50`,
-              borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 12,
+              borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 13,
               color: P.green, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
             }}>
               <Download size={12} /> ثبّت التطبيق
@@ -2681,14 +2681,14 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
             <CalendarDays size={14} color={P.blue2} /> محاضرات اليوم
-            <span style={{ fontSize: 11, color: t.mu, fontWeight: 500 }}>({todayAr})</span>
+            <span style={{ fontSize: 12, color: t.mu, fontWeight: 500 }}>({todayAr})</span>
           </div>
-          <button onClick={() => setActiveTab("schedule")} style={{ background: "none", border: "none", cursor: "pointer", color: P.blue2, fontSize: 11, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3, fontWeight: 700 }}>
+          <button onClick={() => setActiveTab("schedule")} style={{ background: "none", border: "none", cursor: "pointer", color: P.blue2, fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3, fontWeight: 700 }}>
             الجدول <ChevronLeft size={11} />
           </button>
         </div>
         {todayLectures.length === 0 ? (
-          <div style={{ fontSize: 12, color: t.dim }}>لا محاضرات اليوم</div>
+          <div style={{ fontSize: 13, color: t.dim }}>لا محاضرات اليوم</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {todayLectures.map(lec => (
@@ -2697,8 +2697,8 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
                   <Clock size={12} color={P.blue2} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{lec.course}</div>
-                  <div style={{ fontSize: 10, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{lec.course}</div>
+                  <div style={{ fontSize: 11.5, color: t.mu }}>{lec.time}{lec.room ? ` • ${lec.room}` : ""}</div>
                 </div>
               </div>
             ))}
@@ -2722,7 +2722,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>سلسلة الدراسة</div>
-            <div style={{ fontSize: 11, color: t.mu }}>{streak > 0 ? `${streak} يوم متواصل! استمر` : "ابدأ سلسلتك اليوم"}</div>
+            <div style={{ fontSize: 12, color: t.mu }}>{streak > 0 ? `${streak} يوم متواصل! استمر` : "ابدأ سلسلتك اليوم"}</div>
           </div>
           <div style={{ fontSize: 24, fontWeight: 900, color: P.orange }}>{streak}</div>
         </div>
@@ -2741,8 +2741,8 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>هدف الأسبوع</div>
-          <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>{weekProgress} / {weeklyGoal} جلسة هذا الأسبوع</div>
-          <div style={{ fontSize: 11, color: P.green, marginTop: 4, fontWeight: 700 }}>
+          <div style={{ fontSize: 13, color: t.mu, marginTop: 2 }}>{weekProgress} / {weeklyGoal} جلسة هذا الأسبوع</div>
+          <div style={{ fontSize: 12, color: P.green, marginTop: 4, fontWeight: 700 }}>
             {goalPct >= 100 ? "تم تحقيق الهدف الأسبوعي!" : `يتبقى ${Math.max(0, weeklyGoal - weekProgress)} جلسة`}
           </div>
         </div>
@@ -2776,7 +2776,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
                   <div style={{ width: 32, height: 32, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <SIcon size={16} color={P.blue2} />
                   </div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, textAlign: "right" }}>{s}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textAlign: "right" }}>{s}</div>
                 </button>
               );
             })}
@@ -2798,7 +2798,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         ].map(({ label, value, color, suffix }) => (
           <div key={label} style={{ background: t.s1, borderRadius: 14, padding: "12px 10px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
             <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value}{suffix}</div>
-            <div style={{ fontSize: 10, color: t.mu, marginTop: 3, lineHeight: 1.3 }}>{label}</div>
+            <div style={{ fontSize: 11.5, color: t.mu, marginTop: 3, lineHeight: 1.3 }}>{label}</div>
           </div>
         ))}
       </div>
@@ -2808,14 +2808,14 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           <Target size={20} color="#fff" />
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>مؤقت + ذكاء اصطناعي</div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.6)" }}>مؤقت + ذكاء اصطناعي</div>
           </div>
         </button>
         <button onClick={onShowReport} style={{ background: `${P.purple}15`, border: `1px solid ${P.purple}30`, borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit" }}>
           <FileBarChart size={20} color={P.purple} />
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>التقرير الشهري</div>
-            <div style={{ fontSize: 10, color: t.mu }}>إحصائيات شاملة</div>
+            <div style={{ fontSize: 11.5, color: t.mu }}>إحصائيات شاملة</div>
           </div>
         </button>
       </div>
@@ -2837,7 +2837,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           </div>
           <button
             onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
-            style={{ background: `${P.gold}15`, border: `1px solid ${P.gold}35`, borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 11, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
+            style={{ background: `${P.gold}15`, border: `1px solid ${P.gold}35`, borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
             <RotateCcw size={11} /> التالية
           </button>
         </div>
@@ -2864,7 +2864,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
               <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
                 <Icon size={18} color={color} strokeWidth={2} />
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{label}</div>
             </button>
           ))}
         </div>
@@ -2924,11 +2924,11 @@ function SearchResults({ query, onCourse, onClose, t }) {
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 12, color: t.mu, marginBottom: 14 }}>{total} نتيجة</div>
+            <div style={{ fontSize: 13, color: t.mu, marginBottom: 14 }}>{total} نتيجة</div>
             {groups.map((g, gi) => (
               <div key={gi} style={{ marginBottom: 14 }}>
                 <div style={{
-                  fontSize: 11, fontWeight: 800, color: g.color, marginBottom: 6,
+                  fontSize: 12, fontWeight: 800, color: g.color, marginBottom: 6,
                   display: "flex", alignItems: "center", gap: 5,
                 }}>
                   <div style={{ width: 3, height: 12, borderRadius: 2, background: g.color }} />
@@ -2983,9 +2983,9 @@ function ExplorePage({ onCourse, t }) {
         <Icon size={22} color={color} strokeWidth={1.8} />
       </div>
       <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: t.mu, lineHeight: 1.5 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.5 }}>{sub}</div>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginTop: 10 }}>
-        <div style={{ background: `${color}18`, border: `1px solid ${color}30`, borderRadius: 20, padding: "3px 10px", fontSize: 11, color, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ background: `${color}18`, border: `1px solid ${color}30`, borderRadius: 20, padding: "3px 10px", fontSize: 12, color, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
           استكشف <ChevronLeft size={11} />
         </div>
       </div>
@@ -3012,7 +3012,7 @@ function ExplorePage({ onCourse, t }) {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
           <button onClick={back} style={{
             background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20, padding: "6px 12px",
-            cursor: "pointer", fontSize: 12, color: t.mu, fontFamily: "inherit",
+            cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
             display: "flex", alignItems: "center", gap: 5,
           }}>
             <ArrowLeft size={12} /> رجوع
@@ -3021,7 +3021,7 @@ function ExplorePage({ onCourse, t }) {
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <button onClick={c.onClick} disabled={!c.onClick} style={{
                 background: "none", border: "none", color: i === crumbs.length - 1 ? t.tx : t.mu,
-                fontSize: 11, cursor: c.onClick ? "pointer" : "default", fontFamily: "inherit",
+                fontSize: 12, cursor: c.onClick ? "pointer" : "default", fontFamily: "inherit",
                 fontWeight: i === crumbs.length - 1 ? 700 : 500, padding: "4px 6px",
               }}>{c.label}</button>
               {i < crumbs.length - 1 && <ChevronLeft size={10} color={t.dim} />}
@@ -3102,7 +3102,7 @@ function ExplorePage({ onCourse, t }) {
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: `${colors[i]}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px" }}>
                   <SIcon size={22} color={colors[i]} strokeWidth={1.8} />
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{s}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
               </button>
             );
           })}
@@ -3171,7 +3171,7 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
               <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: t.tx, cursor: "pointer" }} onClick={() => onCourse(s)}>{s}</div>
               <button onClick={() => onCourse(s)} style={{
                 background: `${P.blue2}15`, border: "none", borderRadius: 10, padding: "7px 14px",
-                cursor: "pointer", fontSize: 12, color: P.blue2, fontFamily: "inherit", fontWeight: 600,
+                cursor: "pointer", fontSize: 13, color: P.blue2, fontFamily: "inherit", fontWeight: 600,
                 display: "flex", alignItems: "center", gap: 4,
               }}>
                 <Eye size={13} /> فتح
@@ -3220,7 +3220,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: "#fff" }}>طالب SEU</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,.7)", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,.7)", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
               <Trophy size={12} color={P.gold} /> {unlocked.length} إنجاز • {totalHours} ساعة دراسة
             </div>
           </div>
@@ -3244,7 +3244,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
             <BarChart2 size={16} color={P.blue2} /> دقائق الدراسة هذا الأسبوع
           </div>
-          <div style={{ fontSize: 11, color: t.mu }}>{weekData.reduce((a, b) => a + b, 0)}د إجمالي</div>
+          <div style={{ fontSize: 12, color: t.mu }}>{weekData.reduce((a, b) => a + b, 0)}د إجمالي</div>
         </div>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 110 }}>
           {weekData.map((v, i) => {
@@ -3253,13 +3253,13 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             const isToday = days[i] === todayKey();
             return (
               <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <div style={{ fontSize: 9, color: t.dim, fontWeight: 600 }}>{v}</div>
+                <div style={{ fontSize: 11, color: t.dim, fontWeight: 600 }}>{v}</div>
                 <div style={{
                   width: "100%", height: `${h}%`, borderRadius: 8,
                   background: isToday ? `linear-gradient(180deg,${P.gold},${P.orange})` : `linear-gradient(180deg,${P.blue2},${P.blue})`,
                   transition: "height .8s ease", boxShadow: isToday ? `0 4px 12px ${P.gold}40` : "none", minHeight: 4,
                 }} />
-                <div style={{ fontSize: 10, color: isToday ? P.gold : t.mu, fontWeight: isToday ? 700 : 500 }}>{dayLabels[dow]}</div>
+                <div style={{ fontSize: 11.5, color: isToday ? P.gold : t.mu, fontWeight: isToday ? 700 : 500 }}>{dayLabels[dow]}</div>
               </div>
             );
           })}
@@ -3271,7 +3271,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
             <Trophy size={16} color={P.gold} /> الإنجازات
           </div>
-          <div style={{ fontSize: 11, color: t.mu }}>{unlocked.length} / {ACHIEVEMENTS.length}</div>
+          <div style={{ fontSize: 12, color: t.mu }}>{unlocked.length} / {ACHIEVEMENTS.length}</div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
           {ACHIEVEMENTS.map(a => {
@@ -3290,8 +3290,8 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
                 }}>
                   {ok ? <a.icon size={20} color={a.color} /> : <Lock size={16} color={t.dim} />}
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: ok ? t.tx : t.mu, marginBottom: 2 }}>{a.title}</div>
-                <div style={{ fontSize: 9, color: t.mu, lineHeight: 1.4 }}>{a.desc}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: ok ? t.tx : t.mu, marginBottom: 2 }}>{a.title}</div>
+                <div style={{ fontSize: 11, color: t.mu, lineHeight: 1.4 }}>{a.desc}</div>
               </div>
             );
           })}
@@ -3381,7 +3381,7 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setNotifs(n => n.map(x => ({ ...x, read: true })))} style={{
               background: t.s2, border: "none", borderRadius: 10, padding: "6px 12px",
-              cursor: "pointer", fontSize: 11, color: t.mu, fontFamily: "inherit",
+              cursor: "pointer", fontSize: 12, color: t.mu, fontFamily: "inherit",
             }}>قراءة الكل</button>
             <button onClick={onClose} style={{
               background: t.s2, border: "none", borderRadius: 10, padding: 6,
@@ -3406,12 +3406,12 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                <span style={{ fontSize: 9, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: "1px 7px" }}>{meta.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: "1px 7px" }}>{meta.label}</span>
                 {!n.read && <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, display: "inline-block" }} />}
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{n.title}</div>
-              <div style={{ fontSize: 12, color: t.mu, marginTop: 2, lineHeight: 1.5 }}>{n.text}</div>
-              <div style={{ fontSize: 10, color: t.dim, marginTop: 4 }}>{n.time}</div>
+              <div style={{ fontSize: 13, color: t.mu, marginTop: 2, lineHeight: 1.5 }}>{n.text}</div>
+              <div style={{ fontSize: 11.5, color: t.dim, marginTop: 4 }}>{n.time}</div>
             </div>
           </div>
           );
@@ -3449,7 +3449,7 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{label}</div>
-        {desc && <div style={{ fontSize: 11, color: t.mu, marginTop: 2 }}>{desc}</div>}
+        {desc && <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>{desc}</div>}
       </div>
       {children}
     </div>
@@ -3502,13 +3502,13 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>الهدف الأسبوعي</div>
-                <div style={{ fontSize: 11, color: t.mu, marginTop: 2 }}>{weeklyGoal} جلسة بومودورو/أسبوع</div>
+                <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>{weeklyGoal} جلسة بومودورو/أسبوع</div>
               </div>
             </div>
             <input type="range" min={3} max={50} value={weeklyGoal}
               onChange={e => setWeeklyGoal(+e.target.value)}
               style={{ width: "100%", accentColor: P.orange }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: t.dim, marginTop: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.dim, marginTop: 4 }}>
               <span>3</span><span>50</span>
             </div>
           </div>
@@ -3518,9 +3518,9 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
           <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 4px", marginBottom: 10 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>حول التطبيق</div>
-              <div style={{ fontSize: 11, color: t.mu, marginTop: 2 }}>حلول SEU • الإصدار 2.0</div>
+              <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>حلول SEU • الإصدار 2.0</div>
             </div>
-            <div style={{ background: `${P.blue2}15`, borderRadius: 8, padding: "3px 8px", fontSize: 10, color: P.blue2, fontWeight: 700 }}>PRO</div>
+            <div style={{ background: `${P.blue2}15`, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, color: P.blue2, fontWeight: 700 }}>PRO</div>
           </div>
 
           <Btn variant="ghost" onClick={handleSignOut} disabled={signingOut} style={{ width: "100%", marginBottom: 8 }}>
@@ -3580,7 +3580,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
         padding: 28, animation: "fadeIn .4s ease", overflow: "hidden",
       }}>
         {/* Background orbs */}
-        <div style={{ position: "absolute", top: "10%", right: "15%", width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(26,86,219,.18) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: "10%", right: "15%", width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(10,138,88,.18) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: "15%", left: "10%", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(200,168,75,.10) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", top: "55%", right: "5%", width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,.08) 0%, transparent 70%)", pointerEvents: "none" }} />
 
@@ -3589,7 +3589,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
           width: 96, height: 96, borderRadius: 28,
           background: "linear-gradient(135deg, #0a3d29, #0a8a58)",
           display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 16px 60px rgba(26,86,219,.55), 0 4px 20px rgba(0,0,0,.5)",
+          boxShadow: "0 16px 60px rgba(10,138,88,.55), 0 4px 20px rgba(0,0,0,.5)",
           marginBottom: 24, animation: "scaleIn .6s ease",
           border: "1.5px solid rgba(255,255,255,.12)",
         }}>
@@ -3599,7 +3599,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
         <div style={{
           fontSize: 58, fontWeight: 900, color: "#fff", lineHeight: 1,
           marginBottom: 8, animation: "fadeUp .7s ease .1s backwards",
-          letterSpacing: -1, textShadow: "0 4px 30px rgba(26,86,219,.6)",
+          letterSpacing: -1, textShadow: "0 4px 30px rgba(10,138,88,.6)",
         }}>
           حلول
         </div>
@@ -3610,7 +3610,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
           بوابة الطالب الذكية
         </div>
         <div style={{
-          fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 48,
+          fontSize: 13, color: "rgba(255,255,255,.5)", marginBottom: 48,
           animation: "fadeUp .7s ease .3s backwards",
         }}>
           الجامعة السعودية الإلكترونية — SEU
@@ -3629,7 +3629,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
               padding: "8px 16px",
             }}>
               <FIcon size={14} color={P.gold} />
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,.8)", fontWeight: 600 }}>{label}</span>
+              <span style={{ fontSize: 13, color: "rgba(255,255,255,.8)", fontWeight: 600 }}>{label}</span>
             </div>
           ))}
         </div>
@@ -3705,7 +3705,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
         </div>
 
         <span onClick={onClose} style={{
-          color: t.dim, fontSize: 12, cursor: "pointer", marginTop: 14,
+          color: t.dim, fontSize: 13, cursor: "pointer", marginTop: 14,
           display: "inline-block", userSelect: "none",
         }}>
           تخطي
@@ -3794,7 +3794,7 @@ function SEULinksPage({ t, content }) {
           </div>
           <div>
             <div style={{ color: "#fff", fontSize: 18, fontWeight: 900, lineHeight: 1.2 }}>{header.title}</div>
-            <div style={{ color: P.gold, fontSize: 11, marginTop: 4 }}>{header.subtitle}</div>
+            <div style={{ color: P.gold, fontSize: 12, marginTop: 4 }}>{header.subtitle}</div>
           </div>
         </div>
         <div style={{
@@ -3802,7 +3802,7 @@ function SEULinksPage({ t, content }) {
           padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
         }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 8px #4ade80", flexShrink: 0 }} />
-          <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12, lineHeight: 1.6 }}>
+          <div style={{ color: "rgba(255,255,255,.8)", fontSize: 13, lineHeight: 1.6 }}>
             {header.note}
           </div>
         </div>
@@ -3814,17 +3814,17 @@ function SEULinksPage({ t, content }) {
         border: `1px solid ${t.bd}`, display: "flex", gap: 10,
       }}>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>الدعم الفني</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>الدعم الفني</div>
           <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>{quick.phone}</div>
         </div>
         <div style={{ width: 1, background: t.bd }} />
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>ساعات الدعم</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>ساعات الدعم</div>
           <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{quick.hours}</div>
         </div>
         <div style={{ width: 1, background: t.bd }} />
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>أيام العمل</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>أيام العمل</div>
           <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{quick.days}</div>
         </div>
       </div>
@@ -3833,7 +3833,7 @@ function SEULinksPage({ t, content }) {
       {groups.map((group, gi) => (
         <div key={gi} style={{ marginBottom: 18 }}>
           <div style={{
-            fontSize: 12, fontWeight: 800, color: group.color,
+            fontSize: 13, fontWeight: 800, color: group.color,
             marginBottom: 10, paddingRight: 4,
             display: "flex", alignItems: "center", gap: 6,
           }}>
@@ -3864,7 +3864,7 @@ function SEULinksPage({ t, content }) {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2 }}>{item.label}</div>
-                  <div style={{ fontSize: 11, color: t.mu }}>{item.desc}</div>
+                  <div style={{ fontSize: 12, color: t.mu }}>{item.desc}</div>
                 </div>
                 <ExternalLink size={14} color={t.dim} style={{ flexShrink: 0 }} />
               </button>
@@ -3881,7 +3881,7 @@ function SEULinksPage({ t, content }) {
         display: "flex", gap: 10, alignItems: "flex-start",
       }}>
         <Shield size={16} color={P.blue2} style={{ flexShrink: 0, marginTop: 1 }} />
-        <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.7 }}>
+        <div style={{ fontSize: 13, color: t.mu, lineHeight: 1.7 }}>
           {footer}
         </div>
       </div>
@@ -4068,6 +4068,7 @@ export default function App() {
     <div dir="rtl" style={{
       fontFamily: "'Tajawal','Cairo',sans-serif", minHeight: "100vh",
       background: t.bgMesh, color: t.tx, paddingBottom: 80,
+      transition: "background .3s ease, color .3s ease",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&family=Reem+Kufi:wght@500;700&display=swap');
@@ -4092,10 +4093,10 @@ export default function App() {
       {/* HEADER */}
       <div style={{
         position: "sticky", top: 0, zIndex: 100,
-        background: dark ? "rgba(7,13,27,.93)" : "rgba(238,243,255,.93)",
+        background: dark ? "rgba(8,19,13,.93)" : "rgba(238,245,240,.93)",
         backdropFilter: "blur(20px)", borderBottom: `1px solid ${t.bd}`,
         padding: "13px 16px", display: "flex", alignItems: "center", gap: 10,
-        boxShadow: dark ? "0 1px 24px rgba(0,0,0,.45)" : "0 1px 16px rgba(0,50,140,.07)",
+        boxShadow: dark ? "0 1px 24px rgba(0,0,0,.45)" : "0 1px 16px rgba(0,80,45,.07)",
       }}>
         <div style={{
           width: 36, height: 36, borderRadius: 12,
@@ -4107,7 +4108,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, lineHeight: 1 }}>حلول</div>
-          <div style={{ fontSize: 10, color: t.mu }}>SEU • الجامعة السعودية الإلكترونية</div>
+          <div style={{ fontSize: 11.5, color: t.mu }}>SEU • الجامعة السعودية الإلكترونية</div>
         </div>
         <button onClick={() => setSearchOpen(true)} style={{
           background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 10,
@@ -4131,7 +4132,7 @@ export default function App() {
           {unread > 0 && <span style={{
             position: "absolute", top: -4, right: -4, width: 16, height: 16, borderRadius: "50%",
             background: P.blue2, display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 9, fontWeight: 900, color: "#fff",
+            fontSize: 11, fontWeight: 900, color: "#fff",
           }}>{unread}</span>}
         </button>
       </div>
@@ -4197,11 +4198,11 @@ export default function App() {
       {/* BOTTOM NAV */}
       <div id="bottom-nav" style={{
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
-        background: dark ? "rgba(7,13,27,.96)" : "rgba(255,255,255,.96)",
+        background: dark ? "rgba(8,19,13,.96)" : "rgba(255,255,255,.96)",
         backdropFilter: "blur(24px)", borderTop: `1px solid ${t.bd}`,
         overflowX: "auto", WebkitOverflowScrolling: "touch",
         scrollbarWidth: "none", padding: "6px 8px 14px",
-        boxShadow: dark ? "0 -1px 20px rgba(0,0,0,.5)" : "0 -1px 16px rgba(0,50,140,.08)",
+        boxShadow: dark ? "0 -1px 20px rgba(0,0,0,.5)" : "0 -1px 16px rgba(0,80,45,.08)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label }) => {
@@ -4222,9 +4223,9 @@ export default function App() {
                 boxShadow: active ? `0 3px 12px ${P.blue}55` : "none",
               }}>
                 <Icon size={17} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
-                {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 8, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
+                {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
               </div>
-              <span style={{ fontSize: 10, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 11.5, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
@@ -4253,18 +4254,18 @@ export default function App() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", letterSpacing: 0.2 }}>المساعد الذكي</div>
-                <div style={{ fontSize: 11, color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80", display: "inline-block" }} />
                   متصل — يجيب بالعربية
                 </div>
               </div>
-              <button onClick={clearGlobalAI} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 11, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
+              <button onClick={clearGlobalAI} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
             </div>
             {/* Subject Selector + Tab Toggle */}
             <div style={{ padding: "6px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.08)", borderRadius: 6, padding: "3px 10px", flexShrink: 0 }}>
                 <Book size={12} color="rgba(255,255,255,.7)" />
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,.7)", fontWeight: 600, whiteSpace: "nowrap" }}>المادة</span>
+                <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, whiteSpace: "nowrap" }}>المادة</span>
               </div>
               <div style={{ flex: 1, position: "relative" }}>
                 <select
@@ -4360,7 +4361,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
             }}><X size={14} /></button>}
             <button onClick={onClose} style={{
               background: t.s2, border: "none", borderRadius: 8, padding: "5px 10px",
-              cursor: "pointer", fontSize: 11, color: t.mu, fontFamily: "inherit",
+              cursor: "pointer", fontSize: 12, color: t.mu, fontFamily: "inherit",
             }}>إلغاء</button>
           </div>
 
@@ -4375,7 +4376,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
                   <Search size={26} color={t.dim} />
                 </div>
                 <div style={{ fontSize: 13, color: t.mu, marginBottom: 8 }}>ابدأ الكتابة للبحث</div>
-                <div style={{ fontSize: 11, color: t.dim }}>أكثر من {ALL_COURSES.length} مادة وتخصص</div>
+                <div style={{ fontSize: 12, color: t.dim }}>أكثر من {ALL_COURSES.length} مادة وتخصص</div>
               </div>
             ) : (() => {
               const q = query.trim().toLowerCase();
@@ -4401,10 +4402,10 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
               );
               return (
                 <>
-                  <div style={{ fontSize: 11, color: t.mu, marginBottom: 10, padding: "0 4px" }}>{total} نتيجة</div>
+                  <div style={{ fontSize: 12, color: t.mu, marginBottom: 10, padding: "0 4px" }}>{total} نتيجة</div>
                   {groups.map((g, gi) => (
                     <div key={gi} style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: g.color, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: g.color, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
                         <div style={{ width: 3, height: 10, borderRadius: 2, background: g.color }} />
                         {g.label}
                       </div>

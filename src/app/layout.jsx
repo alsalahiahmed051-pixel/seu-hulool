@@ -35,7 +35,10 @@ export default function RootLayout({ children }) {
         fontFamily: "'Tajawal','Cairo',sans-serif",
         WebkitFontSmoothing: 'antialiased',
         MozOsxFontSmoothing: 'grayscale',
-        background: '#050a16',
+        textRendering: 'optimizeLegibility',
+        fontSize: 15,
+        lineHeight: 1.6,
+        background: '#ffffff',
       }}>
         {children}
         <Analytics />
