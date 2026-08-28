@@ -2844,6 +2844,10 @@ function AcademicCalendar({ t }) {
 function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, onShowFocus, onShowReport }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
+  const hijriToday = (() => {
+    try { return new Date().toLocaleDateString("ar-SA-u-ca-islamic-umalqura", { weekday: "long", day: "numeric", month: "long" }); }
+    catch { try { return new Date().toLocaleDateString("ar-SA", { weekday: "long", day: "numeric", month: "long" }); } catch { return ""; } }
+  })();
   const [tipIdx, setTipIdx] = useState(() => Math.floor(Date.now() / 3600000) % TIPS.length);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   useEffect(() => {
@@ -2877,7 +2881,10 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       <div style={{ background: t.hero, borderRadius: 22, padding: "22px", marginBottom: 16, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "rgba(255,255,255,.03)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}10`, pointerEvents: "none" }} />
-        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 4 }}>{greeting} 👋</div>
+        <div style={{ color: "rgba(255,255,255,.6)", fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>{greeting} 👋</span>
+          <span style={{ color: P.gold, fontSize: 11.5 }}>{hijriToday}</span>
+        </div>
         <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, margin: "0 0 6px", lineHeight: 1.3 }}>
           مرحباً في <span style={{ color: P.gold }}>حلول</span>
         </h1>
@@ -2947,11 +2954,10 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       {/* Unified tasks + exams hub */}
       <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
         <StatCard Icon={Bookmark} value={6000} suffix="+" label="تجميع وملخص" color={P.gold} t={t} />
         <StatCard Icon={Users} value={5000} suffix="+" label="طالب نشط" color={P.green} t={t} />
-        <StatCard Icon={Trophy} value={unlocked.length} suffix={`/${ACHIEVEMENTS.length}`} label="إنجازاتك" color={P.orange} t={t} />
       </div>
 
       {recent.length > 0 && (
@@ -2982,44 +2988,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           </div>
         </div>
       )}
-
-      {/* Quick Stats Bar */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 8 }}>
-        {[
-          { label: "دقائق هذا الأسبوع", value: weekMins || 0, color: P.blue2, suffix: "د" },
-          { label: "يوم للاختبارات", value: Math.max(0, examDays), color: examDays <= 14 ? P.red : P.gold, suffix: "" },
-          { label: "آخر معدل", value: lastGpa ? lastGpa.toFixed(2) : "—", color: P.green, suffix: "" },
-        ].map(({ label, value, color, suffix }) => (
-          <div key={label} style={{ background: t.s1, borderRadius: 14, padding: "12px 10px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
-            <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value}{suffix}</div>
-            <div style={{ fontSize: 11.5, color: t.mu, marginTop: 3, lineHeight: 1.3 }}>{label}</div>
-          </div>
-        ))}
-      </div>
-      {/* Focus mode */}
-      <div style={{ marginBottom: 16 }}>
-        <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit" }}>
-          <Target size={22} color="#fff" />
-          <div style={{ textAlign: "right", flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)" }}>مؤقت دراسة + مساعد ذكي — كل ما تحتاجه للمذاكرة</div>
-          </div>
-          <ChevronLeft size={18} color="rgba(255,255,255,.6)" />
-        </button>
-      </div>
-
-      {/* Academic Calendar */}
-      <AcademicCalendar t={t} />
-
-      {/* Monthly report — at the bottom */}
-      <button onClick={onShowReport} style={{ width: "100%", background: `${P.purple}12`, border: `1px solid ${P.purple}30`, borderRadius: 14, padding: "14px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", marginBottom: 16 }}>
-        <FileBarChart size={20} color={P.purple} />
-        <div style={{ textAlign: "right", flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>التقرير الشهري</div>
-          <div style={{ fontSize: 11.5, color: t.mu }}>ملخّص إحصائياتك خلال الشهر</div>
-        </div>
-        <ChevronLeft size={16} color={t.dim} />
-      </button>
 
       <div style={{
         background: t.s1, borderRadius: 18,
@@ -3067,6 +3035,19 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           ))}
         </div>
       </div>
+
+      {/* Academic calendar strip — bottom */}
+      <AcademicCalendar t={t} />
+
+      {/* Focus mode — bottom */}
+      <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit", marginBottom: 8 }}>
+        <Target size={22} color="#fff" />
+        <div style={{ textAlign: "right", flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)" }}>مؤقت دراسة + مساعد ذكي — كل ما تحتاجه للمذاكرة</div>
+        </div>
+        <ChevronLeft size={18} color="rgba(255,255,255,.6)" />
+      </button>
     </div>
   );
 }
@@ -3431,11 +3412,6 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
-        <StatCard Icon={Flame} value={streak} suffix="" label="سلسلة أيام" color={P.orange} t={t} />
-        <StatCard Icon={Target} value={totalSessions} suffix="" label="جلسات بومودورو" color={P.blue2} t={t} />
-        <StatCard Icon={Star} value={favorites.length} suffix="" label="مادة مفضلة" color={P.gold} t={t} />
-      </div>
 
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -3458,38 +3434,6 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
                   transition: "height .8s ease", boxShadow: isToday ? `0 4px 12px ${P.gold}40` : "none", minHeight: 4,
                 }} />
                 <div style={{ fontSize: 11.5, color: isToday ? P.gold : t.mu, fontWeight: isToday ? 700 : 500 }}>{dayLabels[dow]}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-            <Trophy size={16} color={P.gold} /> الإنجازات
-          </div>
-          <div style={{ fontSize: 12, color: t.mu }}>{unlocked.length} / {ACHIEVEMENTS.length}</div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-          {ACHIEVEMENTS.map(a => {
-            const ok = a.check(achievements);
-            return (
-              <div key={a.id} style={{
-                background: t.s1, borderRadius: 14, padding: 12, border: `1px solid ${ok ? a.color + "50" : t.bd}`,
-                textAlign: "center", opacity: ok ? 1 : 0.5, transition: "all .3s",
-                position: "relative", overflow: "hidden",
-              }}>
-                {ok && <div style={{ position: "absolute", top: -10, right: -10, width: 40, height: 40, borderRadius: "50%", background: `${a.color}15` }} />}
-                <div style={{
-                  width: 40, height: 40, borderRadius: 12, background: ok ? `${a.color}18` : t.s2,
-                  display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px",
-                  position: "relative",
-                }}>
-                  {ok ? <a.icon size={20} color={a.color} /> : <Lock size={16} color={t.dim} />}
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 800, color: ok ? t.tx : t.mu, marginBottom: 2 }}>{a.title}</div>
-                <div style={{ fontSize: 11, color: t.mu, lineHeight: 1.4 }}>{a.desc}</div>
               </div>
             );
           })}
