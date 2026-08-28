@@ -10,8 +10,8 @@ import {
 } from 'lucide-react'
 
 const P = {
-  navy: '#001f5a', blue: '#0038b8', blue2: '#1a56db',
-  gold: '#c8a84b', green: '#059669', red: '#dc2626', purple: '#7c3aed', orange: '#ea580c',
+  navy: '#043d2a', blue: '#066b45', blue2: '#0a8a58',
+  gold: '#c8a84b', green: '#059669', red: '#dc2626', purple: '#0f766e', orange: '#ea580c',
 }
 
 const TRACKS = [
@@ -48,9 +48,9 @@ function fmtDate(iso) {
 }
 
 const S = {
-  input: { width: '100%', border: '1.5px solid #1c2e48', borderRadius: 10, padding: '9px 12px', fontSize: 13, background: '#0f1c33', color: '#e4ecf8', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', direction: 'rtl' },
-  card: { background: '#0a1426', borderRadius: 18, padding: 20, border: '1px solid #1c2e48', marginBottom: 16 },
-  label: { fontSize: 12, color: '#7d97b8', marginBottom: 5, display: 'block', fontWeight: 600 },
+  input: { width: '100%', border: '1.5px solid #d3e6da', borderRadius: 10, padding: '9px 12px', fontSize: 13, background: '#f3f9f5', color: '#082016', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', direction: 'rtl' },
+  card: { background: '#ffffff', borderRadius: 18, padding: 20, border: '1px solid #d3e6da', marginBottom: 16 },
+  label: { fontSize: 12, color: '#4d6b5c', marginBottom: 5, display: 'block', fontWeight: 600 },
   btn: (color = P.blue2) => ({ padding: '9px 18px', borderRadius: 10, border: 'none', background: `linear-gradient(135deg,${color},${color}cc)`, color: '#fff', fontSize: 13, fontWeight: 800, fontFamily: 'inherit', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'center' }),
   iconBtn: (color) => ({ background: `${color}18`, border: 'none', borderRadius: 8, padding: 7, cursor: 'pointer', color, display: 'flex' }),
 }
@@ -138,7 +138,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
     router.refresh()
   }
 
-  const page = { minHeight: '100vh', background: '#050a16', color: '#e4ecf8', fontFamily: "'Tajawal','Cairo',sans-serif", direction: 'rtl', padding: '16px 14px 40px' }
+  const page = { minHeight: '100vh', background: '#eef5f0', color: '#082016', fontFamily: "'Tajawal','Cairo',sans-serif", direction: 'rtl', padding: '16px 14px 40px' }
 
   return (
     <div style={page}>
@@ -150,16 +150,16 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
           </div>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h1 style={{ fontSize: 19, fontWeight: 900, margin: 0 }}>لوحة تحكم حلول</h1>
-            <p style={{ fontSize: 11.5, color: '#7d97b8', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminName || adminEmail}</p>
+            <p style={{ fontSize: 11.5, color: '#4d6b5c', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminName || adminEmail}</p>
           </div>
           {pinConfigured && (
-            <button onClick={handleLock} title="قفل اللوحة" style={S.iconBtn('#7d97b8')}><Lock size={16} /></button>
+            <button onClick={handleLock} title="قفل اللوحة" style={S.iconBtn('#4d6b5c')}><Lock size={16} /></button>
           )}
           <button onClick={handleSignOut} title="تسجيل الخروج" style={S.iconBtn(P.red)}><LogOut size={16} /></button>
         </div>
 
         {!pinConfigured && (
-          <div style={{ background: '#1c1608', border: '1px solid #c8a84b40', borderRadius: 12, padding: '12px 14px', marginBottom: 16, display: 'flex', gap: 10, fontSize: 12, color: '#e8d9a8', lineHeight: 1.7 }}>
+          <div style={{ background: '#fbf6e7', border: '1px solid #c8a84b55', borderRadius: 12, padding: '12px 14px', marginBottom: 16, display: 'flex', gap: 10, fontSize: 12, color: '#7a6320', lineHeight: 1.7 }}>
             <Shield size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
             <div>لتفعيل طبقة الحماية الإضافية (رمز PIN)، أضف متغيّر <strong style={{ color: P.gold }}>ADMIN_PIN</strong> في Vercel → Settings → Environment Variables (اختر رقماً سرياً)، ثم أعد النشر.</div>
           </div>
@@ -170,9 +170,9 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
           {TABS.map(({ id, label, Icon }) => (
             <button key={id} onClick={() => setTab(id)} style={{
               flexShrink: 0, padding: '8px 14px', borderRadius: 11,
-              background: tab === id ? `linear-gradient(135deg,${P.blue},${P.blue2})` : '#0f1c33',
-              border: `1px solid ${tab === id ? P.blue2 : '#1c2e48'}`,
-              color: tab === id ? '#fff' : '#7d97b8', cursor: 'pointer', fontFamily: 'inherit',
+              background: tab === id ? `linear-gradient(135deg,${P.blue},${P.blue2})` : '#f3f9f5',
+              border: `1px solid ${tab === id ? P.blue2 : '#d3e6da'}`,
+              color: tab === id ? '#fff' : '#4d6b5c', cursor: 'pointer', fontFamily: 'inherit',
               fontSize: 12.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
             }}>
               <Icon size={14} /> {label}
@@ -235,10 +235,10 @@ function OverviewTab({ flash }) {
       <SectionHeader title="نظرة عامة على المنصة" onRefresh={load} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12 }}>
         {cards.map(({ label, value, Icon, color }) => (
-          <div key={label} style={{ background: '#0a1426', border: '1px solid #1c2e48', borderRadius: 14, padding: '16px 14px', textAlign: 'center' }}>
+          <div key={label} style={{ background: '#ffffff', border: '1px solid #d3e6da', borderRadius: 14, padding: '16px 14px', textAlign: 'center' }}>
             <Icon size={18} color={color} style={{ marginBottom: 8 }} />
             <div style={{ fontSize: 24, fontWeight: 900, color }}>{value ?? 0}</div>
-            <div style={{ fontSize: 11, color: '#7d97b8', marginTop: 2 }}>{label}</div>
+            <div style={{ fontSize: 11, color: '#4d6b5c', marginTop: 2 }}>{label}</div>
           </div>
         ))}
       </div>
@@ -306,7 +306,7 @@ function FilesTab({ flash }) {
       </div>
 
       {!blobEnabled && (
-        <div style={{ ...S.card, background: '#1c0a0a', border: '1px solid #dc262640', display: 'flex', gap: 10, fontSize: 12, color: '#f0a8a8', lineHeight: 1.7 }}>
+        <div style={{ ...S.card, background: '#fdecec', border: '1px solid #dc262655', display: 'flex', gap: 10, fontSize: 12, color: '#b91c1c', lineHeight: 1.7 }}>
           <AlertCircle size={16} color={P.red} style={{ flexShrink: 0, marginTop: 2 }} />
           <div>Vercel Blob غير مضبوط — أضف <strong>BLOB_READ_WRITE_TOKEN</strong> في Vercel لتفعيل رفع الملفات.</div>
         </div>
@@ -332,12 +332,12 @@ function FilesTab({ flash }) {
           </div>
           <label style={S.label}>اسم الملف (اختياري)</label>
           <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="مثال: تجميع نهائي 1446" style={{ ...S.input, marginBottom: 10 }} />
-          <div onClick={() => fileRef.current?.click()} style={{ border: '2px dashed #1c2e48', borderRadius: 10, padding: 16, textAlign: 'center', cursor: 'pointer', marginBottom: 12 }}>
+          <div onClick={() => fileRef.current?.click()} style={{ border: '2px dashed #d3e6da', borderRadius: 10, padding: 16, textAlign: 'center', cursor: 'pointer', marginBottom: 12 }}>
             <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={e => { setSelected(e.target.files[0]); setDisplayName(e.target.files[0]?.name?.replace(/\.pdf$/i, '') || '') }} />
             {selected ? (
-              <div><CheckCircle size={22} color={P.green} /><div style={{ fontSize: 12, fontWeight: 700, marginTop: 4 }}>{selected.name}</div><div style={{ fontSize: 11, color: '#7d97b8' }}>{fmtSize(selected.size)}</div></div>
+              <div><CheckCircle size={22} color={P.green} /><div style={{ fontSize: 12, fontWeight: 700, marginTop: 4 }}>{selected.name}</div><div style={{ fontSize: 11, color: '#4d6b5c' }}>{fmtSize(selected.size)}</div></div>
             ) : (
-              <div><Upload size={22} color="#3a5270" /><div style={{ fontSize: 12, color: '#7d97b8', marginTop: 4 }}>اضغط لاختيار PDF (حد 20MB)</div></div>
+              <div><Upload size={22} color="#93b0a1" /><div style={{ fontSize: 12, color: '#4d6b5c', marginTop: 4 }}>اضغط لاختيار PDF (حد 20MB)</div></div>
             )}
           </div>
           <button type="submit" disabled={uploading || !selected || !course} style={{ ...S.btn(), width: '100%', opacity: (uploading || !selected || !course) ? 0.5 : 1 }}>
@@ -353,7 +353,7 @@ function FilesTab({ flash }) {
             <div style={{ width: 34, height: 34, borderRadius: 9, background: `${P.blue2}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={15} color={P.blue2} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={ellipsis}>{f.name}</div>
-              <div style={{ fontSize: 11, color: '#7d97b8' }}>{f.courseName} • {f.sizeLabel} • {fmtDate(f.uploadedAt)}</div>
+              <div style={{ fontSize: 11, color: '#4d6b5c' }}>{f.courseName} • {f.sizeLabel} • {fmtDate(f.uploadedAt)}</div>
             </div>
             <a href={`/api/download?url=${encodeURIComponent(f.blobUrl)}`} target="_blank" rel="noopener noreferrer" style={{ ...S.iconBtn(P.blue2), textDecoration: 'none' }}><Eye size={14} /></a>
             <button onClick={() => remove(f)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
@@ -418,9 +418,9 @@ function CoursesTab({ flash }) {
                 <div style={{ width: 30, height: 30, borderRadius: 8, background: `${c.color || P.blue2}22`, flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={ellipsis}>{c.name_ar} {!c.is_active && <span style={{ fontSize: 10, color: P.red }}>(مخفية)</span>}</div>
-                  <div style={{ fontSize: 11, color: '#7d97b8' }}>{c.college_id || '—'} • مشاهدات: {c.view_count || 0}</div>
+                  <div style={{ fontSize: 11, color: '#4d6b5c' }}>{c.college_id || '—'} • مشاهدات: {c.view_count || 0}</div>
                 </div>
-                <button onClick={() => toggleActive(c)} title={c.is_active ? 'إخفاء' : 'إظهار'} style={S.iconBtn(c.is_active ? P.green : '#7d97b8')}><Eye size={14} /></button>
+                <button onClick={() => toggleActive(c)} title={c.is_active ? 'إخفاء' : 'إظهار'} style={S.iconBtn(c.is_active ? P.green : '#4d6b5c')}><Eye size={14} /></button>
                 <button onClick={() => setEditing(c)} style={S.iconBtn(P.blue2)}><Edit3 size={14} /></button>
                 <button onClick={() => remove(c)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
               </div>
@@ -459,7 +459,7 @@ function CourseModal({ course, colleges, onSave, onClose }) {
         <div><label style={S.label}>الخطة (أ/ب للتحضيري)</label><input value={f.plan} onChange={e => set('plan', e.target.value)} placeholder="a أو b" style={S.input} /></div>
         <div><label style={S.label}>اللون</label><input type="color" value={f.color} onChange={e => set('color', e.target.value)} style={{ ...S.input, padding: 4, height: 38 }} /></div>
       </div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e4ecf8', cursor: 'pointer' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#082016', cursor: 'pointer' }}>
         <input type="checkbox" checked={f.is_active} onChange={e => set('is_active', e.target.checked)} /> ظاهرة للطلاب
       </label>
     </Modal>
@@ -507,7 +507,7 @@ function CollegesTab({ flash }) {
           <div style={{ width: 30, height: 30, borderRadius: 8, background: `${c.color || P.blue2}22`, flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={ellipsis}>{c.name_ar}</div>
-            <div style={{ fontSize: 11, color: '#7d97b8' }}>{c.id}</div>
+            <div style={{ fontSize: 11, color: '#4d6b5c' }}>{c.id}</div>
           </div>
           <button onClick={() => setEditing(c)} style={S.iconBtn(P.blue2)}><Edit3 size={14} /></button>
           <button onClick={() => remove(c)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
@@ -589,7 +589,7 @@ function NotificationsTab({ flash }) {
           <option value="info">معلومة — في زر الجرس فقط</option>
           <option value="success">خبر جيد — في زر الجرس فقط</option>
         </select>
-        <div style={{ fontSize: 11, color: '#7d97b8', marginBottom: 12, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: '#4d6b5c', marginBottom: 12, lineHeight: 1.6 }}>
           «إعلان» و«تنبيه» يظهران كشريط بارز أعلى الموقع لكل الطلاب (قابل للإغلاق)، بينما «معلومة» و«خبر جيد» تظهر فقط عند فتح زر الجرس.
         </div>
         <button type="submit" disabled={sending || !title.trim() || !body.trim()} style={{ ...S.btn(), width: '100%', opacity: (sending || !title.trim() || !body.trim()) ? 0.5 : 1 }}>
@@ -603,9 +603,9 @@ function NotificationsTab({ flash }) {
           <div key={n.id} style={rowStyle}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: typeColors[n.type] || P.blue2, flexShrink: 0, marginTop: 6 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#e4ecf8' }}>{n.title}</div>
-              <div style={{ fontSize: 11.5, color: '#9db0c8', lineHeight: 1.6 }}>{n.body}</div>
-              <div style={{ fontSize: 10, color: '#7d97b8', marginTop: 2 }}>{fmtDate(n.created_at)}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#082016' }}>{n.title}</div>
+              <div style={{ fontSize: 11.5, color: '#5a7a6a', lineHeight: 1.6 }}>{n.body}</div>
+              <div style={{ fontSize: 10, color: '#4d6b5c', marginTop: 2 }}>{fmtDate(n.created_at)}</div>
             </div>
             <button onClick={() => remove(n)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
           </div>
@@ -716,7 +716,7 @@ function LinksTab({ flash }) {
       <button onClick={save} disabled={saving} style={{ ...S.btn(P.green), flex: 1, opacity: saving ? 0.5 : 1 }}>
         {saving ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> جارٍ الحفظ...</> : <><Save size={14} /> حفظ ونشر</>}
       </button>
-      <button onClick={resetDefaults} style={S.btn('#7d97b8')}><RefreshCw size={14} /> الافتراضي</button>
+      <button onClick={resetDefaults} style={S.btn('#4d6b5c')}><RefreshCw size={14} /> الافتراضي</button>
     </div>
   )
 
@@ -748,12 +748,12 @@ function LinksTab({ flash }) {
 
       {/* Groups */}
       {content.groups.map((g, gi) => (
-        <div key={gi} style={{ ...S.card, borderColor: '#26436e' }}>
+        <div key={gi} style={{ ...S.card, borderColor: '#c3ddce' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <span style={{ width: 12, height: 12, borderRadius: 4, background: g.color || P.blue2, flexShrink: 0 }} />
             <h3 style={{ fontSize: 14, fontWeight: 800, margin: 0, flex: 1 }}>مجموعة {gi + 1}</h3>
-            <button onClick={() => moveGroup(gi, -1)} disabled={gi === 0} title="لأعلى" style={{ ...S.iconBtn('#7d97b8'), opacity: gi === 0 ? 0.4 : 1 }}>▲</button>
-            <button onClick={() => moveGroup(gi, 1)} disabled={gi === content.groups.length - 1} title="لأسفل" style={{ ...S.iconBtn('#7d97b8'), opacity: gi === content.groups.length - 1 ? 0.4 : 1 }}>▼</button>
+            <button onClick={() => moveGroup(gi, -1)} disabled={gi === 0} title="لأعلى" style={{ ...S.iconBtn('#4d6b5c'), opacity: gi === 0 ? 0.4 : 1 }}>▲</button>
+            <button onClick={() => moveGroup(gi, 1)} disabled={gi === content.groups.length - 1} title="لأسفل" style={{ ...S.iconBtn('#4d6b5c'), opacity: gi === content.groups.length - 1 ? 0.4 : 1 }}>▼</button>
             <button onClick={() => removeGroup(gi)} title="حذف المجموعة" style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, marginBottom: 12 }}>
@@ -762,11 +762,11 @@ function LinksTab({ flash }) {
           </div>
 
           {g.items.map((it, ii) => (
-            <div key={ii} style={{ background: '#0f1c33', border: '1px solid #1c2e48', borderRadius: 11, padding: 12, marginBottom: 8 }}>
+            <div key={ii} style={{ background: '#f3f9f5', border: '1px solid #d3e6da', borderRadius: 11, padding: 12, marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#9db0c8', flex: 1 }}>رابط {ii + 1}</span>
-                <button onClick={() => moveItem(gi, ii, -1)} disabled={ii === 0} style={{ ...S.iconBtn('#7d97b8'), opacity: ii === 0 ? 0.4 : 1 }}>▲</button>
-                <button onClick={() => moveItem(gi, ii, 1)} disabled={ii === g.items.length - 1} style={{ ...S.iconBtn('#7d97b8'), opacity: ii === g.items.length - 1 ? 0.4 : 1 }}>▼</button>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#5a7a6a', flex: 1 }}>رابط {ii + 1}</span>
+                <button onClick={() => moveItem(gi, ii, -1)} disabled={ii === 0} style={{ ...S.iconBtn('#4d6b5c'), opacity: ii === 0 ? 0.4 : 1 }}>▲</button>
+                <button onClick={() => moveItem(gi, ii, 1)} disabled={ii === g.items.length - 1} style={{ ...S.iconBtn('#4d6b5c'), opacity: ii === g.items.length - 1 ? 0.4 : 1 }}>▼</button>
                 <button onClick={() => removeItem(gi, ii)} style={S.iconBtn(P.red)}><Trash2 size={13} /></button>
               </div>
               <label style={S.label}>الاسم</label>
@@ -829,7 +829,7 @@ function UsersTab({ flash, adminEmail }) {
     return (u.full_name || '').toLowerCase().includes(s) || (u.email || '').toLowerCase().includes(s)
   })
 
-  const roleBadge = { admin: { t: 'مسؤول', c: P.gold }, moderator: { t: 'مشرف', c: P.purple }, student: { t: 'طالب', c: '#7d97b8' } }
+  const roleBadge = { admin: { t: 'مسؤول', c: P.gold }, moderator: { t: 'مشرف', c: P.purple }, student: { t: 'طالب', c: '#4d6b5c' } }
 
   return (
     <div>
@@ -842,7 +842,7 @@ function UsersTab({ flash, adminEmail }) {
             <div style={{ width: 34, height: 34, borderRadius: '50%', background: `${rb.c}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 13, fontWeight: 800, color: rb.c }}>{(u.full_name || '؟')[0]}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={ellipsis}>{u.full_name || 'بدون اسم'}</div>
-              <div style={{ fontSize: 11, color: '#7d97b8', direction: 'ltr', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email || '—'}</div>
+              <div style={{ fontSize: 11, color: '#4d6b5c', direction: 'ltr', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email || '—'}</div>
             </div>
             <select
               value={u.role || 'student'}
@@ -862,40 +862,40 @@ function UsersTab({ flash, adminEmail }) {
 }
 
 /* ══════════════ SHARED UI ══════════════ */
-const rowStyle = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#0f1c33', borderRadius: 11, border: '1px solid #1c2e48', marginBottom: 8 }
-const ellipsis = { fontSize: 13, fontWeight: 700, color: '#e4ecf8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+const rowStyle = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f3f9f5', borderRadius: 11, border: '1px solid #d3e6da', marginBottom: 8 }
+const ellipsis = { fontSize: 13, fontWeight: 700, color: '#082016', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 function SectionHeader({ title, onRefresh, action }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, gap: 10 }}>
       <h2 style={{ fontSize: 16, fontWeight: 800, margin: 0, flex: 1 }}>{title}</h2>
       {action && <button onClick={action.onClick} style={S.btn(P.green)}><Plus size={14} /> {action.label}</button>}
-      {onRefresh && <button onClick={onRefresh} style={S.iconBtn('#7d97b8')}><RefreshCw size={15} /></button>}
+      {onRefresh && <button onClick={onRefresh} style={S.iconBtn('#4d6b5c')}><RefreshCw size={15} /></button>}
     </div>
   )
 }
 function MiniStat({ label, value, Icon, color }) {
   return (
-    <div style={{ background: '#0a1426', border: '1px solid #1c2e48', borderRadius: 12, padding: '12px', textAlign: 'center' }}>
+    <div style={{ background: '#ffffff', border: '1px solid #d3e6da', borderRadius: 12, padding: '12px', textAlign: 'center' }}>
       <Icon size={16} color={color} style={{ marginBottom: 5 }} />
       <div style={{ fontSize: 16, fontWeight: 900, color }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: '#7d97b8' }}>{label}</div>
+      <div style={{ fontSize: 10.5, color: '#4d6b5c' }}>{label}</div>
     </div>
   )
 }
 function Loader() {
-  return <div style={{ textAlign: 'center', padding: 30, color: '#7d97b8', fontSize: 13 }}><RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /><div style={{ marginTop: 8 }}>جارٍ التحميل...</div></div>
+  return <div style={{ textAlign: 'center', padding: 30, color: '#4d6b5c', fontSize: 13 }}><RefreshCw size={18} style={{ animation: 'spin 1s linear infinite' }} /><div style={{ marginTop: 8 }}>جارٍ التحميل...</div></div>
 }
 function Empty({ text }) {
-  return <div style={{ textAlign: 'center', padding: 30, color: '#7d97b8', fontSize: 13 }}>{text}</div>
+  return <div style={{ textAlign: 'center', padding: 30, color: '#4d6b5c', fontSize: 13 }}>{text}</div>
 }
 function Modal({ title, children, onClose, onSubmit }) {
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#0a1426', borderRadius: '20px 20px 0 0', padding: 22, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', border: '1px solid #1c2e48' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: '20px 20px 0 0', padding: 22, width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto', border: '1px solid #d3e6da' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>{title}</h3>
-          <button onClick={onClose} style={S.iconBtn('#7d97b8')}><X size={16} /></button>
+          <button onClick={onClose} style={S.iconBtn('#4d6b5c')}><X size={16} /></button>
         </div>
         <form onSubmit={e => { e.preventDefault(); onSubmit() }}>
           {children}

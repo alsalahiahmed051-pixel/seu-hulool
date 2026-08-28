@@ -47,7 +47,7 @@ export async function POST(request) {
     college_id: body.college_id || null,
     plan: body.plan || null,
     icon: body.icon?.trim() || 'BookOpen',
-    color: body.color?.trim() || '#1a56db',
+    color: body.color?.trim() || '#0a8a58',
     credit_hours: body.credit_hours ? Number(body.credit_hours) : null,
     is_active: body.is_active !== false,
   }

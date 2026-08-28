@@ -68,7 +68,7 @@ function ForbiddenScreen({ title, message }) {
       <div style={{ textAlign: 'center', maxWidth: 380 }}>
         <div style={{
           width: 60, height: 60, borderRadius: 18,
-          background: 'linear-gradient(135deg,#001f5a,#0038b8)',
+          background: 'linear-gradient(135deg,#043d2a,#066b45)',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16,
         }}>
           <ShieldAlert size={26} color="#fff" />

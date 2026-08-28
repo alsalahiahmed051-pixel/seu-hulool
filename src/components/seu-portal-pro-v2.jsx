@@ -70,36 +70,39 @@ function useStored(key, initial) {
 /* ══════════════════════════════════════════════════════════════
    DESIGN TOKENS
    ══════════════════════════════════════════════════════════════ */
+// Brand identity: Saudi-flavoured white + deep green. The primary keys
+// (navy/blue/blue2/blueLight) carry green values so every existing usage
+// turns green; gold stays as the elegant secondary accent.
 const P = {
-  navy: "#001f5a", navyDeep: "#000b24",
-  blue: "#0038b8", blue2: "#1a56db", blueLight: "#60a5fa",
+  navy: "#043d2a", navyDeep: "#021f15",
+  blue: "#066b45", blue2: "#0a8a58", blueLight: "#34d399",
   gold: "#c8a84b", goldLight: "#fef3c7", goldRich: "#d4af37",
   green: "#059669", greenLight: "#10b981",
   red: "#dc2626", orange: "#d97706", orangeLight: "#fb923c",
-  purple: "#6d28d9", purpleLight: "#a78bfa",
+  purple: "#0f766e", purpleLight: "#5eead4",
   cyan: "#0891b2", pink: "#db2777",
 };
 
 const T = (d) => ({
-  bg: d ? "#070d1b" : "#eef3ff",
+  bg: d ? "#08130d" : "#eef5f0",
   bgMesh: d
-    ? "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(37,99,235,0.22) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(124,58,237,0.07) 0%, transparent 45%), #070d1b"
-    : "radial-gradient(ellipse 70% 50% at 50% -10%, rgba(26,86,219,0.12) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.08) 0%, transparent 50%), #eef3ff",
-  s1: d ? "#0e1828" : "#ffffff",
-  s2: d ? "#162136" : "#f5f8ff",
-  s3: d ? "#1e2e47" : "#eaf0ff",
-  s4: d ? "#283d5e" : "#dde6f7",
-  bd: d ? "rgba(99,130,175,0.16)" : "#d8e3f5",
-  tx: d ? "#f0f4ff" : "#0a1428",
-  mu: d ? "#8599bf" : "#5a6e8a",
-  dim: d ? "#485d80" : "#9aaac0",
-  sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,50,140,.10), 0 2px 10px rgba(0,50,140,.05)",
-  shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,50,140,.07)",
-  grad: d ? `linear-gradient(135deg,#0e1828,#162136)` : `linear-gradient(135deg,#f5f8ff,#eaf0ff)`,
+    ? "radial-gradient(ellipse 80% 60% at 50% -5%, rgba(10,138,88,0.20) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(5,150,105,0.08) 0%, transparent 45%), #08130d"
+    : "radial-gradient(ellipse 70% 50% at 50% -10%, rgba(10,138,88,0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.07) 0%, transparent 50%), #eef5f0",
+  s1: d ? "#0f1d16" : "#ffffff",
+  s2: d ? "#16281e" : "#f3f9f5",
+  s3: d ? "#1e3629" : "#e7f2eb",
+  s4: d ? "#284a38" : "#d8ebe0",
+  bd: d ? "rgba(90,175,130,0.16)" : "#d3e6da",
+  tx: d ? "#eefaf3" : "#082016",
+  mu: d ? "#85bfa0" : "#4d6b5c",
+  dim: d ? "#486d5b" : "#93b0a1",
+  sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,80,45,.10), 0 2px 10px rgba(0,80,45,.05)",
+  shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,80,45,.07)",
+  grad: d ? `linear-gradient(135deg,#0f1d16,#16281e)` : `linear-gradient(135deg,#f3f9f5,#e7f2eb)`,
   hero: d
-    ? `linear-gradient(135deg, #060c1a 0%, #0b1e42 45%, #142257 100%)`
-    : `linear-gradient(135deg, #001f5a 0%, #003299 55%, #1a56db 100%)`,
-  inp: d ? "#0e1828" : "#ffffff",
+    ? `linear-gradient(135deg, #05130d 0%, #0a3d29 45%, #0e5638 100%)`
+    : `linear-gradient(135deg, #043d2a 0%, #066b45 55%, #0a8a58 100%)`,
+  inp: d ? "#0f1d16" : "#ffffff",
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -2495,7 +2498,7 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
           <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
           <select value={focusSubject} onChange={e => setFocusSubject(e.target.value)}
             style={{ width: "100%", background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "10px 14px", fontSize: 14, fontFamily: "inherit", direction: "rtl", outline: "none", fontWeight: 700 }}>
-            {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s} style={{ background: "#0b1e42" }}>{s}</option>)}
+            {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s} style={{ background: "#0a3d29" }}>{s}</option>)}
           </select>
         </div>
 
@@ -3584,7 +3587,7 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
         {/* Logo */}
         <div style={{
           width: 96, height: 96, borderRadius: 28,
-          background: "linear-gradient(135deg, #0f2d7a, #1a56db)",
+          background: "linear-gradient(135deg, #0a3d29, #0a8a58)",
           display: "flex", alignItems: "center", justifyContent: "center",
           boxShadow: "0 16px 60px rgba(26,86,219,.55), 0 4px 20px rgba(0,0,0,.5)",
           marginBottom: 24, animation: "scaleIn .6s ease",
@@ -3774,7 +3777,7 @@ function SEULinksPage({ t, content }) {
     <div style={{ animation: "fadeUp .4s ease" }}>
       {/* Header */}
       <div style={{
-        background: `linear-gradient(135deg, #001030 0%, #002470 45%, #1a1f7a 100%)`,
+        background: `linear-gradient(135deg, #04130d 0%, #0a3d29 45%, #0e5638 100%)`,
         borderRadius: 22, padding: "22px 20px", marginBottom: 20,
         position: "relative", overflow: "hidden",
       }}>
@@ -3783,7 +3786,7 @@ function SEULinksPage({ t, content }) {
         <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
           <div style={{
             width: 52, height: 52, borderRadius: 16,
-            background: "linear-gradient(135deg,#001f5a,#0038b8)",
+            background: "linear-gradient(135deg,#043d2a,#066b45)",
             display: "flex", alignItems: "center", justifyContent: "center",
             boxShadow: `0 6px 20px ${P.blue}50`,
           }}>
@@ -3892,7 +3895,9 @@ function SEULinksPage({ t, content }) {
 export default function App() {
   // Settings sync to the user's profile when logged in (cross-device);
   // localStorage stays the instant source of truth for everyone.
-  const [dark, setDark] = useSyncedSetting("dark", "dark_mode", true);
+  // New brand identity opens light (white + green); users can switch to the
+  // deep-green dark mode from the moon toggle at any time.
+  const [dark, setDark] = useSyncedSetting("dark", "dark_mode", false);
   const [tab, setTab] = useState("home");
   const [course, setCourse] = useState(null);
   // Favorites + notes sync per-user across devices (name-keyed tables),
@@ -4273,8 +4278,8 @@ export default function App() {
                     fontFamily: "inherit", outline: "none", cursor: "pointer",
                     direction: "rtl",
                   }}>
-                  <option value="عام" style={{ background: "#0b1e42", color: "#fff" }}>🌐 عام — مساعد SEU</option>
-                  {ALL_COURSES.map(c => <option key={c} value={c} style={{ background: "#0b1e42", color: "#fff" }}>{c}</option>)}
+                  <option value="عام" style={{ background: "#0a3d29", color: "#fff" }}>🌐 عام — مساعد SEU</option>
+                  {ALL_COURSES.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
                 </select>
                 <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               </div>
