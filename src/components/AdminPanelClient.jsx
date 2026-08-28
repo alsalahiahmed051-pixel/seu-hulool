@@ -6,6 +6,7 @@ import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
+  Link2, Save,
 } from 'lucide-react'
 
 const P = {
@@ -66,8 +67,54 @@ const TABS = [
   { id: 'courses', label: 'المواد', Icon: BookOpen },
   { id: 'colleges', label: 'الكليات', Icon: Building2 },
   { id: 'notifications', label: 'الإشعارات', Icon: Bell },
+  { id: 'links', label: 'الروابط', Icon: Link2 },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
+
+// Icon names the admin can assign to a link (must match LINK_ICONS in
+// seu-portal-pro-v2.jsx). Stored as a name string in site_content.
+const LINK_ICON_NAMES = [
+  'Monitor', 'GraduationCap', 'Building2', 'Globe', 'BookOpen', 'Mail',
+  'CheckCircle', 'Calendar', 'CreditCard', 'FileText', 'Award', 'Phone',
+  'HelpCircle', 'Radio', 'Newspaper', 'Link2', 'Shield', 'Star', 'Bell',
+]
+
+// Seed shown in the editor before the admin has saved anything — mirrors
+// DEFAULT_LINKS on the public page so editing starts from the live content.
+const LINKS_SEED = {
+  header: {
+    title: 'روابط الجامعة السعودية الإلكترونية',
+    subtitle: 'Saudi Electronic University — SEU',
+    note: 'جميع الروابط تفتح الموقع الرسمي — تأكد من تسجيل دخولك بالحساب الجامعي',
+  },
+  quick: { phone: '011-2613500', hours: '8 ص – 8 م', days: 'الأحد – الخميس' },
+  groups: [
+    { group: 'البوابات الأساسية', color: '#1a56db', items: [
+      { label: 'نظام التعلم الإلكتروني (Blackboard)', desc: 'المقررات والواجبات والدرجات', url: 'https://lms.seu.edu.sa', icon: 'Monitor', color: '#1d4ed8' },
+      { label: 'بوابة الطالب (ERP Gate)', desc: 'الجداول والسجلات والخدمات الأكاديمية', url: 'https://erpgate.seu.edu.sa', icon: 'GraduationCap', color: '#6d28d9' },
+      { label: 'تسجيل الدخول الموحد (SSO)', desc: 'الدخول لجميع أنظمة الجامعة', url: 'https://sso.seu.edu.sa/SEUSSO/pages/login.jsp', icon: 'Building2', color: '#065f46' },
+      { label: 'الموقع الرسمي للجامعة', desc: 'الأخبار والإعلانات الرسمية', url: 'https://www.seu.edu.sa', icon: 'Globe', color: '#0369a1' },
+    ]},
+    { group: 'الخدمات الأكاديمية', color: '#7c3aed', items: [
+      { label: 'المكتبة الرقمية السعودية (SDL)', desc: 'الكتب والمراجع والأبحاث الأكاديمية', url: 'https://sdl.edu.sa/SDLPortal/ar/login.aspx', icon: 'BookOpen', color: '#be123c' },
+      { label: 'البريد الإلكتروني الجامعي', desc: 'بريد @seu.edu.sa عبر Office 365', url: 'https://sso.seu.edu.sa/SEUOffice365SSO/pages/login.jsp', icon: 'Mail', color: '#0369a1' },
+      { label: 'بوابة القبول والتسجيل', desc: 'التسجيل وقبول الطلاب الجدد', url: 'https://admission.seu.edu.sa', icon: 'CheckCircle', color: '#0891b2' },
+      { label: 'التقويم الأكاديمي', desc: 'مواعيد الفصول والاختبارات والتسجيل', url: 'https://www.seu.edu.sa/en/academic-calendar/1448/', icon: 'Calendar', color: '#d97706' },
+    ]},
+    { group: 'الخدمات المالية والإدارية', color: '#059669', items: [
+      { label: 'الرسوم الدراسية والدفع', desc: 'سداد الرسوم وعرض الكشوف', url: 'https://erpgate.seu.edu.sa', icon: 'CreditCard', color: '#059669' },
+      { label: 'خدمات وحدة التسجيل', desc: 'إضافة/حذف/اعتراض على المقررات', url: 'https://www.seu.edu.sa/aasa/ar/registeration/', icon: 'FileText', color: '#c8a84b' },
+      { label: 'الكلية التطبيقية', desc: 'بوابة طلاب الكلية التطبيقية', url: 'https://ac.seu.edu.sa/ar/login', icon: 'Award', color: '#92400e' },
+    ]},
+    { group: 'الدعم والتواصل', color: '#be123c', items: [
+      { label: 'مركز الدعم الفني', desc: 'هاتف: 011-2613500', url: 'tel:0112613500', icon: 'Phone', color: '#be123c' },
+      { label: 'الأسئلة الشائعة (FAQ)', desc: 'إجابات على أبرز الاستفسارات', url: 'https://www.seu.edu.sa/ar/faqs/', icon: 'HelpCircle', color: '#ea580c' },
+      { label: 'حساب الجامعة في X', desc: '@Saudi_EUni', url: 'https://x.com/Saudi_EUni', icon: 'Radio', color: '#1d4ed8' },
+      { label: 'تطبيق SEU على المتجر', desc: 'تحميل تطبيق الجوال الرسمي', url: 'https://play.google.com/store/apps/details?id=com.seu.services', icon: 'Newspaper', color: '#065f46' },
+    ]},
+  ],
+  footer: 'هذه الروابط تأخذك للمواقع الرسمية للجامعة السعودية الإلكترونية. لا تشارك كلمة مرورك مع أي طرف آخر.',
+}
 
 export default function AdminPanelClient({ adminName, adminEmail, pinConfigured }) {
   const router = useRouter()
@@ -138,6 +185,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'courses' && <CoursesTab flash={flash} />}
         {tab === 'colleges' && <CollegesTab flash={flash} />}
         {tab === 'notifications' && <NotificationsTab flash={flash} />}
+        {tab === 'links' && <LinksTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -563,6 +611,193 @@ function NotificationsTab({ flash }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/* ══════════════ LINKS PAGE EDITOR ══════════════ */
+function LinksTab({ flash }) {
+  const [content, setContent] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { ok, data } = await apiJSON('/api/admin/site-content?key=links')
+    // Deep-clone the seed so edits never mutate the module-level default.
+    const seed = JSON.parse(JSON.stringify(LINKS_SEED))
+    if (ok && data.data) {
+      setContent({
+        header: { ...seed.header, ...(data.data.header || {}) },
+        quick: { ...seed.quick, ...(data.data.quick || {}) },
+        groups: Array.isArray(data.data.groups) ? data.data.groups : seed.groups,
+        footer: typeof data.data.footer === 'string' ? data.data.footer : seed.footer,
+      })
+    } else {
+      setContent(seed)
+    }
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function save() {
+    setSaving(true)
+    const { ok, data } = await apiJSON('/api/admin/site-content', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'links', data: content }),
+    })
+    setSaving(false)
+    if (ok) flash('تم حفظ صفحة الروابط — ستظهر التعديلات للطلاب فوراً')
+    else flash(data.error || 'فشل الحفظ', 'error')
+  }
+
+  function resetDefaults() {
+    if (!confirm('استرجاع المحتوى الافتراضي؟ سيُستبدل ما تراه الآن (لن يُحفظ حتى تضغط حفظ).')) return
+    setContent(JSON.parse(JSON.stringify(LINKS_SEED)))
+  }
+
+  if (loading || !content) return <Loader />
+
+  const setHeader = (k, v) => setContent(c => ({ ...c, header: { ...c.header, [k]: v } }))
+  const setQuick = (k, v) => setContent(c => ({ ...c, quick: { ...c.quick, [k]: v } }))
+  const setFooter = (v) => setContent(c => ({ ...c, footer: v }))
+
+  const setGroup = (gi, patch) => setContent(c => {
+    const groups = c.groups.map((g, i) => i === gi ? { ...g, ...patch } : g)
+    return { ...c, groups }
+  })
+  const removeGroup = (gi) => {
+    if (!confirm('حذف هذه المجموعة وكل روابطها؟')) return
+    setContent(c => ({ ...c, groups: c.groups.filter((_, i) => i !== gi) }))
+  }
+  const addGroup = () => setContent(c => ({
+    ...c, groups: [...c.groups, { group: 'مجموعة جديدة', color: '#1a56db', items: [] }],
+  }))
+  const moveGroup = (gi, dir) => setContent(c => {
+    const groups = [...c.groups]
+    const nj = gi + dir
+    if (nj < 0 || nj >= groups.length) return c
+    ;[groups[gi], groups[nj]] = [groups[nj], groups[gi]]
+    return { ...c, groups }
+  })
+
+  const setItem = (gi, ii, patch) => setContent(c => {
+    const groups = c.groups.map((g, i) => {
+      if (i !== gi) return g
+      const items = g.items.map((it, j) => j === ii ? { ...it, ...patch } : it)
+      return { ...g, items }
+    })
+    return { ...c, groups }
+  })
+  const removeItem = (gi, ii) => setContent(c => {
+    const groups = c.groups.map((g, i) => i === gi ? { ...g, items: g.items.filter((_, j) => j !== ii) } : g)
+    return { ...c, groups }
+  })
+  const addItem = (gi) => setContent(c => {
+    const groups = c.groups.map((g, i) => i === gi
+      ? { ...g, items: [...g.items, { label: 'رابط جديد', desc: '', url: 'https://', icon: 'Link2', color: g.color || '#1a56db' }] }
+      : g)
+    return { ...c, groups }
+  })
+  const moveItem = (gi, ii, dir) => setContent(c => {
+    const groups = c.groups.map((g, i) => {
+      if (i !== gi) return g
+      const items = [...g.items]
+      const nj = ii + dir
+      if (nj < 0 || nj >= items.length) return g
+      ;[items[ii], items[nj]] = [items[nj], items[ii]]
+      return { ...g, items }
+    })
+    return { ...c, groups }
+  })
+
+  const saveBar = (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <button onClick={save} disabled={saving} style={{ ...S.btn(P.green), flex: 1, opacity: saving ? 0.5 : 1 }}>
+        {saving ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> جارٍ الحفظ...</> : <><Save size={14} /> حفظ ونشر</>}
+      </button>
+      <button onClick={resetDefaults} style={S.btn('#7d97b8')}><RefreshCw size={14} /> الافتراضي</button>
+    </div>
+  )
+
+  return (
+    <div>
+      <SectionHeader title="تحرير صفحة الروابط" onRefresh={load} />
+      {saveBar}
+
+      {/* Header text */}
+      <div style={S.card}>
+        <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>العنوان والوصف</h3>
+        <label style={S.label}>العنوان الرئيسي</label>
+        <input value={content.header.title} onChange={e => setHeader('title', e.target.value)} style={{ ...S.input, marginBottom: 10 }} />
+        <label style={S.label}>العنوان الفرعي</label>
+        <input value={content.header.subtitle} onChange={e => setHeader('subtitle', e.target.value)} style={{ ...S.input, marginBottom: 10 }} />
+        <label style={S.label}>ملاحظة أعلى الصفحة</label>
+        <textarea value={content.header.note} onChange={e => setHeader('note', e.target.value)} rows={2} style={{ ...S.input, resize: 'vertical' }} />
+      </div>
+
+      {/* Quick contact */}
+      <div style={S.card}>
+        <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>معلومات التواصل السريعة</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div><label style={S.label}>رقم الدعم</label><input value={content.quick.phone} onChange={e => setQuick('phone', e.target.value)} style={{ ...S.input, direction: 'ltr', textAlign: 'right' }} /></div>
+          <div><label style={S.label}>ساعات العمل</label><input value={content.quick.hours} onChange={e => setQuick('hours', e.target.value)} style={S.input} /></div>
+          <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>أيام العمل</label><input value={content.quick.days} onChange={e => setQuick('days', e.target.value)} style={S.input} /></div>
+        </div>
+      </div>
+
+      {/* Groups */}
+      {content.groups.map((g, gi) => (
+        <div key={gi} style={{ ...S.card, borderColor: '#26436e' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 12, height: 12, borderRadius: 4, background: g.color || P.blue2, flexShrink: 0 }} />
+            <h3 style={{ fontSize: 14, fontWeight: 800, margin: 0, flex: 1 }}>مجموعة {gi + 1}</h3>
+            <button onClick={() => moveGroup(gi, -1)} disabled={gi === 0} title="لأعلى" style={{ ...S.iconBtn('#7d97b8'), opacity: gi === 0 ? 0.4 : 1 }}>▲</button>
+            <button onClick={() => moveGroup(gi, 1)} disabled={gi === content.groups.length - 1} title="لأسفل" style={{ ...S.iconBtn('#7d97b8'), opacity: gi === content.groups.length - 1 ? 0.4 : 1 }}>▼</button>
+            <button onClick={() => removeGroup(gi)} title="حذف المجموعة" style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, marginBottom: 12 }}>
+            <div><label style={S.label}>اسم المجموعة</label><input value={g.group} onChange={e => setGroup(gi, { group: e.target.value })} style={S.input} /></div>
+            <div><label style={S.label}>اللون</label><input type="color" value={g.color || '#1a56db'} onChange={e => setGroup(gi, { color: e.target.value })} style={{ ...S.input, padding: 4, width: 52, height: 38 }} /></div>
+          </div>
+
+          {g.items.map((it, ii) => (
+            <div key={ii} style={{ background: '#0f1c33', border: '1px solid #1c2e48', borderRadius: 11, padding: 12, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#9db0c8', flex: 1 }}>رابط {ii + 1}</span>
+                <button onClick={() => moveItem(gi, ii, -1)} disabled={ii === 0} style={{ ...S.iconBtn('#7d97b8'), opacity: ii === 0 ? 0.4 : 1 }}>▲</button>
+                <button onClick={() => moveItem(gi, ii, 1)} disabled={ii === g.items.length - 1} style={{ ...S.iconBtn('#7d97b8'), opacity: ii === g.items.length - 1 ? 0.4 : 1 }}>▼</button>
+                <button onClick={() => removeItem(gi, ii)} style={S.iconBtn(P.red)}><Trash2 size={13} /></button>
+              </div>
+              <label style={S.label}>الاسم</label>
+              <input value={it.label} onChange={e => setItem(gi, ii, { label: e.target.value })} style={{ ...S.input, marginBottom: 8 }} />
+              <label style={S.label}>الوصف</label>
+              <input value={it.desc} onChange={e => setItem(gi, ii, { desc: e.target.value })} style={{ ...S.input, marginBottom: 8 }} />
+              <label style={S.label}>الرابط (URL)</label>
+              <input value={it.url} onChange={e => setItem(gi, ii, { url: e.target.value })} style={{ ...S.input, marginBottom: 8, direction: 'ltr', textAlign: 'left' }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
+                <div><label style={S.label}>الأيقونة</label>
+                  <select value={it.icon} onChange={e => setItem(gi, ii, { icon: e.target.value })} style={S.input}>
+                    {LINK_ICON_NAMES.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                <div><label style={S.label}>اللون</label><input type="color" value={it.color || '#1a56db'} onChange={e => setItem(gi, ii, { color: e.target.value })} style={{ ...S.input, padding: 4, width: 52, height: 38 }} /></div>
+              </div>
+            </div>
+          ))}
+          <button onClick={() => addItem(gi)} style={{ ...S.btn(P.blue2), width: '100%', marginTop: 4 }}><Plus size={14} /> إضافة رابط</button>
+        </div>
+      ))}
+
+      <button onClick={addGroup} style={{ ...S.btn(P.purple), width: '100%', marginBottom: 16 }}><Plus size={14} /> إضافة مجموعة جديدة</button>
+
+      {/* Footer */}
+      <div style={S.card}>
+        <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 12 }}>نص أسفل الصفحة</h3>
+        <textarea value={content.footer} onChange={e => setFooter(e.target.value)} rows={3} style={{ ...S.input, resize: 'vertical' }} />
+      </div>
+
+      {saveBar}
     </div>
   )
 }
