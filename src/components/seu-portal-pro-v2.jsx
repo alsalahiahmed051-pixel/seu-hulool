@@ -6,6 +6,7 @@ import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
+import { useSiteContent } from "@/lib/hooks/useSiteContent";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
@@ -3714,61 +3715,59 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
 /* ══════════════════════════════════════════════════════════════
    SEU LINKS PAGE
    ══════════════════════════════════════════════════════════════ */
-const SEU_LINKS = [
-  {
-    group: "البوابات الأساسية",
-    color: P.blue2,
-    items: [
-      { label: "نظام التعلم الإلكتروني (Blackboard)", desc: "المقررات والواجبات والدرجات", url: "https://lms.seu.edu.sa", Icon: Monitor, color: "#1d4ed8" },
-      { label: "بوابة الطالب (ERP Gate)", desc: "الجداول والسجلات والخدمات الأكاديمية", url: "https://erpgate.seu.edu.sa", Icon: GraduationCap, color: "#6d28d9" },
-      { label: "تسجيل الدخول الموحد (SSO)", desc: "الدخول لجميع أنظمة الجامعة", url: "https://sso.seu.edu.sa/SEUSSO/pages/login.jsp", Icon: Building2, color: "#065f46" },
-      { label: "الموقع الرسمي للجامعة", desc: "الأخبار والإعلانات الرسمية", url: "https://www.seu.edu.sa", Icon: Globe, color: "#0369a1" },
-    ],
-  },
-  {
-    group: "الخدمات الأكاديمية",
-    color: P.purple,
-    items: [
-      { label: "المكتبة الرقمية السعودية (SDL)", desc: "الكتب والمراجع والأبحاث الأكاديمية", url: "https://sdl.edu.sa/SDLPortal/ar/login.aspx", Icon: BookOpen, color: "#be123c" },
-      { label: "البريد الإلكتروني الجامعي", desc: "بريد @seu.edu.sa عبر Office 365", url: "https://sso.seu.edu.sa/SEUOffice365SSO/pages/login.jsp", Icon: Mail, color: "#0369a1" },
-      { label: "بوابة القبول والتسجيل", desc: "التسجيل وقبول الطلاب الجدد", url: "https://admission.seu.edu.sa", Icon: CheckCircle, color: "#0891b2" },
-      { label: "التقويم الأكاديمي", desc: "مواعيد الفصول والاختبارات والتسجيل", url: "https://www.seu.edu.sa/en/academic-calendar/1448/", Icon: Calendar, color: "#d97706" },
-    ],
-  },
-  {
-    group: "الخدمات المالية والإدارية",
-    color: P.green,
-    items: [
-      { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://erpgate.seu.edu.sa", Icon: CreditCard, color: "#059669" },
-      { label: "خدمات وحدة التسجيل", desc: "إضافة/حذف/اعتراض على المقررات", url: "https://www.seu.edu.sa/aasa/ar/registeration/", Icon: FileText, color: "#c8a84b" },
-      { label: "الكلية التطبيقية", desc: "بوابة طلاب الكلية التطبيقية", url: "https://ac.seu.edu.sa/ar/login", Icon: Award, color: "#92400e" },
-    ],
-  },
-  {
-    group: "الدعم والتواصل",
-    color: "#be123c",
-    items: [
-      { label: "مركز الدعم الفني", desc: "هاتف: 011-2613500", url: "tel:0112613500", Icon: Phone, color: "#be123c" },
-      { label: "الأسئلة الشائعة (FAQ)", desc: "إجابات على أبرز الاستفسارات", url: "https://www.seu.edu.sa/ar/faqs/", Icon: HelpCircle, color: "#ea580c" },
-      { label: "حساب الجامعة في X", desc: "@Saudi_EUni", url: "https://x.com/Saudi_EUni", Icon: Radio, color: "#1d4ed8" },
-      { label: "تطبيق SEU على المتجر", desc: "تحميل تطبيق الجوال الرسمي", url: "https://play.google.com/store/apps/details?id=com.seu.services", Icon: Newspaper, color: "#065f46" },
-    ],
-  },
-];
+// Icons an admin can pick for a link (JSON stores the name; we map it here).
+const LINK_ICONS = {
+  Monitor, GraduationCap, Building2, Globe, BookOpen, Mail, CheckCircle,
+  Calendar, CreditCard, FileText, Award, Phone, HelpCircle, Radio,
+  Newspaper, Link2, Shield, Star, Bell,
+};
+const LINK_ICON_NAMES = Object.keys(LINK_ICONS);
 
-function SEULinksPage({ t }) {
-  const [copied, setCopied] = useState(null);
+// Default Links-page content. Admin edits override this via site_content.
+const DEFAULT_LINKS = {
+  header: {
+    title: "روابط الجامعة السعودية الإلكترونية",
+    subtitle: "Saudi Electronic University — SEU",
+    note: "جميع الروابط تفتح الموقع الرسمي — تأكد من تسجيل دخولك بالحساب الجامعي",
+  },
+  quick: { phone: "011-2613500", hours: "8 ص – 8 م", days: "الأحد – الخميس" },
+  groups: [
+    { group: "البوابات الأساسية", color: P.blue2, items: [
+      { label: "نظام التعلم الإلكتروني (Blackboard)", desc: "المقررات والواجبات والدرجات", url: "https://lms.seu.edu.sa", icon: "Monitor", color: "#1d4ed8" },
+      { label: "بوابة الطالب (ERP Gate)", desc: "الجداول والسجلات والخدمات الأكاديمية", url: "https://erpgate.seu.edu.sa", icon: "GraduationCap", color: "#6d28d9" },
+      { label: "تسجيل الدخول الموحد (SSO)", desc: "الدخول لجميع أنظمة الجامعة", url: "https://sso.seu.edu.sa/SEUSSO/pages/login.jsp", icon: "Building2", color: "#065f46" },
+      { label: "الموقع الرسمي للجامعة", desc: "الأخبار والإعلانات الرسمية", url: "https://www.seu.edu.sa", icon: "Globe", color: "#0369a1" },
+    ]},
+    { group: "الخدمات الأكاديمية", color: P.purple, items: [
+      { label: "المكتبة الرقمية السعودية (SDL)", desc: "الكتب والمراجع والأبحاث الأكاديمية", url: "https://sdl.edu.sa/SDLPortal/ar/login.aspx", icon: "BookOpen", color: "#be123c" },
+      { label: "البريد الإلكتروني الجامعي", desc: "بريد @seu.edu.sa عبر Office 365", url: "https://sso.seu.edu.sa/SEUOffice365SSO/pages/login.jsp", icon: "Mail", color: "#0369a1" },
+      { label: "بوابة القبول والتسجيل", desc: "التسجيل وقبول الطلاب الجدد", url: "https://admission.seu.edu.sa", icon: "CheckCircle", color: "#0891b2" },
+      { label: "التقويم الأكاديمي", desc: "مواعيد الفصول والاختبارات والتسجيل", url: "https://www.seu.edu.sa/en/academic-calendar/1448/", icon: "Calendar", color: "#d97706" },
+    ]},
+    { group: "الخدمات المالية والإدارية", color: P.green, items: [
+      { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://erpgate.seu.edu.sa", icon: "CreditCard", color: "#059669" },
+      { label: "خدمات وحدة التسجيل", desc: "إضافة/حذف/اعتراض على المقررات", url: "https://www.seu.edu.sa/aasa/ar/registeration/", icon: "FileText", color: "#c8a84b" },
+      { label: "الكلية التطبيقية", desc: "بوابة طلاب الكلية التطبيقية", url: "https://ac.seu.edu.sa/ar/login", icon: "Award", color: "#92400e" },
+    ]},
+    { group: "الدعم والتواصل", color: "#be123c", items: [
+      { label: "مركز الدعم الفني", desc: "هاتف: 011-2613500", url: "tel:0112613500", icon: "Phone", color: "#be123c" },
+      { label: "الأسئلة الشائعة (FAQ)", desc: "إجابات على أبرز الاستفسارات", url: "https://www.seu.edu.sa/ar/faqs/", icon: "HelpCircle", color: "#ea580c" },
+      { label: "حساب الجامعة في X", desc: "@Saudi_EUni", url: "https://x.com/Saudi_EUni", icon: "Radio", color: "#1d4ed8" },
+      { label: "تطبيق SEU على المتجر", desc: "تحميل تطبيق الجوال الرسمي", url: "https://play.google.com/store/apps/details?id=com.seu.services", icon: "Newspaper", color: "#065f46" },
+    ]},
+  ],
+  footer: "هذه الروابط تأخذك للمواقع الرسمية للجامعة السعودية الإلكترونية. لا تشارك كلمة مرورك مع أي طرف آخر.",
+};
 
-  const openLink = (url, label) => {
+function SEULinksPage({ t, content }) {
+  const C = content || DEFAULT_LINKS;
+  const header = C.header || DEFAULT_LINKS.header;
+  const quick = C.quick || DEFAULT_LINKS.quick;
+  const groups = Array.isArray(C.groups) ? C.groups : DEFAULT_LINKS.groups;
+  const footer = C.footer || DEFAULT_LINKS.footer;
+
+  const openLink = (url) => {
     window.open(url, "_blank", "noopener,noreferrer");
-  };
-
-  const copyPhone = (e) => {
-    e.stopPropagation();
-    navigator.clipboard?.writeText("0112613500").then(() => {
-      setCopied("phone");
-      setTimeout(() => setCopied(null), 2000);
-    });
   };
 
   return (
@@ -3791,8 +3790,8 @@ function SEULinksPage({ t }) {
             <GraduationCap size={24} color="#fff" />
           </div>
           <div>
-            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900, lineHeight: 1.2 }}>روابط الجامعة السعودية الإلكترونية</div>
-            <div style={{ color: P.gold, fontSize: 11, marginTop: 4 }}>Saudi Electronic University — SEU</div>
+            <div style={{ color: "#fff", fontSize: 18, fontWeight: 900, lineHeight: 1.2 }}>{header.title}</div>
+            <div style={{ color: P.gold, fontSize: 11, marginTop: 4 }}>{header.subtitle}</div>
           </div>
         </div>
         <div style={{
@@ -3801,7 +3800,7 @@ function SEULinksPage({ t }) {
         }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 8px #4ade80", flexShrink: 0 }} />
           <div style={{ color: "rgba(255,255,255,.8)", fontSize: 12, lineHeight: 1.6 }}>
-            جميع الروابط تفتح الموقع الرسمي — تأكد من تسجيل دخولك بالحساب الجامعي
+            {header.note}
           </div>
         </div>
       </div>
@@ -3813,22 +3812,22 @@ function SEULinksPage({ t }) {
       }}>
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>الدعم الفني</div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>011-2613500</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>{quick.phone}</div>
         </div>
         <div style={{ width: 1, background: t.bd }} />
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>ساعات الدعم</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>8 ص – 8 م</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{quick.hours}</div>
         </div>
         <div style={{ width: 1, background: t.bd }} />
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{ fontSize: 11, color: t.mu, marginBottom: 2 }}>أيام العمل</div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>الأحد – الخميس</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{quick.days}</div>
         </div>
       </div>
 
       {/* Link groups */}
-      {SEU_LINKS.map((group, gi) => (
+      {groups.map((group, gi) => (
         <div key={gi} style={{ marginBottom: 18 }}>
           <div style={{
             fontSize: 12, fontWeight: 800, color: group.color,
@@ -3839,8 +3838,10 @@ function SEULinksPage({ t }) {
             {group.group}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {group.items.map((item, ii) => (
-              <button key={ii} onClick={() => openLink(item.url, item.label)}
+            {(group.items || []).map((item, ii) => {
+              const ItemIcon = LINK_ICONS[item.icon] || Link2;
+              return (
+              <button key={ii} onClick={() => openLink(item.url)}
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
                   padding: "13px 14px", background: t.s1, borderRadius: 14,
@@ -3856,7 +3857,7 @@ function SEULinksPage({ t }) {
                   background: item.color + "18",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                  <item.Icon size={18} color={item.color} />
+                  <ItemIcon size={18} color={item.color} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2 }}>{item.label}</div>
@@ -3864,7 +3865,8 @@ function SEULinksPage({ t }) {
                 </div>
                 <ExternalLink size={14} color={t.dim} style={{ flexShrink: 0 }} />
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -3877,7 +3879,7 @@ function SEULinksPage({ t }) {
       }}>
         <Shield size={16} color={P.blue2} style={{ flexShrink: 0, marginTop: 1 }} />
         <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.7 }}>
-          هذه الروابط تأخذك للمواقع الرسمية للجامعة السعودية الإلكترونية. لا تشارك كلمة مرورك مع أي طرف آخر.
+          {footer}
         </div>
       </div>
     </div>
@@ -3900,6 +3902,8 @@ export default function App() {
   // own, straight from Supabase (replaces the old localStorage mock).
   const [notifs, setNotifs] = useLiveNotifications();
   const [notes, setNotes] = useSyncedNotes();
+  // Admin-editable Links page content (falls back to DEFAULT_LINKS).
+  const { data: linksContent } = useSiteContent("links");
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -4153,7 +4157,7 @@ export default function App() {
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
 
-        {tab === "links" && <SEULinksPage t={t} />}
+        {tab === "links" && <SEULinksPage t={t} content={linksContent} />}
 
         {tab === "gpa" && (
           <div style={{ animation: "fadeUp .4s ease" }}>
