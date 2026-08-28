@@ -119,6 +119,7 @@ const CAL_SEED = {
 // Icon names the admin can assign to a link (must match LINK_ICONS in
 // seu-portal-pro-v2.jsx). Stored as a name string in site_content.
 const LINK_ICON_NAMES = [
+  'WhatsApp', 'Telegram', 'Twitter', 'Instagram', 'Youtube', 'Snapchat', 'Group',
   'Monitor', 'GraduationCap', 'Building2', 'Globe', 'BookOpen', 'Mail',
   'CheckCircle', 'Calendar', 'CreditCard', 'FileText', 'Award', 'Phone',
   'HelpCircle', 'Radio', 'Newspaper', 'Link2', 'Shield', 'Star', 'Bell',

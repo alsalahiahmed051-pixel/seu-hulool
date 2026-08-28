@@ -21,7 +21,8 @@ import {
   ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
   AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
-  Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut
+  Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut,
+  Instagram, Youtube, Twitter, Ghost,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -3953,8 +3954,26 @@ const LINK_ICONS = {
   Monitor, GraduationCap, Building2, Globe, BookOpen, Mail, CheckCircle,
   Calendar, CreditCard, FileText, Award, Phone, HelpCircle, Radio,
   Newspaper, Link2, Shield, Star, Bell,
+  WhatsApp: MessageCircle, Telegram: Send, Twitter, Instagram, Youtube,
+  Snapchat: Ghost, Group: Users,
 };
 const LINK_ICON_NAMES = Object.keys(LINK_ICONS);
+
+// Auto-detect a link's platform from its URL, so WhatsApp/Telegram/social/site
+// links get the right branded icon & colour without the admin picking one.
+function detectPlatform(url) {
+  const u = String(url || "").toLowerCase().trim();
+  if (!u) return null;
+  if (/wa\.me|whatsapp/.test(u)) return { Icon: MessageCircle, color: "#25D366" };
+  if (/t\.me|telegram/.test(u)) return { Icon: Send, color: "#229ED9" };
+  if (/twitter\.com|(^|\/\/)(x\.com)/.test(u)) return { Icon: Twitter, color: "#1d9bf0" };
+  if (/instagram\.com|instagr\.am/.test(u)) return { Icon: Instagram, color: "#E4405F" };
+  if (/youtube\.com|youtu\.be/.test(u)) return { Icon: Youtube, color: "#FF0000" };
+  if (/snapchat\.com/.test(u)) return { Icon: Ghost, color: "#e6b800" };
+  if (/^tel:/.test(u)) return { Icon: Phone, color: "#059669" };
+  if (/^mailto:/.test(u)) return { Icon: Mail, color: "#0369a1" };
+  return null;
+}
 
 // Default Links-page content. Admin edits override this via site_content.
 const DEFAULT_LINKS = {
@@ -4077,7 +4096,10 @@ function SEULinksPage({ t, content }) {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(group.items || []).map((item, ii) => {
-              const ItemIcon = LINK_ICONS[item.icon] || Link2;
+              // Auto-branded icon/colour for known platforms; else the admin's choice.
+              const det = detectPlatform(item.url);
+              const ItemIcon = det?.Icon || LINK_ICONS[item.icon] || Link2;
+              const col = det?.color || item.color || P.blue2;
               return (
               <button key={ii} onClick={() => openLink(item.url)}
                 style={{
@@ -4087,15 +4109,15 @@ function SEULinksPage({ t, content }) {
                   textAlign: "right", fontFamily: "inherit",
                   transition: "all .2s",
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = item.color + "60"; e.currentTarget.style.background = item.color + "08"; }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = col + "60"; e.currentTarget.style.background = col + "08"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.background = t.s1; }}
               >
                 <div style={{
                   width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-                  background: item.color + "18",
+                  background: col + "18",
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                  <ItemIcon size={18} color={item.color} />
+                  <ItemIcon size={18} color={col} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 2 }}>{item.label}</div>
@@ -4334,7 +4356,7 @@ export default function App() {
 
   const TABS = [
     { id: "home", Icon: Home, label: "الرئيسية" },
-    { id: "explore", Icon: Compass, label: "استكشاف" },
+    { id: "explore", Icon: Compass, label: "المسارات" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
     { id: "fav", Icon: Star, label: "المفضلة" },
     { id: "links", Icon: Link2, label: "روابط SEU" },
