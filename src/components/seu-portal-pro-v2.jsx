@@ -1528,7 +1528,7 @@ const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
 function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
-  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", dueDate: "", priority: "متوسط" });
+  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
   const today = todayKey();
 
   // One-time migration: fold legacy exams into the unified tasks list.
@@ -1553,7 +1553,7 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
     if (!nt.title.trim()) return;
     const finalType = nt.type === "أخرى" && nt.customType.trim() ? nt.customType.trim() : nt.type;
     setTasks(ts => [...(ts || []), { title: nt.title, type: finalType, track: nt.track, subject: nt.subject, dueDate: nt.dueDate, priority: nt.priority, id: Date.now(), done: false }]);
-    setNt({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", dueDate: "", priority: "متوسط" });
+    setNt({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
     setShowAdd(false);
     const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
     onToast?.("تمت الإضافة +15 XP", "success");
@@ -1652,11 +1652,23 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <input placeholder="المادة (اختياري)" value={nt.subject} onChange={e => setNt(p => ({ ...p, subject: e.target.value }))}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+              <select value={nt.subjectCustomOn ? "__custom__" : nt.subject} onChange={e => {
+                const v = e.target.value;
+                if (v === "__custom__") setNt(p => ({ ...p, subjectCustomOn: true, subject: "" }));
+                else setNt(p => ({ ...p, subjectCustomOn: false, subject: v }));
+              }}
+                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }}>
+                <option value="">المادة (اختياري)</option>
+                {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="__custom__">➕ مادة مخصصة…</option>
+              </select>
               <input type="date" value={nt.dueDate} onChange={e => setNt(p => ({ ...p, dueDate: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
             </div>
+            {nt.subjectCustomOn && (
+              <input autoFocus placeholder="اكتب اسم المادة" value={nt.subject} onChange={e => setNt(p => ({ ...p, subject: e.target.value }))}
+                style={{ width: "100%", border: `1.5px solid ${P.blue2}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+            )}
 
             <div style={{ display: "flex", gap: 6 }}>
               {["عالي", "متوسط", "منخفض"].map(p => (
