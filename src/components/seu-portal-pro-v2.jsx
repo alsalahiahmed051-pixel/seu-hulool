@@ -1528,7 +1528,7 @@ const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
 function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
-  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", subject: "", dueDate: "", priority: "متوسط" });
+  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", dueDate: "", priority: "متوسط" });
   const today = todayKey();
 
   // One-time migration: fold legacy exams into the unified tasks list.
@@ -1553,7 +1553,7 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
     if (!nt.title.trim()) return;
     const finalType = nt.type === "أخرى" && nt.customType.trim() ? nt.customType.trim() : nt.type;
     setTasks(ts => [...(ts || []), { title: nt.title, type: finalType, track: nt.track, subject: nt.subject, dueDate: nt.dueDate, priority: nt.priority, id: Date.now(), done: false }]);
-    setNt({ title: "", type: "واجب", customType: "", track: "", subject: "", dueDate: "", priority: "متوسط" });
+    setNt({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", dueDate: "", priority: "متوسط" });
     setShowAdd(false);
     const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
     onToast?.("تمت الإضافة +15 XP", "success");
@@ -1632,15 +1632,23 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
               <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>المجال (اختياري)</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {TASK_TRACKS.map(tr => {
-                  const active = nt.track === tr;
+                  const active = !nt.customTrackOn && nt.track === tr;
                   return (
-                    <button key={tr} onClick={() => setNt(p => ({ ...p, track: active ? "" : tr }))} style={{
+                    <button key={tr} onClick={() => setNt(p => ({ ...p, track: active ? "" : tr, customTrackOn: false }))} style={{
                       padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
                       background: active ? `${P.purple}18` : t.s1, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
                     }}>{tr}</button>
                   );
                 })}
+                <button onClick={() => setNt(p => ({ ...p, customTrackOn: !p.customTrackOn, track: "" }))} style={{
+                  display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                  background: nt.customTrackOn ? `${P.purple}18` : t.s1, border: `1.5px solid ${nt.customTrackOn ? P.purple : t.bd}`, color: nt.customTrackOn ? P.purple : t.mu,
+                }}><Plus size={12} /> مخصص</button>
               </div>
+              {nt.customTrackOn && (
+                <input autoFocus placeholder="اكتب مجالاً مخصصاً (مثال: ماجستير إدارة)" value={nt.track} onChange={e => setNt(p => ({ ...p, track: e.target.value }))}
+                  style={{ marginTop: 8, width: "100%", border: `1.5px solid ${P.purple}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+              )}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
