@@ -2658,21 +2658,42 @@ function MonthlyReportModal({ t, sessionLog, tasks, semesters, onClose }) {
 /* ══════════════════════════════════════════════════════════════
    FOCUS MODE OVERLAY (Feature 5)
    ══════════════════════════════════════════════════════════════ */
+const FOCUS_QUOTES = [
+  "ركّز على خطوة واحدة الآن، والباقي يتبع.",
+  "٢٥ دقيقة تركيز كامل تساوي ساعة من التشتّت.",
+  "النجاح مجموع جهود صغيرة تتكرّر كل يوم.",
+  "أغلق كل شيء… إلا هدفك.",
+  "أنت أقرب مما تظن، أكمِل.",
+  "الاستمرار أهم من الكمال.",
+  "دقيقة تركيز الآن خير من ساعة ندم لاحقاً.",
+];
+const FOCUS_WORK = [25, 50, 90];
+const FOCUS_BREAK = [5, 10, 15];
+const FOCUS_SUGS = ["📝 لخّص الفكرة الرئيسية", "🧠 اشرح ببساطة", "💡 أعطني مثالاً", "❓ سؤال اختبار سريع"];
+
 function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessions, soundOn, onToast, onClose, setXp }) {
   const [focusSubject, setFocusSubject] = useState(ALL_SUBJECTS_LIST[0] || "عام");
-  const [mode, setMode] = useState("work");
+  const [mode, setMode] = useState("work"); // work | break
+  const [workMin, setWorkMin] = useState(25);
+  const [breakMin, setBreakMin] = useState(5);
   const [secs, setSecs] = useState(25 * 60);
   const [running, setRunning] = useState(false);
   const [focusQ, setFocusQ] = useState("");
   const [focusA, setFocusA] = useState("");
   const [focusLoading, setFocusLoading] = useState(false);
+  const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * FOCUS_QUOTES.length));
   const timerRef = useRef(null);
-  const DURATIONS = { work: 25 * 60, short: 5 * 60 };
+
+  const total = (mode === "work" ? workMin : breakMin) * 60;
   const mm = String(Math.floor(secs / 60)).padStart(2, "0");
   const ss = String(secs % 60).padStart(2, "0");
-  const prog = 1 - secs / DURATIONS[mode];
-  const r = 50; const circ = 2 * Math.PI * r;
+  const prog = total > 0 ? 1 - secs / total : 0;
+  const r = 96; const circ = 2 * Math.PI * r;
   const modeColor = mode === "work" ? P.blue2 : P.green;
+  const todaySessions = (sessionLog || []).filter(s => s.date === todayKey()).length;
+  const todayMins = (sessionLog || []).filter(s => s.date === todayKey()).reduce((a, s) => a + (s.dur || 25), 0);
+
+  useEffect(() => { const iv = setInterval(() => setQuoteIdx(i => (i + 1) % FOCUS_QUOTES.length), 12000); return () => clearInterval(iv); }, []);
 
   useEffect(() => {
     if (running) {
@@ -2682,29 +2703,33 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
           if (soundOn) playBell();
           if (mode === "work") {
             setTotalSessions(n => n + 1);
-            setSessionLog(l => [...l, { date: todayKey(), dur: 25, subject: focusSubject, t: Date.now() }]);
-            const xp = storage.get("xp", 0);
-            storage.set("xp", xp + 30);
-            setXp(xp + 30);
-            onToast?.("جلسة تركيز مكتملة! +30 XP", "success");
+            setSessionLog(l => [...l, { date: todayKey(), dur: workMin, subject: focusSubject, t: Date.now() }]);
+            const xp = storage.get("xp", 0); storage.set("xp", xp + 30); setXp(xp + 30);
+            onToast?.("جلسة تركيز مكتملة! خذ راحة 🎉 +30 XP", "success");
+            setMode("break"); return breakMin * 60;
           }
-          return 0;
+          onToast?.("انتهت الراحة — لنكمل 💪", "info");
+          setMode("work"); return workMin * 60;
         }
         return s - 1;
       }), 1000);
     } else clearInterval(timerRef.current);
     return () => clearInterval(timerRef.current);
-  }, [running, mode, focusSubject, soundOn]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, mode, workMin, breakMin, focusSubject, soundOn]);
 
-  const changeMode = (m) => { clearInterval(timerRef.current); setRunning(false); setMode(m); setSecs(DURATIONS[m]); };
+  const changeMode = (m) => { clearInterval(timerRef.current); setRunning(false); setMode(m); setSecs((m === "work" ? workMin : breakMin) * 60); };
+  const setPreset = (min) => { clearInterval(timerRef.current); setRunning(false); if (mode === "work") setWorkMin(min); else setBreakMin(min); setSecs(min * 60); };
+  const reset = () => { clearInterval(timerRef.current); setRunning(false); setSecs(total); };
 
-  const askAI = async () => {
-    if (!focusQ.trim() || focusLoading) return;
-    setFocusLoading(true); setFocusA("");
+  const askAI = async (q) => {
+    const query = (q || focusQ).trim();
+    if (!query || focusLoading) return;
+    setFocusQ(query); setFocusLoading(true); setFocusA("");
     try {
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: focusSubject, messages: [{ role: "user", content: focusQ }], fileContext: null }),
+        body: JSON.stringify({ subject: focusSubject, messages: [{ role: "user", content: query }], fileContext: null }),
       });
       const d = await res.json();
       setFocusA(d.text || d.error || "لا توجد إجابة");
@@ -2712,70 +2737,107 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
     setFocusLoading(false);
   };
 
+  const presetList = mode === "work" ? FOCUS_WORK : FOCUS_BREAK;
+  const curMin = mode === "work" ? workMin : breakMin;
+
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 450, background: "rgba(2,6,18,.97)", display: "flex", flexDirection: "column", animation: "fadeIn .3s ease" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 450, overflowY: "auto",
+      background: mode === "work"
+        ? "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(10,138,88,.28) 0%, transparent 60%), linear-gradient(180deg,#04120c,#02070f 60%,#04120c)"
+        : "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(5,150,105,.28) 0%, transparent 60%), linear-gradient(180deg,#04140d,#02100a 60%,#04140d)",
+      display: "flex", flexDirection: "column", animation: "fadeIn .3s ease", transition: "background .6s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px" }}>
         <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-          <Target size={18} color={P.blue2} /> وضع التركيز
+          <Target size={18} color={P.gold} /> وضع التركيز
         </div>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: 8, cursor: "pointer", color: "#fff", display: "flex" }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 10, padding: 9, cursor: "pointer", color: "#fff", display: "flex" }}>
           <X size={18} />
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", maxWidth: 480, margin: "0 auto", width: "100%" }}>
-        {/* Subject selector */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
+      <div style={{ flex: 1, padding: "8px 16px 32px", maxWidth: 460, margin: "0 auto", width: "100%" }}>
+        {/* Today snapshot */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+          {[{ l: "جلسات اليوم", v: todaySessions, i: Flame }, { l: "دقائق اليوم", v: todayMins, i: Clock }, { l: "الإجمالي", v: totalSessions, i: Trophy }].map(({ l, v, i: Ic }) => (
+            <div key={l} style={{ flex: 1, background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 8px", textAlign: "center", border: "1px solid rgba(255,255,255,.08)" }}>
+              <Ic size={15} color={P.gold} style={{ marginBottom: 5 }} />
+              <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", lineHeight: 1 }}>{v}</div>
+              <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", marginTop: 3 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Mode + preset */}
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 12 }}>
+          {[["work", "⚡ دراسة"], ["break", "☕ راحة"]].map(([m, l]) => (
+            <button key={m} onClick={() => changeMode(m)} style={{ flex: 1, background: mode === m ? modeColor : "rgba(255,255,255,.06)", border: `1px solid ${mode === m ? modeColor : "rgba(255,255,255,.12)"}`, borderRadius: 12, padding: "9px", cursor: "pointer", fontSize: 13.5, fontWeight: 800, color: "#fff", fontFamily: "inherit" }}>{l}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 18 }}>
+          {presetList.map(min => (
+            <button key={min} onClick={() => setPreset(min)} style={{ background: curMin === min ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.05)", border: `1px solid rgba(255,255,255,${curMin === min ? .35 : .1})`, borderRadius: 20, padding: "5px 16px", cursor: "pointer", fontSize: 12.5, color: "#fff", fontFamily: "inherit", fontWeight: 700 }}>{min} د</button>
+          ))}
+        </div>
+
+        {/* Big ring */}
+        <div style={{ position: "relative", width: 220, height: 220, margin: "0 auto 8px" }}>
+          <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
+            <circle cx={110} cy={110} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={10} />
+            <circle cx={110} cy={110} r={r} fill="none" stroke={modeColor} strokeWidth={10}
+              strokeDasharray={circ} strokeDashoffset={circ * (1 - prog)} strokeLinecap="round"
+              style={{ transition: "stroke-dashoffset 1s linear", filter: `drop-shadow(0 0 10px ${modeColor})` }} />
+          </svg>
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ fontSize: 52, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 1, lineHeight: 1 }}>{mm}:{ss}</div>
+            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.6)", marginTop: 8 }}>{mode === "work" ? "وقت التركيز" : "استراحة"}</div>
+            <div style={{ fontSize: 12, color: P.gold, fontWeight: 800, marginTop: 2 }}>{Math.round(prog * 100)}%</div>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div style={{ display: "flex", gap: 14, justifyContent: "center", marginBottom: 18 }}>
+          <button onClick={reset} title="إعادة" style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: "50%", width: 46, height: 46, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.8)" }}>
+            <RotateCcw size={17} />
+          </button>
+          <button onClick={() => setRunning(rv => !rv)} style={{ background: running ? P.red : `linear-gradient(135deg,${modeColor},${modeColor}cc)`, border: "none", borderRadius: 26, padding: "13px 40px", cursor: "pointer", color: "#fff", fontSize: 16, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, boxShadow: `0 8px 24px ${(running ? P.red : modeColor)}55` }}>
+            {running ? <><Pause size={18} />إيقاف</> : <><Play size={18} />ابدأ</>}
+          </button>
+        </div>
+
+        {/* Motivational quote */}
+        <div style={{ textAlign: "center", color: "rgba(255,255,255,.7)", fontSize: 13.5, lineHeight: 1.8, marginBottom: 20, padding: "0 10px", minHeight: 44, transition: "opacity .4s" }}>
+          « {FOCUS_QUOTES[quoteIdx]} »
+        </div>
+
+        {/* Subject */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
           <select value={focusSubject} onChange={e => setFocusSubject(e.target.value)}
-            style={{ width: "100%", background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "10px 14px", fontSize: 14, fontFamily: "inherit", direction: "rtl", outline: "none", fontWeight: 700 }}>
+            style={{ width: "100%", background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "11px 14px", fontSize: 14, fontFamily: "inherit", direction: "rtl", outline: "none", fontWeight: 700 }}>
             {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s} style={{ background: "#0a3d29" }}>{s}</option>)}
           </select>
         </div>
 
-        {/* Pomodoro Timer */}
-        <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 20, padding: 24, marginBottom: 20, textAlign: "center", border: "1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 20 }}>
-            {[["work", "⚡ دراسة"], ["short", "☕ راحة"]].map(([m, l]) => (
-              <button key={m} onClick={() => changeMode(m)} style={{ background: mode === m ? "rgba(255,255,255,.2)" : "transparent", border: `1px solid rgba(255,255,255,${mode === m ? .4 : .12})`, borderRadius: 20, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: "rgba(255,255,255,.9)", fontFamily: "inherit" }}>{l}</button>
+        {/* Quick AI */}
+        <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,.08)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.85)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <Sparkles size={14} color={P.gold} /> اسأل المساعد أثناء تركيزك
+          </div>
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, scrollbarWidth: "none" }}>
+            {FOCUS_SUGS.map(s => (
+              <button key={s} onClick={() => askAI(s.replace(/^[^؀-ۿ]+/, ""))} style={{ whiteSpace: "nowrap", background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 18, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{s}</button>
             ))}
           </div>
-          <div style={{ position: "relative", display: "inline-block", marginBottom: 16 }}>
-            <svg width={120} height={120} style={{ transform: "rotate(-90deg)" }}>
-              <circle cx={60} cy={60} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={7} />
-              <circle cx={60} cy={60} r={r} fill="none" stroke={modeColor} strokeWidth={7}
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - prog)} strokeLinecap="round"
-                style={{ transition: "stroke-dashoffset .9s linear" }} />
-            </svg>
-            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-              <div style={{ fontSize: 28, fontWeight: 900, color: "#fff", fontFamily: "monospace" }}>{mm}:{ss}</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-            <button onClick={() => { clearInterval(timerRef.current); setRunning(false); setSecs(DURATIONS[mode]); }} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: "50%", width: 38, height: 38, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.7)" }}>
-              <RotateCcw size={14} />
-            </button>
-            <button onClick={() => setRunning(rv => !rv)} style={{ background: running ? P.red : modeColor, border: "none", borderRadius: 22, padding: "10px 28px", cursor: "pointer", color: "#fff", fontSize: 14, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7 }}>
-              {running ? <><Pause size={15} />إيقاف</> : <><Play size={15} />بدء</>}
-            </button>
-          </div>
-        </div>
-
-        {/* Quick AI Question */}
-        <div style={{ background: "rgba(255,255,255,.04)", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.8)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={14} color={P.gold} /> اسأل سؤالاً سريعاً
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             <input value={focusQ} onChange={e => setFocusQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
               placeholder="اكتب سؤالك..."
-              style={{ flex: 1, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "8px 12px", color: "#fff", fontSize: 13, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
-            <button onClick={askAI} disabled={focusLoading || !focusQ.trim()} style={{ background: focusLoading || !focusQ.trim() ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+              style={{ flex: 1, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "9px 12px", color: "#fff", fontSize: 13, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            <button onClick={() => askAI()} disabled={focusLoading || !focusQ.trim()} style={{ background: focusLoading || !focusQ.trim() ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 10, padding: "9px 15px", cursor: "pointer", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
               {focusLoading ? "…" : <Send size={13} />}
             </button>
           </div>
           {focusA && (
-            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 13, color: "rgba(255,255,255,.8)", lineHeight: 1.7, maxHeight: 150, overflowY: "auto", whiteSpace: "pre-wrap" }}>
+            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 13, color: "rgba(255,255,255,.85)", lineHeight: 1.8, maxHeight: 180, overflowY: "auto", whiteSpace: "pre-wrap", marginTop: 10 }}>
               {mdToText(focusA)}
             </div>
           )}
@@ -3145,10 +3207,26 @@ function SearchResults({ query, onCourse, onClose, t }) {
 /* ══════════════════════════════════════════════════════════════
    EXPLORE (with breadcrumbs)
    ══════════════════════════════════════════════════════════════ */
-function ExplorePage({ onCourse, t }) {
+const TRACK_TO_TREE = { "تحضيري": "preparatory", "تخصص": "bachelor", "دبلوم": "diploma", "دراسات عليا": "graduate" };
+const PLAN_TO_SUB = { "خطة أ": "a", "خطة ب": "b" };
+
+function ExplorePage({ onCourse, t, profile }) {
   const [step, setStep] = useState("root");
   const [path, setPath] = useState(null);
   const [sub, setSub] = useState(null);
+
+  // Personalise: jump straight to the student's track (and plan) on first open.
+  useEffect(() => {
+    const key = TRACK_TO_TREE[profile?.track];
+    if (!key) return;
+    setPath(key);
+    if (key === "preparatory" && PLAN_TO_SUB[profile?.plan]) {
+      setSub(PLAN_TO_SUB[profile.plan]); setStep("level3");
+    } else {
+      setStep("level2");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const PCard = ({ Icon, label, sub, color, onClick }) => (
     <button onClick={onClick} style={{
@@ -4479,7 +4557,16 @@ export default function App() {
     setRecent(prev => [s, ...(prev || []).filter(x => x !== s)].slice(0, 12));
   };
 
+  // In browse-only (guest) mode, interactive actions ask the visitor to sign
+  // up first instead of running. Clearing browseOnly re-opens the sign-up gate.
+  const requireAccount = (msg) => {
+    if (browseOnly && !profile) { toasts.push(msg || "أنشئ حساباً لاستخدام هذه الميزة ✨", "warn"); setBrowseOnly(false); return true; }
+    return false;
+  };
+  const requestAI = () => { if (requireAccount("سجّل حسابك لاستخدام المساعد الذكي ✨")) return; setShowAI(true); };
+
   const toggleFav = (s) => {
+    if (requireAccount("سجّل حسابك لحفظ المفضلة ⭐")) return;
     const exists = favorites.includes(s);
     toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
     setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
@@ -4584,18 +4671,26 @@ export default function App() {
       {/* Announcement / warning banner strip */}
       <NotifBanner notifs={notifs} setNotifs={setNotifs} t={t} />
 
+      {browseOnly && !profile && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: `linear-gradient(90deg, ${P.gold}22, ${P.gold}0a)`, borderBottom: `1px solid ${P.gold}44` }}>
+          <User size={16} color={P.gold} style={{ flexShrink: 0 }} />
+          <div style={{ flex: 1, fontSize: 12.5, color: t.tx, fontWeight: 600 }}>أنت تتصفّح كزائر — أنشئ حساباً للاستفادة الكاملة (حفظ، مفضلة، مساعد ذكي).</div>
+          <button onClick={() => setBrowseOnly(false)} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 14px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", flexShrink: 0 }}>تسجيل</button>
+        </div>
+      )}
+
       {/* MAIN */}
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px" }}>
         {tab === "home" && <HomePage
           setActiveTab={(id) => { setTab(id); setCourse(null); }}
-          openCourse={openCourse} onOpenAI={() => setShowAI(true)} t={t} recent={recent} streak={streak}
+          openCourse={openCourse} onOpenAI={requestAI} t={t} recent={recent} streak={streak}
           activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
           achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} xp={xp} setXp={setXp} profile={profile}
           onShowFocus={() => setShowFocus(true)} onShowReport={() => setShowMonthlyReport(true)} />}
 
-        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} />}
+        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
 
         {tab === "schedule" && <SchedulePage t={t} schedule={schedule} setSchedule={setSchedule} onToast={toasts.push} />}
 
@@ -4632,7 +4727,7 @@ export default function App() {
 
       {/* Floating AI assistant button — reachable from any main tab */}
       {!showAI && !showFocus && !settingsOpen && !searchOpen && !notifOpen && !showMonthlyReport && !course && (
-        <button onClick={() => setShowAI(true)} title="المساعد الذكي" aria-label="المساعد الذكي" style={{
+        <button onClick={requestAI} title="المساعد الذكي" aria-label="المساعد الذكي" style={{
           position: "fixed", bottom: 82, left: 16, zIndex: 90,
           width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer",
           background: `linear-gradient(135deg,${P.navy},${P.blue2})`,
