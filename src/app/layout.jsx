@@ -36,6 +36,8 @@ export default function RootLayout({ children }) {
         WebkitFontSmoothing: 'antialiased',
         MozOsxFontSmoothing: 'grayscale',
         textRendering: 'optimizeLegibility',
+        WebkitTextSizeAdjust: '100%',
+        textSizeAdjust: '100%',
         fontSize: 15,
         lineHeight: 1.6,
         background: '#ffffff',

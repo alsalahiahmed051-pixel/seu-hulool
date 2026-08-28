@@ -1540,7 +1540,7 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
       {showAdd && (
         <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input placeholder="عنوان المهمة *" value={newTask.title} onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))}
+            <input placeholder="عنوان المهمة (مطلوب)" value={newTask.title} onChange={e => setNewTask(p => ({ ...p, title: e.target.value }))}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <input placeholder="المادة" value={newTask.subject} onChange={e => setNewTask(p => ({ ...p, subject: e.target.value }))}
@@ -1565,7 +1565,7 @@ function TaskTracker({ t, tasks, setTasks, onToast }) {
         </div>
       )}
       {sorted.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "12px 0", color: t.dim, fontSize: 13 }}>لا مهام بعد — أضف مهمتك الأولى!</div>
+        <div style={{ textAlign: "center", padding: "12px 0", color: t.dim, fontSize: 13 }}>لا مهام بعد، أضف مهمتك الأولى</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
           {sorted.slice(0, 6).map(task => {
@@ -1715,7 +1715,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
         <div style={{ background: t.s1, borderRadius: 16, padding: 14, border: `1px solid ${t.bd}`, marginTop: 8, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>إضافة محاضرة جديدة</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input placeholder="اسم المادة *" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
+            <input placeholder="اسم المادة (مطلوب)" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <select value={newLec.day} onChange={e => setNewLec(p => ({ ...p, day: e.target.value }))}
@@ -2335,7 +2335,7 @@ function ExamCountdown({ exams, setExams, t, onToast, setXp }) {
         </div>
       )}
       {upcoming.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "10px 0", color: t.dim, fontSize: 13 }}>لا اختبارات قادمة — أضف اختبارك الأول!</div>
+        <div style={{ textAlign: "center", padding: "10px 0", color: t.dim, fontSize: 13 }}>لا اختبارات قادمة، أضف اختبارك الأول</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {upcoming.slice(0, 5).map(exam => {
@@ -3606,14 +3606,14 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
     return (
       <div style={{
         position: "fixed", inset: 0, zIndex: 400,
-        background: "linear-gradient(160deg, #04091a 0%, #06164a 40%, #0a2070 70%, #050d30 100%)",
+        background: "linear-gradient(160deg, #04120c 0%, #063a27 40%, #0a5c3a 70%, #05130d 100%)",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
         padding: 28, animation: "fadeIn .4s ease", overflow: "hidden",
       }}>
         {/* Background orbs */}
         <div style={{ position: "absolute", top: "10%", right: "15%", width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(10,138,88,.18) 0%, transparent 70%)", pointerEvents: "none" }} />
         <div style={{ position: "absolute", bottom: "15%", left: "10%", width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, rgba(200,168,75,.10) 0%, transparent 70%)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", top: "55%", right: "5%", width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(124,58,237,.08) 0%, transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ position: "absolute", top: "55%", right: "5%", width: 140, height: 140, borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,.08) 0%, transparent 70%)", pointerEvents: "none" }} />
 
         {/* Logo */}
         <div style={{
@@ -4112,6 +4112,7 @@ export default function App() {
         @keyframes toastIn { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
         @keyframes splashBar { from { width:0% } to { width:100% } }
         @keyframes floatOrb { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-12px) } }
+        html { -webkit-text-size-adjust:100%; text-size-adjust:100%; -moz-text-size-adjust:100% }
         * { box-sizing:border-box; margin:0; padding:0 }
         ::-webkit-scrollbar { width:5px; height:5px }
         ::-webkit-scrollbar-thumb { background:${P.blue}40; border-radius:3px }
