@@ -1564,7 +1564,7 @@ const TASK_TYPE_META = {
 };
 const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
 
-function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
+function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
   const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
@@ -1628,7 +1628,7 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp }) {
           مهامي
           {pending > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: P.blue2, background: `${P.blue2}15`, borderRadius: 6, padding: "1px 7px" }}>{pending}</span>}
         </div>
-        <button onClick={() => setShowAdd(s => !s)} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 800 }}>
+        <button onClick={() => { if (guest) { onToast?.("سجّل حسابك لإضافة مهامك ✍️", "warn"); return; } setShowAdd(s => !s); }} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 800 }}>
           <Plus size={13} /> إضافة
         </button>
       </div>
@@ -2905,7 +2905,7 @@ function AcademicCalendar({ t }) {
   );
 }
 
-function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, profile, onShowFocus, onShowReport }) {
+function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, profile, guest, onShowFocus, onShowReport }) {
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
   const todayStr = (() => {
@@ -3014,7 +3014,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       </div>
 
       {/* Unified tasks + exams hub */}
-      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} />
+      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} guest={guest} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
@@ -3249,13 +3249,17 @@ function ExplorePage({ onCourse, t, profile }) {
     </button>
   );
 
+  // Registered students are scoped to their own track — they can move within
+  // it but not back up to "all tracks". Guests (no profile) browse freely.
+  const lockedKey = TRACK_TO_TREE[profile?.track];
+
   const back = () => {
     if (step === "level3") setStep("level2");
-    else if (step === "level2") { setStep("root"); setPath(null); setSub(null); }
+    else if (step === "level2" && !lockedKey) { setStep("root"); setPath(null); setSub(null); }
   };
 
-  const crumbs = [{ label: "المسارات", onClick: () => { setStep("root"); setPath(null); setSub(null); } }];
-  if (step !== "root" && path) crumbs.push({ label: TREE[path]?.label, onClick: () => { setStep("level2"); setSub(null); } });
+  const crumbs = lockedKey ? [] : [{ label: "المسارات", onClick: () => { setStep("root"); setPath(null); setSub(null); } }];
+  if (step !== "root" && path) crumbs.push({ label: TREE[path]?.label, onClick: lockedKey ? undefined : () => { setStep("level2"); setSub(null); } });
   if (step === "level3" && path === "bachelor" && sub) {
     const col = TREE.bachelor.colleges.find(c => c.id === sub);
     if (col) crumbs.push({ label: col.label });
@@ -3267,6 +3271,7 @@ function ExplorePage({ onCourse, t, profile }) {
     <div style={{ animation: "fadeUp .35s ease" }}>
       {step !== "root" && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+          {!(lockedKey && step === "level2") && (
           <button onClick={back} style={{
             background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20, padding: "6px 12px",
             cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
@@ -3274,6 +3279,7 @@ function ExplorePage({ onCourse, t, profile }) {
           }}>
             <ArrowLeft size={12} /> رجوع
           </button>
+          )}
           {crumbs.map((c, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <button onClick={c.onClick} disabled={!c.onClick} style={{
@@ -4263,14 +4269,25 @@ const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
 // One elegant screen: name + track (+ plan for تحضيري) + password. A single
 // button logs in if the name exists, else creates the account. Or browse.
 function AuthGate({ t, setProfile, onBrowse, onToast }) {
-  const [f, setF] = useState({ name: "", track: "تحضيري", plan: "", password: "" });
+  const savedName = (() => { try { return JSON.parse(localStorage.getItem("seu_saved_login") || "{}").name || ""; } catch { return ""; } })();
+  const [f, setF] = useState({ name: savedName, track: "تحضيري", plan: "", password: "" });
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const plans = AUTH_PLANS[f.track] || null;
 
+  const finish = (student) => {
+    try {
+      if (remember) localStorage.setItem("seu_saved_login", JSON.stringify({ name: student.name }));
+      else localStorage.removeItem("seu_saved_login");
+    } catch {}
+    setProfile({ ...student, created: Date.now() });
+  };
+
   const submit = async () => {
     setErr("");
     if (f.name.trim().length < 2) return setErr("اكتب اسمك");
+    if (plans && !f.plan) return setErr("حدّد الخطة أولاً");
     if (f.password.length < 4) return setErr("كلمة المرور 4 أحرف على الأقل");
     setLoading(true);
     try {
@@ -4280,17 +4297,17 @@ function AuthGate({ t, setProfile, onBrowse, onToast }) {
       });
       const d = await res.json().catch(() => ({}));
       if (res.ok) {
-        setProfile({ name: d.student?.full_name || f.name.trim(), track: d.student?.track || f.track, plan: d.student?.plan || f.plan || "", created: Date.now() });
+        finish({ name: d.student?.full_name || f.name.trim(), track: d.student?.track || f.track, plan: d.student?.plan || f.plan || "" });
         onToast?.(d.mode === "login" ? `أهلاً بعودتك ${d.student?.full_name || ""} 👋` : "مرحباً بك في حلول 🎉", "success");
         setLoading(false);
         return;
       }
       if (res.status === 401 || res.status === 400) { setErr(d.error || "تعذّر الدخول"); setLoading(false); return; }
       // Server/DB not ready — don't lock the user out; continue locally.
-      setProfile({ name: f.name.trim(), track: f.track, plan: f.plan || "", created: Date.now() });
+      finish({ name: f.name.trim(), track: f.track, plan: f.plan || "" });
       onToast?.("تم الدخول (تعذّر حفظ الحساب على الخادم)", "warn");
     } catch {
-      setProfile({ name: f.name.trim(), track: f.track, plan: f.plan || "", created: Date.now() });
+      finish({ name: f.name.trim(), track: f.track, plan: f.plan || "" });
       onToast?.("تم الدخول محليًا (تعذّر الاتصال)", "warn");
     }
     setLoading(false);
@@ -4357,6 +4374,11 @@ function AuthGate({ t, setProfile, onBrowse, onToast }) {
           )}
 
           {field(<Lock size={18} />, <input type="password" value={f.password} onChange={e => setF(p => ({ ...p, password: e.target.value }))} onKeyDown={e => e.key === "Enter" && submit()} placeholder="كلمة المرور" style={inp} />)}
+
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "rgba(255,255,255,.8)", fontSize: 13, marginBottom: 14, padding: "2px 2px" }}>
+            <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} style={{ width: 17, height: 17, accentColor: P.gold }} />
+            تذكّر بيانات دخولي
+          </label>
 
           {err && <div style={{ background: "rgba(220,38,38,.2)", border: "1px solid rgba(248,113,113,.4)", color: "#fca5a5", borderRadius: 11, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, textAlign: "center" }}>{err}</div>}
 
@@ -4696,6 +4718,7 @@ export default function App() {
           achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} xp={xp} setXp={setXp} profile={profile}
+          guest={browseOnly && !profile}
           onShowFocus={() => setShowFocus(true)} onShowReport={() => setShowMonthlyReport(true)} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
@@ -4729,7 +4752,11 @@ export default function App() {
           favorites={favorites} totalSessions={totalSessions}
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
-          onLogout={() => { setProfile(null); setBrowseOnly(false); }}
+          onLogout={() => {
+            const keep = window.confirm("هل تريد حفظ اسمك للدخول السريع لاحقاً؟\n\nموافق = احفظ بياناتي • إلغاء = امسحها");
+            try { if (!keep) localStorage.removeItem("seu_saved_login"); } catch {}
+            setProfile(null); setBrowseOnly(false);
+          }}
           openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 

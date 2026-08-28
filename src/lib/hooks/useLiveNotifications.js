@@ -42,6 +42,17 @@ function timeAgo(iso) {
   } catch { return '' }
 }
 
+// Does a broadcast's audience tag apply to the current student's saved profile?
+// Guests (no profile) only see 'all'.
+function matchesAudience(aud) {
+  if (!aud || aud === 'all') return true
+  let profile = null
+  try { profile = JSON.parse(localStorage.getItem('student_profile') || 'null') } catch {}
+  if (aud.startsWith('track:')) return profile?.track === aud.slice(6)
+  if (aud.startsWith('plan:')) { const [tr, pl] = aud.slice(5).split('|'); return profile?.track === tr && profile?.plan === pl }
+  return true
+}
+
 export function useLiveNotifications() {
   const supabase = createClient()
   const [raw, setRaw] = useState([])
@@ -51,13 +62,14 @@ export function useLiveNotifications() {
 
   const load = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
-    let query = supabase
-      .from('notifications')
-      .select('id, type, title, body, created_at')
-      .order('created_at', { ascending: false })
-      .limit(50)
-    query = user ? query.or(`user_id.eq.${user.id},user_id.is.null`) : query.is('user_id', null)
-    const { data } = await query
+    const run = (cols) => {
+      let q = supabase.from('notifications').select(cols).order('created_at', { ascending: false }).limit(50)
+      q = user ? q.or(`user_id.eq.${user.id},user_id.is.null`) : q.is('user_id', null)
+      return q
+    }
+    // Prefer the audience column; fall back if the migration isn't applied yet.
+    let { data, error } = await run('id, type, title, body, created_at, audience')
+    if (error) ({ data } = await run('id, type, title, body, created_at'))
     setRaw(data || [])
   }, [supabase])
 
@@ -74,7 +86,7 @@ export function useLiveNotifications() {
     return () => { supabase.removeChannel(channel) }
   }, [load, supabase])
 
-  const notifs = raw.map(n => ({
+  const notifs = raw.filter(n => matchesAudience(n.audience)).map(n => ({
     id: n.id,
     type: n.type || 'info',
     title: n.title,

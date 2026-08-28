@@ -610,6 +610,7 @@ function NotificationsTab({ flash }) {
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [type, setType] = useState('announcement')
+  const [audience, setAudience] = useState('all')
   const [sending, setSending] = useState(false)
 
   const load = useCallback(async () => {
@@ -624,9 +625,9 @@ function NotificationsTab({ flash }) {
     e.preventDefault()
     if (!title.trim() || !body.trim()) return
     setSending(true)
-    const { ok, data } = await apiJSON('/api/admin/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body, type }) })
+    const { ok, data } = await apiJSON('/api/admin/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, body, type, audience }) })
     setSending(false)
-    if (ok) { flash('تم بث الإشعار لكل الطلاب'); setTitle(''); setBody(''); load() }
+    if (ok) { flash('تم بث الإشعار'); setTitle(''); setBody(''); load() }
     else flash(data.error || 'فشل الإرسال', 'error')
   }
 
@@ -652,6 +653,16 @@ function NotificationsTab({ flash }) {
           <option value="warning">تنبيه — شريط أحمر أعلى الموقع + الجرس</option>
           <option value="info">معلومة — في زر الجرس فقط</option>
           <option value="success">خبر جيد — في زر الجرس فقط</option>
+        </select>
+        <label style={S.label}>الجمهور المستهدف</label>
+        <select value={audience} onChange={e => setAudience(e.target.value)} style={{ ...S.input, marginBottom: 6 }}>
+          <option value="all">كل الطلاب</option>
+          <option value="track:تحضيري">مسار: التحضيري</option>
+          <option value="track:تخصص">مسار: التخصص</option>
+          <option value="track:دبلوم">مسار: الدبلوم</option>
+          <option value="track:دراسات عليا">مسار: الدراسات العليا</option>
+          <option value="plan:تحضيري|خطة أ">التحضيري — خطة أ</option>
+          <option value="plan:تحضيري|خطة ب">التحضيري — خطة ب</option>
         </select>
         <div style={{ fontSize: 12, color: 'var(--mu)', marginBottom: 12, lineHeight: 1.6 }}>
           «إعلان» و«تنبيه» يظهران كشريط بارز أعلى الموقع لكل الطلاب (قابل للإغلاق)، بينما «معلومة» و«خبر جيد» تظهر فقط عند فتح زر الجرس.

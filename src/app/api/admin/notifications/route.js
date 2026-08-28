@@ -31,15 +31,15 @@ export async function POST(request) {
   if (!title) return Response.json({ error: 'العنوان مطلوب' }, { status: 400 })
   if (!text) return Response.json({ error: 'نص الإشعار مطلوب' }, { status: 400 })
   const type = TYPES.includes(body.type) ? body.type : 'announcement'
+  const audience = typeof body.audience === 'string' && body.audience.trim() ? body.audience.trim() : 'all'
 
   const db = createAdminClient()
-  const { data, error } = await db.from('notifications').insert({
-    user_id: null, // broadcast to all students
-    type,
-    title,
-    body: text,
-    link_url: body.link_url?.trim() || null,
-  }).select().single()
+  // audience is a newer column; retry without it if the migration isn't applied.
+  const base = { user_id: null, type, title, body: text, link_url: body.link_url?.trim() || null }
+  let { data, error } = await db.from('notifications').insert({ ...base, audience }).select().single()
+  if (error && /audience/i.test(error.message || '')) {
+    ({ data, error } = await db.from('notifications').insert(base).select().single())
+  }
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ ok: true, notification: data })
 }
