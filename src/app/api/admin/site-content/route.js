@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
-const ALLOWED_KEYS = ['links']
+const ALLOWED_KEYS = ['links', 'theme']
 
 export async function GET(request) {
   const gate = await requireAdmin()

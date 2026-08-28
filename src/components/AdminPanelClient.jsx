@@ -6,8 +6,19 @@ import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
-  Link2, Save, Moon, Sun,
+  Link2, Save, Moon, Sun, Palette, Check,
 } from 'lucide-react'
+
+// Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
+// seu-portal-pro-v2.jsx). Only the id is stored in site_content['theme'].
+const THEME_PRESETS = [
+  { id: 'green', name: 'أخضر', sw: '#0a8a58' },
+  { id: 'blue', name: 'أزرق', sw: '#2563eb' },
+  { id: 'purple', name: 'بنفسجي', sw: '#7c3aed' },
+  { id: 'gold', name: 'ذهبي', sw: '#c8a84b' },
+  { id: 'rose', name: 'وردي', sw: '#e11d48' },
+  { id: 'teal', name: 'فيروزي', sw: '#0891b2' },
+]
 
 // Admin theme tokens — mapped onto CSS variables so a single toggle swaps
 // the whole panel between white and deep-green night mode.
@@ -87,6 +98,7 @@ const TABS = [
   { id: 'colleges', label: 'الكليات', Icon: Building2 },
   { id: 'notifications', label: 'الإشعارات', Icon: Bell },
   { id: 'links', label: 'الروابط', Icon: Link2 },
+  { id: 'theme', label: 'الثيم', Icon: Palette },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
@@ -219,6 +231,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'colleges' && <CollegesTab flash={flash} />}
         {tab === 'notifications' && <NotificationsTab flash={flash} />}
         {tab === 'links' && <LinksTab flash={flash} />}
+        {tab === 'theme' && <ThemeTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -831,6 +844,66 @@ function LinksTab({ flash }) {
       </div>
 
       {saveBar}
+    </div>
+  )
+}
+
+/* ══════════════ THEME ══════════════ */
+function ThemeTab({ flash }) {
+  const [preset, setPreset] = useState('green')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { ok, data } = await apiJSON('/api/admin/site-content?key=theme')
+    if (ok && data.data?.preset) setPreset(data.data.preset)
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function save(id) {
+    setSaving(true)
+    setPreset(id)
+    const { ok, data } = await apiJSON('/api/admin/site-content', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'theme', data: { preset: id } }),
+    })
+    setSaving(false)
+    if (ok) flash('تم تطبيق الثيم — سيظهر للطلاب فوراً')
+    else flash(data.error || 'فشل الحفظ', 'error')
+  }
+
+  if (loading) return <Loader />
+
+  return (
+    <div>
+      <SectionHeader title="ثيم الموقع" onRefresh={load} />
+      <div style={{ ...S.card }}>
+        <p style={{ fontSize: 12.5, color: 'var(--mu)', lineHeight: 1.8, marginBottom: 14 }}>
+          اختر لون هوية الموقع. يتغيّر لون الأزرار والأيقونات والهيدر وخلفيات الصفحات لكل الطلاب فورًا.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12 }}>
+          {THEME_PRESETS.map(p => {
+            const active = preset === p.id
+            return (
+              <button key={p.id} onClick={() => save(p.id)} disabled={saving} style={{
+                position: 'relative', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 14px',
+                borderRadius: 14, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'right',
+                background: active ? `${p.sw}14` : 'var(--soft)',
+                border: `2px solid ${active ? p.sw : 'var(--bd)'}`, color: 'var(--tx)',
+              }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: `linear-gradient(135deg,${p.sw},${p.sw}bb)`, flexShrink: 0, boxShadow: `0 4px 12px ${p.sw}55` }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--mu)' }}>{active ? 'مُطبّق حاليًا' : 'اضغط للتطبيق'}</div>
+                </div>
+                {active && <Check size={18} color={p.sw} />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
