@@ -105,6 +105,20 @@ const T = (d) => ({
   inp: d ? "#0f1d16" : "#ffffff",
 });
 
+// Strip markdown markers so AI text reads cleanly in plain containers
+// (bold/italic/code unwrapped, headings & bullets tidied, stray * _ ` # removed).
+function mdToText(s = "") {
+  return String(s)
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*\n]+)\*/g, "$1")
+    .replace(/_([^_\n]+)_/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*•]\s+/gm, "• ")
+    .replace(/[*_`#]+/g, "");
+}
+
 /* ══════════════════════════════════════════════════════════════
    DATA
    ══════════════════════════════════════════════════════════════ */
@@ -639,7 +653,24 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
   ];
   const allSugs = [...fileSugs, ...defaultSugs];
 
-  const renderInline = (txt) => txt.split("**").map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : p);
+  // Turn inline markdown into real formatting so no raw symbols (**, *, `,
+  // _, #) ever show in the chat. Paired markers become bold/code; any stray
+  // leftover markers are quietly removed.
+  const stripMarks = (s) => s.replace(/[*_`#]+/g, "");
+  const renderInline = (txt) => {
+    const nodes = [];
+    let key = 0, last = 0, m;
+    const re = /\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|_([^_\n]+)_|`([^`\n]+)`/g;
+    while ((m = re.exec(txt)) !== null) {
+      if (m.index > last) nodes.push(stripMarks(txt.slice(last, m.index)));
+      const bold = m[1] ?? m[2] ?? m[3] ?? m[4];
+      if (bold != null) nodes.push(<strong key={key++} style={{ fontWeight: 800 }}>{bold}</strong>);
+      else nodes.push(<code key={key++} style={{ background: t.s3, padding: "1px 6px", borderRadius: 6, fontSize: "0.92em", fontFamily: "ui-monospace,monospace", direction: "ltr", unicodeBidi: "embed" }}>{m[5]}</code>);
+      last = re.lastIndex;
+    }
+    if (last < txt.length) nodes.push(stripMarks(txt.slice(last)));
+    return nodes;
+  };
   const renderMsg = (text) => text.split("\n").map((line, i) => {
     if (/^#{1,3}\s/.test(line)) {
       const lvl = (line.match(/^(#{1,3})\s/) || [[],[""]])[1].length;
@@ -2544,8 +2575,8 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
             </button>
           </div>
           {focusA && (
-            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 13, color: "rgba(255,255,255,.8)", lineHeight: 1.7, maxHeight: 150, overflowY: "auto" }}>
-              {focusA}
+            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 13, color: "rgba(255,255,255,.8)", lineHeight: 1.7, maxHeight: 150, overflowY: "auto", whiteSpace: "pre-wrap" }}>
+              {mdToText(focusA)}
             </div>
           )}
         </div>
