@@ -4,7 +4,6 @@ import { REQUIRE_LOGIN } from '@/lib/auth-config'
 
 const PUBLIC_ROUTES = [
   '/login',
-  '/signup',
   '/reset-password',
   '/auth/callback',
   '/terms',
@@ -32,7 +31,7 @@ export async function middleware(request) {
     return NextResponse.redirect(url)
   }
 
-  if (user && (pathname === '/login' || pathname === '/signup')) {
+  if (user && pathname === '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)
