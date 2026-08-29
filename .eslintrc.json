@@ -1,3 +1,16 @@
 {
-  "extends": "next/core-web-vitals"
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.name=/^use(Layout)?Effect$/] > ArrowFunctionExpression[body.type!='BlockStatement']",
+        "message": "Give the effect a braced body. A concise body returns its expression, and React calls whatever an effect returns as the cleanup — a non-function return throws 'destroy is not a function' and unmounts the app."
+      },
+      {
+        "selector": "CallExpression[callee.name=/^use(Layout)?Effect$/] > ArrowFunctionExpression[async=true]",
+        "message": "Effects must not be async: the returned Promise becomes React's cleanup and throws when called. Put the async work in an inner function."
+      }
+    ]
+  }
 }
