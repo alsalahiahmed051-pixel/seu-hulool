@@ -1087,29 +1087,69 @@ function QuizMode({ subject, t, onToast }) {
 function NotesEditor({ subject, notes, setNotes, t, onToast }) {
   const [text, setText] = useState(notes[subject] || "");
   const [saved, setSaved] = useState(false);
-  useEffect(() => { setText(notes[subject] || ""); setSaved(false); }, [subject]);
+  const [dirty, setDirty] = useState(false);
+  const taRef = useRef(null);
+  useEffect(() => { setText(notes[subject] || ""); setSaved(false); setDirty(false); }, [subject]);
 
-  const save = () => {
-    setNotes(prev => ({ ...prev, [subject]: text }));
-    setSaved(true);
-    onToast?.("تم حفظ ملاحظاتك", "success");
-    setTimeout(() => setSaved(false), 2000);
-  };
+  const persist = useCallback((val) => {
+    setNotes(prev => {
+      const next = { ...prev };
+      if (val.trim()) next[subject] = val; else delete next[subject];
+      return next;
+    });
+  }, [setNotes, subject]);
+
+  // Autosave shortly after typing stops, so nothing is ever lost.
+  useEffect(() => {
+    if (!dirty) return;
+    const id = setTimeout(() => { persist(text); setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 1800); }, 900);
+    return () => clearTimeout(id);
+  }, [text, dirty, persist]);
+
+  const save = () => { persist(text); setSaved(true); setDirty(false); onToast?.("تم حفظ ملاحظاتك", "success"); setTimeout(() => setSaved(false), 2000); };
   const clear = () => {
-    setText("");
+    if (!confirm("مسح كل ملاحظات هذه المادة؟")) return;
+    setText(""); setDirty(false);
     setNotes(prev => { const c = { ...prev }; delete c[subject]; return c; });
     onToast?.("تم مسح الملاحظات", "info");
   };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); onToast?.("تم نسخ الملاحظات", "success"); }
+    catch { onToast?.("تعذّر النسخ", "warn"); }
+  };
+  // Insert a snippet at the caret (bullet, heading, divider).
+  const insert = (snippet) => {
+    const ta = taRef.current;
+    const pos = ta ? ta.selectionStart : text.length;
+    const before = text.slice(0, pos);
+    const needsNl = before && !before.endsWith("\n");
+    const next = before + (needsNl ? "\n" : "") + snippet + text.slice(pos);
+    setText(next); setDirty(true);
+    requestAnimationFrame(() => { ta?.focus(); const c = (before + (needsNl ? "\n" : "") + snippet).length; ta?.setSelectionRange(c, c); });
+  };
+
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text.trim() ? text.trim().split("\n").length : 0;
 
   return (
     <div>
+      {/* Quick insert helpers */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        {[["• نقطة", "• "], ["✅ مهم", "✅ "], ["❓ سؤال", "❓ "], ["— فاصل", "————————\n"]].map(([label, snip]) => (
+          <button key={label} onClick={() => insert(snip)} style={{
+            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 10px",
+            cursor: "pointer", fontSize: 11.5, color: t.mu, fontFamily: "inherit", fontWeight: 700,
+          }}>{label}</button>
+        ))}
+      </div>
       <textarea
-        value={text} onChange={e => setText(e.target.value)}
+        ref={taRef}
+        value={text} onChange={e => { setText(e.target.value); setDirty(true); }}
         placeholder={`اكتب ملاحظاتك عن مادة ${subject}…`}
         style={{
-          width: "100%", minHeight: 160, border: `1.5px solid ${t.bd}`, borderRadius: 14,
+          width: "100%", minHeight: 190, border: `1.5px solid ${t.bd}`, borderRadius: 14,
           padding: "12px 14px", fontSize: 13.5, color: t.tx, background: t.s2,
-          fontFamily: "inherit", direction: "rtl", outline: "none", resize: "vertical", lineHeight: 1.8,
+          fontFamily: "inherit", direction: "rtl", outline: "none", resize: "vertical", lineHeight: 1.9,
           boxSizing: "border-box", transition: "border-color .2s",
         }}
         onFocus={e => e.target.style.borderColor = P.blue2}
@@ -1118,12 +1158,14 @@ function NotesEditor({ subject, notes, setNotes, t, onToast }) {
         <Btn variant="primary" size="sm" onClick={save} style={{ flex: 1 }}>
           {saved ? <><Check size={14} /> محفوظ</> : <><Save size={14} /> حفظ</>}
         </Btn>
-        {text && <Btn variant="ghost" size="sm" onClick={clear}>
-          <Trash2 size={13} /> مسح
-        </Btn>}
+        {text && <Btn variant="ghost" size="sm" onClick={copy}><Copy size={13} /> نسخ</Btn>}
+        {text && <Btn variant="ghost" size="sm" onClick={clear}><Trash2 size={13} /> مسح</Btn>}
       </div>
-      <div style={{ fontSize: 12, color: t.dim, marginTop: 8, textAlign: "center" }}>
-        {text.length} حرف • ملاحظاتك محفوظة محلياً
+      <div style={{ fontSize: 11.5, color: t.dim, marginTop: 8, textAlign: "center", display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        <span>{words} كلمة</span><span>·</span><span>{lines} سطر</span><span>·</span>
+        <span style={{ color: dirty ? P.orange : saved ? P.green : t.dim }}>
+          {dirty ? "جارٍ الحفظ…" : saved ? "تم الحفظ تلقائياً ✓" : "يُحفظ تلقائياً"}
+        </span>
       </div>
     </div>
   );
@@ -2272,33 +2314,69 @@ function FlashCards({ subject, t }) {
   const del = (id) => setCards(c => c.filter(x => x.id !== id));
   const next = () => { setFlipped(false); setIdx(i => (i + 1) % cards.length); };
   const prev = () => { setFlipped(false); setIdx(i => (i - 1 + cards.length) % cards.length); };
+  // Mark a card known/needs-review, then advance — simple spaced-repetition cue.
+  const grade = (known) => {
+    const card = cards[idx];
+    if (card) setCards(cs => cs.map(c => c.id === card.id ? { ...c, known } : c));
+    setFlipped(false);
+    setIdx(i => (i + 1) % Math.max(1, cards.length));
+  };
+  const shuffle = () => {
+    setCards(cs => { const a2 = [...cs]; for (let i = a2.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a2[i], a2[j]] = [a2[j], a2[i]]; } return a2; });
+    setIdx(0); setFlipped(false);
+  };
 
   if (mode === "review" && cards.length > 0) {
     const card = cards[idx];
+    const knownCount = cards.filter(c => c.known).length;
+    const pct = Math.round((knownCount / cards.length) * 100);
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <button onClick={() => { setMode("list"); setIdx(0); setFlipped(false); }}
-            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 13, fontFamily: "inherit" }}>
-            ← رجوع
+            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: t.mu, fontSize: 13, fontFamily: "inherit", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+            <ArrowLeft size={13} /> رجوع
           </button>
-          <span style={{ fontSize: 13, color: t.mu }}>{idx + 1} / {cards.length}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={shuffle} title="خلط البطاقات" style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: t.mu, fontSize: 12, fontFamily: "inherit", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+              <RotateCcw size={12} /> خلط
+            </button>
+            <span style={{ fontSize: 13, color: t.mu, fontWeight: 700 }}>{idx + 1} / {cards.length}</span>
+          </div>
+        </div>
+        {/* Mastery progress */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.mu, marginBottom: 4 }}>
+            <span>أتقنت {knownCount} من {cards.length}</span><span style={{ color: P.green, fontWeight: 800 }}>{pct}%</span>
+          </div>
+          <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${P.green},${P.greenLight})`, borderRadius: 3, transition: "width .4s ease" }} />
+          </div>
         </div>
         <div onClick={() => setFlipped(f => !f)} style={{
           background: flipped ? `${P.green}12` : t.s2, border: `2px solid ${flipped ? P.green : t.bd}`,
           borderRadius: 18, padding: 28, textAlign: "center", cursor: "pointer",
-          minHeight: 140, display: "flex", flexDirection: "column", alignItems: "center",
-          justifyContent: "center", transition: "all .3s", marginBottom: 14,
+          minHeight: 150, display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", transition: "all .3s", marginBottom: 12, position: "relative",
         }}>
+          {card.known && <div style={{ position: "absolute", top: 10, right: 12, fontSize: 10.5, fontWeight: 800, color: P.green, background: `${P.green}18`, borderRadius: 6, padding: "2px 8px" }}>متقنة ✓</div>}
           <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 8 }}>{flipped ? "الجواب" : "السؤال"} — اضغط للقلب</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: t.tx, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 16.5, fontWeight: 700, color: t.tx, lineHeight: 1.7 }}>
             {flipped ? card.a : card.q}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={prev} style={{ flex: 1, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: 10, cursor: "pointer", color: t.tx, fontSize: 13, fontFamily: "inherit" }}>السابق</button>
-          <button onClick={next} style={{ flex: 1, background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>التالي</button>
-        </div>
+        {/* Self-grade once flipped, else plain navigation */}
+        {flipped ? (
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => grade(false)} style={{ flex: 1, background: `${P.orange}15`, border: `1.5px solid ${P.orange}45`, borderRadius: 12, padding: 11, cursor: "pointer", color: P.orange, fontSize: 13, fontFamily: "inherit", fontWeight: 800 }}>أحتاج مراجعة</button>
+            <button onClick={() => grade(true)} style={{ flex: 1, background: `linear-gradient(135deg,${P.green},${P.greenLight})`, border: "none", borderRadius: 12, padding: 11, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 800 }}>أتقنتها ✓</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={prev} style={{ flex: 1, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: 10, cursor: "pointer", color: t.tx, fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>السابق</button>
+            <button onClick={next} style={{ flex: 1, background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>التالي</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -2329,11 +2407,12 @@ function FlashCards({ subject, t }) {
             <div style={{ textAlign: "center", padding: "20px 0", color: t.mu, fontSize: 13 }}>لا توجد بطاقات بعد — أضف سؤالاً وجواباً</div>
           ) : (
             cards.map(c => (
-              <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}`, marginBottom: 8 }}>
+              <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}`, borderRight: `3px solid ${c.known ? P.green : t.bd}`, marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, color: t.mu, marginBottom: 2 }}>س: {c.q}</div>
                   <div style={{ fontSize: 13, color: t.tx }}>ج: {c.a}</div>
                 </div>
+                {c.known && <span style={{ fontSize: 10, fontWeight: 800, color: P.green, background: `${P.green}18`, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>متقنة</span>}
                 <button onClick={() => del(c.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.red, display: "flex" }}><X size={12} /></button>
               </div>
             ))
