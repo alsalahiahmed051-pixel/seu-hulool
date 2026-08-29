@@ -3218,7 +3218,14 @@ function AcademicCalendar({ t, profile }) {
     .map(e => {
       const date = typeof e.date === "string" ? e.date : "";
       const ms = date ? new Date(date + "T00:00:00").getTime() : NaN;
-      return { ...e, date, days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000) };
+      // label is rendered as a child — never let an object through (React
+      // throws "Objects are not valid as a React child" and the app dies).
+      return {
+        ...e,
+        label: safeText(e.label, "حدث"),
+        date,
+        days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000),
+      };
     })
     .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
 
@@ -4408,11 +4415,18 @@ function Onboarding({ onClose, skipWalkthrough, t }) {
   const [phase, setPhase] = useState(0); // 0=splash, 1-3=walkthrough
   const [step, setStep] = useState(0);
 
+  // `skipWalkthrough` arrives from storage just after mount, so read it at
+  // fire time through a ref. Capturing it in the effect closure would use the
+  // pre-hydration `false` and replay the intro for returning students.
+  const skipRef = useRef(skipWalkthrough);
+  useEffect(() => { skipRef.current = skipWalkthrough; }, [skipWalkthrough]);
+
   useEffect(() => {
     if (phase === 0) {
-      const timer = setTimeout(() => skipWalkthrough ? onClose() : setPhase(1), 3200);
+      const timer = setTimeout(() => skipRef.current ? onClose() : setPhase(1), 3200);
       return () => clearTimeout(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
   const steps = [
@@ -4635,12 +4649,45 @@ const DEFAULT_LINKS = {
   footer: "هذه الروابط تأخذك للمواقع الرسمية للجامعة السعودية الإلكترونية. لا تشارك كلمة مرورك مع أي طرف آخر.",
 };
 
+// Admin-authored JSON reaches the page unvalidated, and React throws (taking
+// the whole app down) if a value meant as text turns out to be an object.
+// Coerce anything rendered as a child to a safe string, falling back to the
+// default when the saved shape is not usable.
+function safeText(v, fallback = "") {
+  if (typeof v === "string") return v;
+  if (typeof v === "number") return String(v);
+  if (v && typeof v === "object") {
+    // Tolerate the common wrapper shapes ({note}/{text}/{title}) instead of
+    // discarding content the admin actually wrote.
+    const inner = v.note ?? v.text ?? v.title ?? v.label;
+    if (typeof inner === "string" || typeof inner === "number") return String(inner);
+  }
+  return fallback;
+}
+
 function SEULinksPage({ t, content }) {
-  const C = content || DEFAULT_LINKS;
-  const header = C.header || DEFAULT_LINKS.header;
-  const quick = C.quick || DEFAULT_LINKS.quick;
-  const groups = Array.isArray(C.groups) ? C.groups : DEFAULT_LINKS.groups;
-  const footer = C.footer || DEFAULT_LINKS.footer;
+  const C = (content && typeof content === "object") ? content : DEFAULT_LINKS;
+  const rawHeader = (C.header && typeof C.header === "object") ? C.header : DEFAULT_LINKS.header;
+  const rawQuick = (C.quick && typeof C.quick === "object") ? C.quick : DEFAULT_LINKS.quick;
+  const header = {
+    title: safeText(rawHeader.title, DEFAULT_LINKS.header.title),
+    subtitle: safeText(rawHeader.subtitle, DEFAULT_LINKS.header.subtitle),
+  };
+  const quick = {
+    phone: safeText(rawQuick.phone, DEFAULT_LINKS.quick.phone),
+    hours: safeText(rawQuick.hours, DEFAULT_LINKS.quick.hours),
+    days: safeText(rawQuick.days, DEFAULT_LINKS.quick.days),
+  };
+  const groups = (Array.isArray(C.groups) ? C.groups : DEFAULT_LINKS.groups)
+    .filter(g => g && typeof g === "object")
+    .map(g => ({
+      ...g,
+      title: safeText(g.title),
+      items: (Array.isArray(g.items) ? g.items : [])
+        .filter(it => it && typeof it === "object")
+        .map(it => ({ ...it, label: safeText(it.label), desc: safeText(it.desc) })),
+    }));
+  const footer = safeText(C.footer, DEFAULT_LINKS.footer);
 
   const openLink = (url) => {
     let u = String(url || "").trim();

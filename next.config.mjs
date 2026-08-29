@@ -2,6 +2,11 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // Ship browser source maps so a production stack trace names real functions
+  // instead of minified letters ("n is not a function") — the difference
+  // between diagnosing a user report in one pass and guessing at it.
+  productionBrowserSourceMaps: true,
+
   eslint: {
     ignoreDuringBuilds: true,
   },
