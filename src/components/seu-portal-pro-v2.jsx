@@ -3228,24 +3228,28 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       )}
 
       <div style={{
-        background: t.s1, borderRadius: 18,
+        background: `linear-gradient(135deg, ${P.gold}14, ${P.gold}05)`, borderRadius: 18,
         padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
-        boxShadow: `0 4px 20px ${P.gold}15`,
+        boxShadow: `0 4px 20px ${P.gold}12`, position: "relative", overflow: "hidden",
       }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ position: "absolute", top: -24, left: -14, width: 90, height: 90, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 10, background: `${P.gold}20`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Lightbulb size={15} color={P.gold} />
+            <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40` }}>
+              <Lightbulb size={17} color="#3a2e05" />
             </div>
-            <span style={{ fontSize: 13, fontWeight: 800, color: P.gold }}>نصيحة الساعة</span>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
+              <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>{tipIdx + 1} من {TIPS.length}</div>
+            </div>
           </div>
           <button
             onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
-            style={{ background: `${P.gold}15`, border: `1px solid ${P.gold}35`, borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
-            <RotateCcw size={11} /> التالية
+            style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 20, padding: "6px 13px", cursor: "pointer", fontSize: 12, color: "#3a2e05", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, fontWeight: 800 }}>
+            <RotateCcw size={12} /> التالية
           </button>
         </div>
-        <p style={{ margin: 0, fontSize: 13.5, color: t.tx, lineHeight: 1.8, fontWeight: 500, borderRight: `3px solid ${P.gold}`, paddingRight: 12 }}>{tip}</p>
+        <p style={{ margin: 0, fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative" }}>{tip}</p>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -3774,6 +3778,49 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           ))}
         </div>
       )}
+
+      {/* My study plan — shows the subjects of the student's chosen plan */}
+      {!editing && profile?.track && (() => {
+        const planKey = profile.plan === "خطة ب" ? "b" : profile.plan === "خطة أ" ? "a" : null;
+        let subjects = [];
+        let heading = profile.track;
+        if (profile.track === "تحضيري" && planKey) {
+          subjects = TREE.preparatory.plans[planKey]?.subjects || [];
+          heading = `التحضيري — ${profile.plan}`;
+        }
+        return (
+          <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.blue2}30`, boxShadow: t.shSm }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                <GraduationCap size={15} color={P.blue2} /> خطتي الدراسية
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 800, color: P.blue2, background: `${P.blue2}14`, borderRadius: 8, padding: "2px 9px" }}>{heading}</span>
+            </div>
+            {subjects.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {subjects.map((s) => {
+                  const SIcon = getIcon(s);
+                  return (
+                    <button key={s} onClick={() => openCourse(s)} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "11px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "right", display: "flex", alignItems: "center", gap: 10, transition: "all .2s" }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2 + "55"}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                      <div style={{ width: 32, height: 32, borderRadius: 9, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <SIcon size={15} color={P.blue2} />
+                      </div>
+                      <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
+                      <ChevronLeft size={14} color={t.dim} />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <button onClick={() => setActiveTab("explore")} style={{ width: "100%", background: t.s2, border: `1px dashed ${t.bd}`, borderRadius: 12, padding: "13px", cursor: "pointer", fontFamily: "inherit", color: t.mu, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Compass size={14} color={P.blue2} /> استكشف مواد {profile.track} ومقرراته
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* All my notes in one place */}
       {!editing && (() => {
