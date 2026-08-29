@@ -3057,32 +3057,30 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           {profile?.track ? `مسارك: ${profile.track}${profile.plan ? " — " + profile.plan : ""} • بوابتك الأكاديمية الذكية` : "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية"}
         </p>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-          <Btn onClick={() => setActiveTab("explore")} size="sm" variant="gold">
-            <GradCap size={13} /> اختر مسارك
-          </Btn>
-          <button onClick={() => setActiveTab("gpa")} style={{
-            background: "rgba(255,255,255,.1)", border: "none", borderRadius: 20,
-            padding: "6px 14px", cursor: "pointer", fontSize: 13, color: "rgba(255,255,255,.8)",
-            fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
-          }}>
-            <Calculator size={12} /> احسب معدلك
-          </button>
-          <button onClick={onOpenAI} style={{
-            background: `linear-gradient(135deg,${P.gold}22,${P.gold}44)`, border: `1px solid ${P.gold}60`,
-            borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 13,
-            color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
-          }}>
-            <Sparkles size={12} /> المساعد الذكي
-          </button>
-          {pwaPrompt && (
-            <button onClick={installPwa} style={{
-              background: `${P.green}25`, border: `1px solid ${P.green}50`,
-              borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 13,
-              color: P.green, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
-            }}>
-              <Download size={12} /> ثبّت التطبيق
-            </button>
-          )}
+          {(() => {
+            // Uniform hero pills — one primary (gold, filled), the rest subtle
+            // glass chips, all the same height/radius for a tidy row.
+            const base = { height: 34, padding: "0 14px", borderRadius: 17, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
+            const ghost = { ...base, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.16)", color: "rgba(255,255,255,.9)" };
+            return (
+              <>
+                <button onClick={() => setActiveTab("explore")} style={{ ...base, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", color: "#3a2e05", fontWeight: 800, boxShadow: `0 6px 18px ${P.gold}44` }}>
+                  <GradCap size={14} /> اختر مسارك
+                </button>
+                <button onClick={onOpenAI} style={ghost}>
+                  <Sparkles size={13} color={P.gold} /> المساعد الذكي
+                </button>
+                <button onClick={() => setActiveTab("gpa")} style={ghost}>
+                  <Calculator size={13} /> احسب معدلك
+                </button>
+                {pwaPrompt && (
+                  <button onClick={installPwa} style={{ ...base, background: `${P.green}22`, border: `1px solid ${P.green}55`, color: "#8ff0c0" }}>
+                    <Download size={13} /> ثبّت التطبيق
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -3172,7 +3170,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
             <RotateCcw size={11} /> التالية
           </button>
         </div>
-        <p style={{ margin: 0, fontSize: 13.5, color: t.tx, lineHeight: 1.8, fontWeight: 500, paddingRight: 4, borderRight: `3px solid ${P.gold}`, paddingRight: 12 }}>{tip}</p>
+        <p style={{ margin: 0, fontSize: 13.5, color: t.tx, lineHeight: 1.8, fontWeight: 500, borderRight: `3px solid ${P.gold}`, paddingRight: 12 }}>{tip}</p>
       </div>
 
       <div style={{ marginBottom: 16 }}>
