@@ -92,32 +92,32 @@ const P = {
 const THEME_PRESETS = [
   { id: "green", name: "أخضر", sw: "#0a8a58",
     brand: { navy: "#043d2a", navyDeep: "#021f15", blue: "#066b45", blue2: "#0a8a58", blueLight: "#34d399" },
-    rgb: "10,138,88", bgL: "#eef5f0", bgD: "#08130d",
+    rgb: "10,138,88", bgL: "#eef5f0", bgD: "#101d16",
     heroL: "linear-gradient(135deg, #043d2a 0%, #066b45 55%, #0a8a58 100%)",
     heroD: "linear-gradient(135deg, #05130d 0%, #0a3d29 45%, #0e5638 100%)" },
   { id: "blue", name: "أزرق", sw: "#2563eb",
     brand: { navy: "#0a2a6b", navyDeep: "#04143a", blue: "#1746b0", blue2: "#2563eb", blueLight: "#60a5fa" },
-    rgb: "37,99,235", bgL: "#eef2fb", bgD: "#080f1f",
+    rgb: "37,99,235", bgL: "#eef2fb", bgD: "#101829",
     heroL: "linear-gradient(135deg, #0a2a6b 0%, #1746b0 55%, #2563eb 100%)",
     heroD: "linear-gradient(135deg, #050b1c 0%, #0c2352 45%, #123084 100%)" },
   { id: "purple", name: "بنفسجي", sw: "#7c3aed",
     brand: { navy: "#3b1673", navyDeep: "#1f0a3f", blue: "#6d28d9", blue2: "#7c3aed", blueLight: "#a78bfa" },
-    rgb: "124,58,237", bgL: "#f3effb", bgD: "#0f0a1c",
+    rgb: "124,58,237", bgL: "#f3effb", bgD: "#171227",
     heroL: "linear-gradient(135deg, #3b1673 0%, #6d28d9 55%, #7c3aed 100%)",
     heroD: "linear-gradient(135deg, #0f0720 0%, #2e1259 45%, #43209a 100%)" },
   { id: "gold", name: "ذهبي", sw: "#c8a84b",
     brand: { navy: "#5c4708", navyDeep: "#2e2404", blue: "#a3811a", blue2: "#c8a84b", blueLight: "#e6c964" },
-    rgb: "200,168,75", bgL: "#f7f3e8", bgD: "#161206",
+    rgb: "200,168,75", bgL: "#f7f3e8", bgD: "#1e1810",
     heroL: "linear-gradient(135deg, #5c4708 0%, #a3811a 55%, #c8a84b 100%)",
     heroD: "linear-gradient(135deg, #120e04 0%, #3d3008 45%, #5c4708 100%)" },
   { id: "rose", name: "وردي", sw: "#e11d48",
     brand: { navy: "#7a132f", navyDeep: "#3f0a19", blue: "#be123c", blue2: "#e11d48", blueLight: "#fb7185" },
-    rgb: "225,29,72", bgL: "#fbeef1", bgD: "#1c0810",
+    rgb: "225,29,72", bgL: "#fbeef1", bgD: "#241019",
     heroL: "linear-gradient(135deg, #7a132f 0%, #be123c 55%, #e11d48 100%)",
     heroD: "linear-gradient(135deg, #1a0710 0%, #560d22 45%, #7a132f 100%)" },
   { id: "teal", name: "فيروزي", sw: "#0891b2",
     brand: { navy: "#0a4a5c", navyDeep: "#04262e", blue: "#0e7490", blue2: "#0891b2", blueLight: "#22d3ee" },
-    rgb: "8,145,178", bgL: "#e9f5f8", bgD: "#06141a",
+    rgb: "8,145,178", bgL: "#e9f5f8", bgD: "#0d1c24",
     heroL: "linear-gradient(135deg, #0a4a5c 0%, #0e7490 55%, #0891b2 100%)",
     heroD: "linear-gradient(135deg, #04121a 0%, #0a3a4a 45%, #0e5a70 100%)" },
 ];
@@ -130,17 +130,17 @@ const T = (d, br = THEME_PRESETS[0]) => ({
   bgMesh: d
     ? `radial-gradient(ellipse 80% 60% at 50% -5%, rgba(${br.rgb},0.20) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(${br.rgb},0.08) 0%, transparent 45%), ${br.bgD}`
     : `radial-gradient(ellipse 70% 50% at 50% -10%, rgba(${br.rgb},0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.07) 0%, transparent 50%), ${br.bgL}`,
-  s1: d ? "#0f1a16" : "#ffffff",
-  s2: d ? "#17241e" : "#f5f7f6",
-  s3: d ? "#1f332a" : "#eaeeec",
-  s4: d ? "#2b473a" : "#dbe3df",
-  bd: d ? "rgba(130,150,140,0.16)" : "#dde3e0",
-  tx: d ? "#f0f6f2" : "#0c1712",
-  mu: d ? "#9fb4a9" : "#4b5a53",
-  dim: d ? "#657a70" : "#8a978f",
+  s1: d ? "#18231e" : "#ffffff",
+  s2: d ? "#20302a" : "#f5f7f6",
+  s3: d ? "#2a3d35" : "#eaeeec",
+  s4: d ? "#354b41" : "#dbe3df",
+  bd: d ? "rgba(150,175,162,0.20)" : "#dde3e0",
+  tx: d ? "#f2f7f4" : "#0c1712",
+  mu: d ? "#a9bdb2" : "#4b5a53",
+  dim: d ? "#728a7f" : "#8a978f",
   sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,0,0,.08), 0 2px 10px rgba(0,0,0,.04)",
   shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,0,0,.06)",
-  grad: d ? `linear-gradient(135deg,#0f1a16,#17241e)` : `linear-gradient(135deg,#f5f7f6,#eaeeec)`,
+  grad: d ? `linear-gradient(135deg,#18231e,#20302a)` : `linear-gradient(135deg,#f5f7f6,#eaeeec)`,
   hero: d ? br.heroD : br.heroL,
   inp: d ? "#0f1a16" : "#ffffff",
 });
@@ -2954,57 +2954,117 @@ const DEFAULT_CALENDAR = {
 
 // Bottom strip showing ALL calendar events horizontally; content comes from
 // the admin panel (site_content['calendar']) with a built-in fallback.
+// Formats an event's Hijri-free Gregorian date in Arabic.
+function calDate(iso) {
+  try { return new Date(iso + "T00:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { year: "numeric", month: "long", day: "numeric" }); }
+  catch { return iso; }
+}
+function calChip(days) {
+  if (days <= 0) return { bg: `${P.green}20`, col: P.green, text: "انتهى" };
+  if (days === 1) return { bg: `${P.red}20`, col: P.red, text: "غداً" };
+  if (days <= 14) return { bg: `${P.red}18`, col: P.red, text: `${days} يوم` };
+  return { bg: `${P.blue2}15`, col: P.blue2, text: `${days} يوم` };
+}
+
+// Full-screen calendar view opened from the home strip — a clean vertical
+// timeline of every academic event (upcoming first, then finished).
+function CalendarModal({ t, events, onClose }) {
+  const upcoming = events.filter(e => e.days >= 0);
+  const past = events.filter(e => e.days < 0);
+  const Row = (e, i) => {
+    const Ic = CAL_ICONS[e.icon] || Calendar;
+    const col = e.color || P.blue2;
+    const chip = calChip(e.days);
+    return (
+      <div key={i} style={{ display: "flex", gap: 12, padding: "13px 14px", background: t.s1, borderRadius: 14, border: `1px solid ${t.bd}`, borderRight: `3px solid ${col}`, marginBottom: 10, opacity: e.days < 0 ? 0.6 : 1 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1px solid ${col}30` }}>
+          <Ic size={19} color={col} strokeWidth={2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, lineHeight: 1.5 }}>{e.label}</div>
+          <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>{calDate(e.date)}</div>
+          {audienceLabel(e.audience) && (
+            <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 8px", marginTop: 6 }}>خاص بـ {audienceLabel(e.audience)}</div>
+          )}
+        </div>
+        <div style={{ background: chip.bg, color: chip.col, borderRadius: 9, padding: "4px 10px", fontSize: 11.5, fontWeight: 800, alignSelf: "flex-start", flexShrink: 0 }}>{chip.text}</div>
+      </div>
+    );
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ fontSize: 17, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Calendar size={18} color={P.gold} /> التقويم الأكاديمي
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px", maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        {upcoming.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, marginBottom: 10 }}>القادمة</div>}
+        {upcoming.map(Row)}
+        {past.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, margin: "18px 0 10px" }}>المنتهية</div>}
+        {past.map(Row)}
+        {events.length === 0 && <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>لا أحداث في التقويم بعد</div>}
+      </div>
+    </div>
+  );
+}
+
 function AcademicCalendar({ t, profile }) {
   const { data: content } = useSiteContent("calendar");
+  const [open, setOpen] = useState(false);
   const now = new Date();
+  // Public site: everyone sees every event. The audience tag stays only as an
+  // informational badge ("خاص بـ خطة أ") — it never hides anything.
   const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
-    .filter(e => audienceMatches(e.audience, profile))
     .map(e => ({ ...e, days: Math.ceil((new Date(e.date + "T00:00:00") - now) / 86400000) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (!events.length) return null;
-  // Is the calendar tailored to this student's plan/track?
-  const scoped = profile?.plan
-    ? `${profile.track} · ${profile.plan}`
-    : profile?.track || "";
+  const upcoming = events.filter(e => e.days >= 0);
+  const strip = (upcoming.length ? upcoming : events).slice(0, 8);
 
   return (
-    <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
-        {scoped && <span style={{ fontSize: 10.5, fontWeight: 700, color: P.blue2, background: `${P.blue2}14`, border: `1px solid ${P.blue2}25`, borderRadius: 8, padding: "2px 7px" }}>{scoped}</span>}
+    <>
+      {open && <CalendarModal t={t} events={events} onClose={() => setOpen(false)} />}
+      <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
+        <button onClick={() => setOpen(true)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+            <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
+          </span>
+          <span style={{ fontSize: 12, color: P.blue2, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>عرض الكل <ChevronLeft size={12} /></span>
+        </button>
+        <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
+          {strip.map((e, i) => {
+            const Ic = CAL_ICONS[e.icon] || Calendar;
+            const col = e.color || P.blue2;
+            const chip = calChip(e.days);
+            return (
+              <button key={i} onClick={() => setOpen(true)} style={{
+                flexShrink: 0, width: 158, background: t.s2, borderRadius: 14, textAlign: "right", cursor: "pointer", fontFamily: "inherit",
+                border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${col}30` }}>
+                    <Ic size={16} color={col} strokeWidth={2} />
+                  </div>
+                  <div style={{ background: chip.bg, color: chip.col, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>{chip.text}</div>
+                </div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.5, minHeight: 36 }}>{e.label}</div>
+                <div style={{ fontSize: 11.5, color: t.mu }}>{calDate(e.date)}</div>
+                {audienceLabel(e.audience) && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 6px", alignSelf: "flex-start" }}>
+                    خاص بـ {audienceLabel(e.audience)}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
-        {events.map((e, i) => {
-          const Ic = CAL_ICONS[e.icon] || Calendar;
-          const col = e.color || P.blue2;
-          const chipBg = e.days <= 0 ? `${P.green}20` : e.days <= 14 ? `${P.red}20` : `${col}15`;
-          const chipCol = e.days <= 0 ? P.green : e.days <= 14 ? P.red : col;
-          return (
-            <div key={i} style={{
-              flexShrink: 0, width: 158, background: t.s2, borderRadius: 14,
-              border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${col}30` }}>
-                  <Ic size={16} color={col} strokeWidth={2} />
-                </div>
-                <div style={{ background: chipBg, color: chipCol, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>
-                  {e.days <= 0 ? "انتهى" : e.days === 1 ? "غداً" : `${e.days} يوم`}
-                </div>
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.5, minHeight: 36 }}>{e.label}</div>
-              <div style={{ fontSize: 11.5, color: t.mu }}>{new Date(e.date + "T00:00:00").toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" })}</div>
-              {audienceLabel(e.audience) && (
-                <div style={{ fontSize: 10, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 6px", alignSelf: "flex-start" }}>
-                  خاص بـ {audienceLabel(e.audience)}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -3823,6 +3883,7 @@ function NotifBanner({ notifs, setNotifs, t }) {
         <Icon size={15} color={meta.color} />
       </div>
       <div style={{ flex: 1, minWidth: 0, lineHeight: 1.4 }}>
+        {item.audienceText && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 6, padding: "1px 7px", marginLeft: 6 }}>{item.audienceText}</span>}
         <span style={{ fontSize: 12.5, fontWeight: 800, color: meta.color }}>{item.title}</span>
         <span style={{ fontSize: 12.5, color: t.tx, marginRight: 6 }}>— {item.text}</span>
       </div>
@@ -3940,8 +4001,9 @@ function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
               <NIcon size={16} color={meta.color} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: "1px 7px" }}>{meta.label}</span>
+                {n.audienceText && <span style={{ fontSize: 10.5, fontWeight: 700, color: P.gold, background: `${P.gold}18`, borderRadius: 6, padding: "1px 7px" }}>{n.audienceText}</span>}
                 {!n.read && <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, display: "inline-block" }} />}
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{n.title}</div>
