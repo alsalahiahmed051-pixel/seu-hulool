@@ -674,8 +674,15 @@ function NotificationsTab({ flash }) {
       : !push.tableReady
         ? 'ينقص جدول الاشتراكات'
         : `إشعارات الجهاز مفعّلة — ${push.devices} جهاز مشترك`
+    const env = push.env || {}
+    const anyEnv = Object.values(env).some(Boolean)
     const hint = !push.configured
-      ? 'أضف مفاتيح VAPID في Vercel (NEXT_PUBLIC_VAPID_PUBLIC_KEY، VAPID_PUBLIC_KEY، VAPID_PRIVATE_KEY، VAPID_SUBJECT) ثم أعد النشر.'
+      ? (anyEnv
+          // Some keys are visible but not the required pair — a specific gap.
+          ? 'بعض المفاتيح غير مقروءة. راجع القائمة تحت، وتأكّد أنها مضافة لبيئة Production.'
+          // Nothing at all is visible: either never added, or added after the
+          // running build was made — Vercel only picks them up on a new deploy.
+          : 'الخادم لا يرى أي مفتاح. إن كنت أضفتها بالفعل فالسبب أن النشر الحالي أقدم منها — أعد النشر من Vercel ← Deployments ← ⋯ ← Redeploy.')
       : !push.tableReady
         ? 'شغّل migration 011_push_subscriptions.sql في Supabase.'
         : push.devices === 0
@@ -687,6 +694,15 @@ function NotificationsTab({ flash }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tx)' }}>{title}</div>
           <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginTop: 3 }}>{hint}</div>
+          {!push.configured && (
+            <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {Object.entries(env).map(([name, present]) => (
+                <div key={name} style={{ fontSize: 11, fontFamily: 'monospace', direction: 'ltr', textAlign: 'left', color: present ? P.green : P.red }}>
+                  {present ? '✓' : '✗'} {name}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )

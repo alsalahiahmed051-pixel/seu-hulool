@@ -1,6 +1,6 @@
 import { requireAdmin } from '@/lib/admin-guard'
 import { createAdminClient } from '@/lib/supabase/server'
-import { sendPushToAudience, pushConfigured } from '@/lib/web-push-server'
+import { sendPushToAudience, pushConfigured, pushEnvStatus } from '@/lib/web-push-server'
 
 export const runtime = 'nodejs'
 
@@ -26,7 +26,7 @@ export async function GET() {
   // Push readiness, so the admin can see at a glance whether device
   // notifications will actually go out and to how many devices — rather than
   // sending a broadcast and wondering why no phone buzzed.
-  const push = { configured: pushConfigured(), devices: 0, tableReady: false }
+  const push = { configured: pushConfigured(), devices: 0, tableReady: false, env: pushEnvStatus() }
   if (push.configured) {
     const { count, error: cErr } = await db
       .from('push_subscriptions')
