@@ -23,6 +23,7 @@ import {
   AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
   Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut,
   Instagram, Youtube, Twitter, Ghost, LogIn,
+  List, LayoutGrid, MapPin,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -1848,6 +1849,7 @@ const fmtCountdown = (mins) => {
 
 function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [view, setView] = useSyncedSetting("scheduleView", "schedule_view", "list"); // list | grid
   const [newLec, setNewLec] = useState({ course: "", day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true });
   const [nowTick, setNowTick] = useState(0);
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
@@ -1898,9 +1900,22 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
 
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
-      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-        <CalendarDays size={20} color={P.blue2} /> جدولي الأسبوعي
-      </h2>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, display: "flex", alignItems: "center", gap: 8 }}>
+          <CalendarDays size={20} color={P.blue2} /> جدولي الأسبوعي
+        </h2>
+        <div style={{ display: "flex", background: t.s2, borderRadius: 11, padding: 3, border: `1px solid ${t.bd}` }}>
+          {[{ id: "list", Icon: List, label: "قائمة" }, { id: "grid", Icon: LayoutGrid, label: "شبكة" }].map(({ id, Icon, label }) => {
+            const active = view === id;
+            return (
+              <button key={id} onClick={() => setView(id)} style={{
+                display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800,
+                background: active ? P.blue2 : "transparent", color: active ? "#fff" : t.mu, border: "none",
+              }}><Icon size={14} /> {label}</button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Next lecture countdown */}
       {nextLec && (
@@ -1927,7 +1942,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
         </button>
       )}
 
-      {DAYS.map(day => {
+      {view === "list" && DAYS.map(day => {
         const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
         const isToday = day === todayAr;
         const dc = DAY_COLORS[day];
@@ -1977,6 +1992,56 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
           </div>
         );
       })}
+      {view === "grid" && (
+        (schedule || []).length === 0 ? (
+          <div style={{ fontSize: 13, color: t.mu, padding: "28px 16px", background: t.s1, borderRadius: 16, border: `1px dashed ${t.bd}`, textAlign: "center", marginBottom: 8 }}>
+            لا محاضرات بعد — أضِف محاضراتك لتظهر في الشبكة الأسبوعية.
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto", paddingBottom: 8, marginBottom: 8, scrollbarWidth: "thin" }}>
+            <div style={{ display: "flex", gap: 8, minWidth: "min-content" }}>
+              {DAYS.map(day => {
+                const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
+                const isToday = day === todayAr;
+                const dc = DAY_COLORS[day];
+                return (
+                  <div key={day} style={{ width: 132, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+                    <div style={{ textAlign: "center", padding: "7px 4px", borderRadius: "10px 10px 0 0", background: isToday ? dc : `${dc}18`, border: `1px solid ${isToday ? dc : dc + "30"}`, borderBottom: "none" }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 900, color: isToday ? "#fff" : dc }}>{day}</div>
+                      <div style={{ fontSize: 10, color: isToday ? "rgba(255,255,255,.85)" : t.mu, marginTop: 1 }}>{isToday ? "اليوم" : `${dayLecs.length} محاضرة`}</div>
+                    </div>
+                    <div style={{ flex: 1, background: t.s2, border: `1px solid ${dc}30`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: 6, display: "flex", flexDirection: "column", gap: 6, minHeight: 90 }}>
+                      {dayLecs.length === 0 ? (
+                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.dim }}>—</div>
+                      ) : dayLecs.map(lec => {
+                        const online = lec.mode === "أونلاين";
+                        const mc = online ? P.blue2 : P.green;
+                        const inner = (
+                          <>
+                            <div style={{ fontSize: 11.5, fontWeight: 900, color: mc, display: "flex", alignItems: "center", gap: 4 }}>
+                              <Clock size={11} /> {lec.time}
+                            </div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, lineHeight: 1.35, margin: "3px 0" }}>{lec.course}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9.5, fontWeight: 800, color: mc }}>
+                              {online ? <Monitor size={10} /> : <MapPin size={10} />}
+                              {online ? "أونلاين" : (lec.room && !isUrl(lec.room) ? lec.room : "حضوري")}
+                            </div>
+                          </>
+                        );
+                        const cardStyle = { textAlign: "right", display: "block", width: "100%", background: t.s1, border: `1px solid ${mc}30`, borderRight: `3px solid ${mc}`, borderRadius: 8, padding: "7px 8px", textDecoration: "none", fontFamily: "inherit", cursor: online && isUrl(lec.room) ? "pointer" : "default" };
+                        return online && isUrl(lec.room)
+                          ? <a key={lec.id} href={lec.room} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={cardStyle}>{inner}</a>
+                          : <div key={lec.id} style={cardStyle}>{inner}</div>;
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )
+      )}
+
       {showAdd ? (
         <div style={{ background: t.s1, borderRadius: 16, padding: 14, border: `1px solid ${t.bd}`, marginTop: 8, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>إضافة محاضرة جديدة</div>
@@ -4401,8 +4466,8 @@ function AuthGate({ t, setProfile, onBrowse, onToast }) {
           <div style={{ width: 78, height: 78, borderRadius: 24, margin: "0 auto 14px", background: "linear-gradient(135deg,#0a3d29,#0a8a58)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 14px 44px rgba(10,138,88,.55)", border: "1.5px solid rgba(255,255,255,.14)" }}>
             <GradCap size={40} color={P.gold} strokeWidth={1.6} />
           </div>
-          <div style={{ fontSize: 27, fontWeight: 900, color: "#fff" }}>حلول</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", marginTop: 5 }}>بوابة الطالب الذكية — الجامعة السعودية الإلكترونية</div>
+          <div style={{ fontSize: 27, fontWeight: 900, color: "#fff" }}>خصّص تجربتك</div>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", marginTop: 5, lineHeight: 1.6 }}>حساب اختياري يحفظ ملاحظاتك ومهامك ويعرض لك تقويم مسارك وخطتك فقط — بدون بريد إلكتروني.</div>
         </div>
 
         <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 24, padding: 22, border: "1px solid rgba(255,255,255,.12)", backdropFilter: "blur(10px)", boxShadow: "0 20px 60px rgba(0,0,0,.35)" }}>
@@ -4678,7 +4743,11 @@ export default function App() {
     setTab("home"); setCourse(null);
   };
 
-  const finishOnboard = () => { setSeen(true); setShowOnboard(false); };
+  // Browse-first: after the welcome, land the visitor straight on the site as
+  // a guest instead of a forced sign-up wall. An account is optional and only
+  // unlocks personalisation (saved notes, tasks, plan-scoped calendar); guests
+  // are gently invited to register via the top banner and gated actions.
+  const finishOnboard = () => { setSeen(true); setShowOnboard(false); if (!profile) setBrowseOnly(true); };
 
   const achievementsState = { viewed: recent, favorites, totalSessions, gpaCalcs, streak, notes, aiChats };
 
