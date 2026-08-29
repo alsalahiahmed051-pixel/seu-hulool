@@ -92,32 +92,32 @@ const P = {
 const THEME_PRESETS = [
   { id: "green", name: "أخضر", sw: "#0a8a58",
     brand: { navy: "#043d2a", navyDeep: "#021f15", blue: "#066b45", blue2: "#0a8a58", blueLight: "#34d399" },
-    rgb: "10,138,88", bgL: "#eef5f0", bgD: "#08130d",
+    rgb: "10,138,88", bgL: "#eef5f0", bgD: "#101d16",
     heroL: "linear-gradient(135deg, #043d2a 0%, #066b45 55%, #0a8a58 100%)",
     heroD: "linear-gradient(135deg, #05130d 0%, #0a3d29 45%, #0e5638 100%)" },
   { id: "blue", name: "أزرق", sw: "#2563eb",
     brand: { navy: "#0a2a6b", navyDeep: "#04143a", blue: "#1746b0", blue2: "#2563eb", blueLight: "#60a5fa" },
-    rgb: "37,99,235", bgL: "#eef2fb", bgD: "#080f1f",
+    rgb: "37,99,235", bgL: "#eef2fb", bgD: "#101829",
     heroL: "linear-gradient(135deg, #0a2a6b 0%, #1746b0 55%, #2563eb 100%)",
     heroD: "linear-gradient(135deg, #050b1c 0%, #0c2352 45%, #123084 100%)" },
   { id: "purple", name: "بنفسجي", sw: "#7c3aed",
     brand: { navy: "#3b1673", navyDeep: "#1f0a3f", blue: "#6d28d9", blue2: "#7c3aed", blueLight: "#a78bfa" },
-    rgb: "124,58,237", bgL: "#f3effb", bgD: "#0f0a1c",
+    rgb: "124,58,237", bgL: "#f3effb", bgD: "#171227",
     heroL: "linear-gradient(135deg, #3b1673 0%, #6d28d9 55%, #7c3aed 100%)",
     heroD: "linear-gradient(135deg, #0f0720 0%, #2e1259 45%, #43209a 100%)" },
   { id: "gold", name: "ذهبي", sw: "#c8a84b",
     brand: { navy: "#5c4708", navyDeep: "#2e2404", blue: "#a3811a", blue2: "#c8a84b", blueLight: "#e6c964" },
-    rgb: "200,168,75", bgL: "#f7f3e8", bgD: "#161206",
+    rgb: "200,168,75", bgL: "#f7f3e8", bgD: "#1e1810",
     heroL: "linear-gradient(135deg, #5c4708 0%, #a3811a 55%, #c8a84b 100%)",
     heroD: "linear-gradient(135deg, #120e04 0%, #3d3008 45%, #5c4708 100%)" },
   { id: "rose", name: "وردي", sw: "#e11d48",
     brand: { navy: "#7a132f", navyDeep: "#3f0a19", blue: "#be123c", blue2: "#e11d48", blueLight: "#fb7185" },
-    rgb: "225,29,72", bgL: "#fbeef1", bgD: "#1c0810",
+    rgb: "225,29,72", bgL: "#fbeef1", bgD: "#241019",
     heroL: "linear-gradient(135deg, #7a132f 0%, #be123c 55%, #e11d48 100%)",
     heroD: "linear-gradient(135deg, #1a0710 0%, #560d22 45%, #7a132f 100%)" },
   { id: "teal", name: "فيروزي", sw: "#0891b2",
     brand: { navy: "#0a4a5c", navyDeep: "#04262e", blue: "#0e7490", blue2: "#0891b2", blueLight: "#22d3ee" },
-    rgb: "8,145,178", bgL: "#e9f5f8", bgD: "#06141a",
+    rgb: "8,145,178", bgL: "#e9f5f8", bgD: "#0d1c24",
     heroL: "linear-gradient(135deg, #0a4a5c 0%, #0e7490 55%, #0891b2 100%)",
     heroD: "linear-gradient(135deg, #04121a 0%, #0a3a4a 45%, #0e5a70 100%)" },
 ];
@@ -130,17 +130,17 @@ const T = (d, br = THEME_PRESETS[0]) => ({
   bgMesh: d
     ? `radial-gradient(ellipse 80% 60% at 50% -5%, rgba(${br.rgb},0.20) 0%, transparent 55%), radial-gradient(ellipse 55% 45% at 5% 95%, rgba(200,168,75,0.10) 0%, transparent 45%), radial-gradient(ellipse 50% 40% at 95% 55%, rgba(${br.rgb},0.08) 0%, transparent 45%), ${br.bgD}`
     : `radial-gradient(ellipse 70% 50% at 50% -10%, rgba(${br.rgb},0.10) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(200,168,75,0.07) 0%, transparent 50%), ${br.bgL}`,
-  s1: d ? "#0f1a16" : "#ffffff",
-  s2: d ? "#17241e" : "#f5f7f6",
-  s3: d ? "#1f332a" : "#eaeeec",
-  s4: d ? "#2b473a" : "#dbe3df",
-  bd: d ? "rgba(130,150,140,0.16)" : "#dde3e0",
-  tx: d ? "#f0f6f2" : "#0c1712",
-  mu: d ? "#9fb4a9" : "#4b5a53",
-  dim: d ? "#657a70" : "#8a978f",
+  s1: d ? "#18231e" : "#ffffff",
+  s2: d ? "#20302a" : "#f5f7f6",
+  s3: d ? "#2a3d35" : "#eaeeec",
+  s4: d ? "#354b41" : "#dbe3df",
+  bd: d ? "rgba(150,175,162,0.20)" : "#dde3e0",
+  tx: d ? "#f2f7f4" : "#0c1712",
+  mu: d ? "#a9bdb2" : "#4b5a53",
+  dim: d ? "#728a7f" : "#8a978f",
   sh: d ? "0 10px 40px rgba(0,0,0,.65), 0 2px 12px rgba(0,0,0,.45)" : "0 8px 40px rgba(0,0,0,.08), 0 2px 10px rgba(0,0,0,.04)",
   shSm: d ? "0 4px 18px rgba(0,0,0,.5), 0 1px 4px rgba(0,0,0,.3)" : "0 4px 16px rgba(0,0,0,.06)",
-  grad: d ? `linear-gradient(135deg,#0f1a16,#17241e)` : `linear-gradient(135deg,#f5f7f6,#eaeeec)`,
+  grad: d ? `linear-gradient(135deg,#18231e,#20302a)` : `linear-gradient(135deg,#f5f7f6,#eaeeec)`,
   hero: d ? br.heroD : br.heroL,
   inp: d ? "#0f1a16" : "#ffffff",
 });
@@ -307,7 +307,6 @@ const SECTIONS = [
   { id: "programs", Icon: Award, label: "البرامج والتخصصات", color: "#b45309", desc: "نظرة عامة وشروط القبول والرسوم" },
   { id: "flashcards", Icon: Hash, label: "بطاقات تعليمية", color: "#0891b2", desc: "أنشئ بطاقات سؤال وجواب للمراجعة" },
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
-  { id: "ai", Icon: Sparkles, label: "اسأل الذكاء الاصطناعي", color: P.blue2, desc: "مساعد ذكي يجيب عن أي سؤال" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
 ];
 
@@ -1088,29 +1087,69 @@ function QuizMode({ subject, t, onToast }) {
 function NotesEditor({ subject, notes, setNotes, t, onToast }) {
   const [text, setText] = useState(notes[subject] || "");
   const [saved, setSaved] = useState(false);
-  useEffect(() => { setText(notes[subject] || ""); setSaved(false); }, [subject]);
+  const [dirty, setDirty] = useState(false);
+  const taRef = useRef(null);
+  useEffect(() => { setText(notes[subject] || ""); setSaved(false); setDirty(false); }, [subject]);
 
-  const save = () => {
-    setNotes(prev => ({ ...prev, [subject]: text }));
-    setSaved(true);
-    onToast?.("تم حفظ ملاحظاتك", "success");
-    setTimeout(() => setSaved(false), 2000);
-  };
+  const persist = useCallback((val) => {
+    setNotes(prev => {
+      const next = { ...prev };
+      if (val.trim()) next[subject] = val; else delete next[subject];
+      return next;
+    });
+  }, [setNotes, subject]);
+
+  // Autosave shortly after typing stops, so nothing is ever lost.
+  useEffect(() => {
+    if (!dirty) return;
+    const id = setTimeout(() => { persist(text); setSaved(true); setDirty(false); setTimeout(() => setSaved(false), 1800); }, 900);
+    return () => clearTimeout(id);
+  }, [text, dirty, persist]);
+
+  const save = () => { persist(text); setSaved(true); setDirty(false); onToast?.("تم حفظ ملاحظاتك", "success"); setTimeout(() => setSaved(false), 2000); };
   const clear = () => {
-    setText("");
+    if (!confirm("مسح كل ملاحظات هذه المادة؟")) return;
+    setText(""); setDirty(false);
     setNotes(prev => { const c = { ...prev }; delete c[subject]; return c; });
     onToast?.("تم مسح الملاحظات", "info");
   };
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); onToast?.("تم نسخ الملاحظات", "success"); }
+    catch { onToast?.("تعذّر النسخ", "warn"); }
+  };
+  // Insert a snippet at the caret (bullet, heading, divider).
+  const insert = (snippet) => {
+    const ta = taRef.current;
+    const pos = ta ? ta.selectionStart : text.length;
+    const before = text.slice(0, pos);
+    const needsNl = before && !before.endsWith("\n");
+    const next = before + (needsNl ? "\n" : "") + snippet + text.slice(pos);
+    setText(next); setDirty(true);
+    requestAnimationFrame(() => { ta?.focus(); const c = (before + (needsNl ? "\n" : "") + snippet).length; ta?.setSelectionRange(c, c); });
+  };
+
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text.trim() ? text.trim().split("\n").length : 0;
 
   return (
     <div>
+      {/* Quick insert helpers */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+        {[["• نقطة", "• "], ["✅ مهم", "✅ "], ["❓ سؤال", "❓ "], ["— فاصل", "————————\n"]].map(([label, snip]) => (
+          <button key={label} onClick={() => insert(snip)} style={{
+            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 10px",
+            cursor: "pointer", fontSize: 11.5, color: t.mu, fontFamily: "inherit", fontWeight: 700,
+          }}>{label}</button>
+        ))}
+      </div>
       <textarea
-        value={text} onChange={e => setText(e.target.value)}
+        ref={taRef}
+        value={text} onChange={e => { setText(e.target.value); setDirty(true); }}
         placeholder={`اكتب ملاحظاتك عن مادة ${subject}…`}
         style={{
-          width: "100%", minHeight: 160, border: `1.5px solid ${t.bd}`, borderRadius: 14,
+          width: "100%", minHeight: 190, border: `1.5px solid ${t.bd}`, borderRadius: 14,
           padding: "12px 14px", fontSize: 13.5, color: t.tx, background: t.s2,
-          fontFamily: "inherit", direction: "rtl", outline: "none", resize: "vertical", lineHeight: 1.8,
+          fontFamily: "inherit", direction: "rtl", outline: "none", resize: "vertical", lineHeight: 1.9,
           boxSizing: "border-box", transition: "border-color .2s",
         }}
         onFocus={e => e.target.style.borderColor = P.blue2}
@@ -1119,12 +1158,14 @@ function NotesEditor({ subject, notes, setNotes, t, onToast }) {
         <Btn variant="primary" size="sm" onClick={save} style={{ flex: 1 }}>
           {saved ? <><Check size={14} /> محفوظ</> : <><Save size={14} /> حفظ</>}
         </Btn>
-        {text && <Btn variant="ghost" size="sm" onClick={clear}>
-          <Trash2 size={13} /> مسح
-        </Btn>}
+        {text && <Btn variant="ghost" size="sm" onClick={copy}><Copy size={13} /> نسخ</Btn>}
+        {text && <Btn variant="ghost" size="sm" onClick={clear}><Trash2 size={13} /> مسح</Btn>}
       </div>
-      <div style={{ fontSize: 12, color: t.dim, marginTop: 8, textAlign: "center" }}>
-        {text.length} حرف • ملاحظاتك محفوظة محلياً
+      <div style={{ fontSize: 11.5, color: t.dim, marginTop: 8, textAlign: "center", display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        <span>{words} كلمة</span><span>·</span><span>{lines} سطر</span><span>·</span>
+        <span style={{ color: dirty ? P.orange : saved ? P.green : t.dim }}>
+          {dirty ? "جارٍ الحفظ…" : saved ? "تم الحفظ تلقائياً ✓" : "يُحفظ تلقائياً"}
+        </span>
       </div>
     </div>
   );
@@ -1620,6 +1661,45 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
     }}>{label}{count != null ? ` (${count})` : ""}</button>
   );
 
+  // One task row — used by the grouped list below.
+  const renderTask = (task) => {
+    const m = typeMeta(task.type);
+    const isOverdue = !task.done && task.dueDate && task.dueDate < today;
+    const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
+    const overdueDays = isOverdue ? Math.abs(days) : 0;
+    const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
+    const pc = prioColor[task.priority] || P.orange;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1, borderRight: `3px solid ${task.done ? P.green : m.color}` }}>
+        <button onClick={() => toggle(task.id)} title={task.done ? "إلغاء الإنجاز" : "تحديد كمنجزة"} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {task.done && <Check size={12} color={P.green} />}
+        </button>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: `${m.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <m.Icon size={14} color={m.color} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
+          <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
+            {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
+            {task.subject && <span>{task.subject}</span>}
+            {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { month: "short", day: "numeric" })}</span>}
+            {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
+          </div>
+        </div>
+        {!task.done && days != null && !isOverdue && (
+          <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, fontWeight: 800, flexShrink: 0, whiteSpace: "nowrap" }}>
+            {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
+          </div>
+        )}
+        <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={`أولوية ${task.priority}`} />
+        <button onClick={() => remove(task.id)} title="حذف" style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
+          <X size={12} />
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -1634,6 +1714,32 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
           <Plus size={13} /> إضافة
         </button>
       </div>
+
+      {/* Progress summary — completion bar + at-a-glance counters */}
+      {all.length > 0 && (() => {
+        const doneCount = all.filter(tk => tk.done).length;
+        const pct = Math.round((doneCount / all.length) * 100);
+        const overdueCount = all.filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
+        const todayCount = all.filter(tk => !tk.done && tk.dueDate === today).length;
+        const barCol = pct === 100 ? P.green : pct >= 50 ? P.blue2 : P.orange;
+        return (
+          <div style={{ background: t.s2, borderRadius: 13, padding: "11px 13px", marginBottom: 12, border: `1px solid ${t.bd}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+              <span style={{ fontSize: 12, color: t.mu, fontWeight: 700 }}>أنجزت {doneCount} من {all.length}</span>
+              <span style={{ fontSize: 13, fontWeight: 900, color: barCol }}>{pct}%</span>
+            </div>
+            <div style={{ height: 7, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 9 }}>
+              <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barCol},${barCol}bb)`, borderRadius: 4, transition: "width .6s ease" }} />
+            </div>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {overdueCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.red, background: `${P.red}15`, borderRadius: 7, padding: "3px 9px" }}>⚠ متأخرة {overdueCount}</span>}
+              {todayCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.orange, background: `${P.orange}15`, borderRadius: 7, padding: "3px 9px" }}>اليوم {todayCount}</span>}
+              {examCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.purple, background: `${P.purple}15`, borderRadius: 7, padding: "3px 9px" }}>اختبارات {examCount}</span>}
+              {pct === 100 && <span style={{ fontSize: 11, fontWeight: 800, color: P.green, background: `${P.green}15`, borderRadius: 7, padding: "3px 9px" }}>🎉 أنجزت كل مهامك</span>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Filter chips */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
@@ -1735,43 +1841,33 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
-          {sorted.slice(0, 12).map(task => {
-            const m = typeMeta(task.type);
-            const isOverdue = !task.done && task.dueDate && task.dueDate < today;
-            const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
-            const overdueDays = isOverdue ? Math.abs(days) : 0;
-            const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
-            const pc = prioColor[task.priority] || P.orange;
-            return (
-              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1 }}>
-                <button onClick={() => toggle(task.id)} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {task.done && <Check size={12} color={P.green} />}
-                </button>
-                <div style={{ width: 30, height: 30, borderRadius: 8, background: `${m.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <m.Icon size={14} color={m.color} />
+          {(() => {
+            // Group headers appear as the list crosses into a new bucket.
+            const bucketOf = (tk) => {
+              if (tk.done) return "منجزة";
+              if (!tk.dueDate) return "بلا موعد";
+              if (tk.dueDate < today) return "متأخرة";
+              if (tk.dueDate === today) return "اليوم";
+              return "قادمة";
+            };
+            const bucketCol = { "متأخرة": P.red, "اليوم": P.orange, "قادمة": P.blue2, "بلا موعد": t.mu, "منجزة": P.green };
+            let last = null;
+            return sorted.slice(0, 12).map(task => {
+              const b = bucketOf(task);
+              const header = b !== last ? b : null;
+              last = b;
+              return (
+                <div key={`g-${task.id}`}>
+                  {header && (
+                    <div style={{ fontSize: 11, fontWeight: 800, color: bucketCol[header], margin: "6px 2px 5px", display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 3, height: 10, borderRadius: 2, background: bucketCol[header] }} /> {header}
+                    </div>
+                  )}
+                  {renderTask(task)}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
-                  <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
-                    {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
-                    {task.subject && <span>{task.subject}</span>}
-                    {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</span>}
-                    {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
-                  </div>
-                </div>
-                {!task.done && days != null && !isOverdue && (
-                  <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, fontWeight: 800, flexShrink: 0, whiteSpace: "nowrap" }}>
-                    {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
-                  </div>
-                )}
-                <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={task.priority} />
-                <button onClick={() => remove(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
-                  <X size={12} />
-                </button>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
       )}
     </div>
@@ -2218,33 +2314,69 @@ function FlashCards({ subject, t }) {
   const del = (id) => setCards(c => c.filter(x => x.id !== id));
   const next = () => { setFlipped(false); setIdx(i => (i + 1) % cards.length); };
   const prev = () => { setFlipped(false); setIdx(i => (i - 1 + cards.length) % cards.length); };
+  // Mark a card known/needs-review, then advance — simple spaced-repetition cue.
+  const grade = (known) => {
+    const card = cards[idx];
+    if (card) setCards(cs => cs.map(c => c.id === card.id ? { ...c, known } : c));
+    setFlipped(false);
+    setIdx(i => (i + 1) % Math.max(1, cards.length));
+  };
+  const shuffle = () => {
+    setCards(cs => { const a2 = [...cs]; for (let i = a2.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a2[i], a2[j]] = [a2[j], a2[i]]; } return a2; });
+    setIdx(0); setFlipped(false);
+  };
 
   if (mode === "review" && cards.length > 0) {
     const card = cards[idx];
+    const knownCount = cards.filter(c => c.known).length;
+    const pct = Math.round((knownCount / cards.length) * 100);
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <button onClick={() => { setMode("list"); setIdx(0); setFlipped(false); }}
-            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", color: t.mu, fontSize: 13, fontFamily: "inherit" }}>
-            ← رجوع
+            style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: t.mu, fontSize: 13, fontFamily: "inherit", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+            <ArrowLeft size={13} /> رجوع
           </button>
-          <span style={{ fontSize: 13, color: t.mu }}>{idx + 1} / {cards.length}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={shuffle} title="خلط البطاقات" style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: t.mu, fontSize: 12, fontFamily: "inherit", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+              <RotateCcw size={12} /> خلط
+            </button>
+            <span style={{ fontSize: 13, color: t.mu, fontWeight: 700 }}>{idx + 1} / {cards.length}</span>
+          </div>
+        </div>
+        {/* Mastery progress */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.mu, marginBottom: 4 }}>
+            <span>أتقنت {knownCount} من {cards.length}</span><span style={{ color: P.green, fontWeight: 800 }}>{pct}%</span>
+          </div>
+          <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${P.green},${P.greenLight})`, borderRadius: 3, transition: "width .4s ease" }} />
+          </div>
         </div>
         <div onClick={() => setFlipped(f => !f)} style={{
           background: flipped ? `${P.green}12` : t.s2, border: `2px solid ${flipped ? P.green : t.bd}`,
           borderRadius: 18, padding: 28, textAlign: "center", cursor: "pointer",
-          minHeight: 140, display: "flex", flexDirection: "column", alignItems: "center",
-          justifyContent: "center", transition: "all .3s", marginBottom: 14,
+          minHeight: 150, display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", transition: "all .3s", marginBottom: 12, position: "relative",
         }}>
+          {card.known && <div style={{ position: "absolute", top: 10, right: 12, fontSize: 10.5, fontWeight: 800, color: P.green, background: `${P.green}18`, borderRadius: 6, padding: "2px 8px" }}>متقنة ✓</div>}
           <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 8 }}>{flipped ? "الجواب" : "السؤال"} — اضغط للقلب</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: t.tx, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 16.5, fontWeight: 700, color: t.tx, lineHeight: 1.7 }}>
             {flipped ? card.a : card.q}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={prev} style={{ flex: 1, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: 10, cursor: "pointer", color: t.tx, fontSize: 13, fontFamily: "inherit" }}>السابق</button>
-          <button onClick={next} style={{ flex: 1, background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>التالي</button>
-        </div>
+        {/* Self-grade once flipped, else plain navigation */}
+        {flipped ? (
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => grade(false)} style={{ flex: 1, background: `${P.orange}15`, border: `1.5px solid ${P.orange}45`, borderRadius: 12, padding: 11, cursor: "pointer", color: P.orange, fontSize: 13, fontFamily: "inherit", fontWeight: 800 }}>أحتاج مراجعة</button>
+            <button onClick={() => grade(true)} style={{ flex: 1, background: `linear-gradient(135deg,${P.green},${P.greenLight})`, border: "none", borderRadius: 12, padding: 11, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 800 }}>أتقنتها ✓</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={prev} style={{ flex: 1, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: 10, cursor: "pointer", color: t.tx, fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>السابق</button>
+            <button onClick={next} style={{ flex: 1, background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 12, padding: 10, cursor: "pointer", color: "#fff", fontSize: 13, fontFamily: "inherit", fontWeight: 700 }}>التالي</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -2275,11 +2407,12 @@ function FlashCards({ subject, t }) {
             <div style={{ textAlign: "center", padding: "20px 0", color: t.mu, fontSize: 13 }}>لا توجد بطاقات بعد — أضف سؤالاً وجواباً</div>
           ) : (
             cards.map(c => (
-              <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}`, marginBottom: 8 }}>
+              <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: t.s2, borderRadius: 10, border: `1px solid ${t.bd}`, borderRight: `3px solid ${c.known ? P.green : t.bd}`, marginBottom: 8 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, color: t.mu, marginBottom: 2 }}>س: {c.q}</div>
                   <div style={{ fontSize: 13, color: t.tx }}>ج: {c.a}</div>
                 </div>
+                {c.known && <span style={{ fontSize: 10, fontWeight: 800, color: P.green, background: `${P.green}18`, borderRadius: 6, padding: "2px 7px", flexShrink: 0 }}>متقنة</span>}
                 <button onClick={() => del(c.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.red, display: "flex" }}><X size={12} /></button>
               </div>
             ))
@@ -2361,7 +2494,7 @@ function AISection({ subject, t, onChat, files, onToast }) {
   );
 }
 
-function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast }) {
+function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast, onAskAI }) {
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
   const [realLoading, setRealLoading] = useState(true);
@@ -2428,6 +2561,22 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
           </button>
         </div>
       </div>
+
+      {onAskAI && (
+        <button onClick={() => onAskAI(subject)} style={{
+          width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14,
+          padding: "13px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 11, fontFamily: "inherit", marginBottom: 14,
+        }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Sparkles size={18} color={P.gold} />
+          </div>
+          <div style={{ textAlign: "right", flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: "#fff" }}>اسأل المساعد الذكي عن {subject}</div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.7)" }}>شرح، تلخيص، حل أمثلة — بالعربية</div>
+          </div>
+          <ChevronLeft size={18} color="rgba(255,255,255,.6)" />
+        </button>
+      )}
 
       <CourseProgress subject={subject} t={t} />
       <GradeCalc subject={subject} t={t} />
@@ -2748,6 +2897,7 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
   const [focusA, setFocusA] = useState("");
   const [focusLoading, setFocusLoading] = useState(false);
   const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * FOCUS_QUOTES.length));
+  const [dayGoal, setDayGoal] = useStored("focusDayGoal", 4);
   const timerRef = useRef(null);
 
   const total = (mode === "work" ? workMin : breakMin) * 60;
@@ -2812,11 +2962,14 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
         ? "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(10,138,88,.28) 0%, transparent 60%), linear-gradient(180deg,#04120c,#02070f 60%,#04120c)"
         : "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(5,150,105,.28) 0%, transparent 60%), linear-gradient(180deg,#04140d,#02100a 60%,#04140d)",
       display: "flex", flexDirection: "column", animation: "fadeIn .3s ease", transition: "background .6s ease" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px" }}>
-        <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px" }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 10, padding: "8px 13px", cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ flex: 1, fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
           <Target size={18} color={P.gold} /> وضع التركيز
         </div>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 10, padding: 9, cursor: "pointer", color: "#fff", display: "flex" }}>
+        <button onClick={onClose} title="إغلاق" style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 10, padding: 9, cursor: "pointer", color: "#fff", display: "flex" }}>
           <X size={18} />
         </button>
       </div>
@@ -2831,6 +2984,30 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
               <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", marginTop: 3 }}>{l}</div>
             </div>
           ))}
+        </div>
+
+        {/* Daily session goal — visual dots that fill as sessions complete */}
+        <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 14, padding: "11px 13px", marginBottom: 18, border: "1px solid rgba(255,255,255,.08)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,.65)", fontWeight: 700 }}>هدف اليوم</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => setDayGoal(g => Math.max(1, g - 1))} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, width: 22, height: 22, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={11} /></button>
+              <span style={{ fontSize: 12.5, fontWeight: 900, color: P.gold, minWidth: 44, textAlign: "center" }}>{todaySessions}/{dayGoal}</span>
+              <button onClick={() => setDayGoal(g => Math.min(12, g + 1))} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, width: 22, height: 22, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={11} /></button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+            {Array.from({ length: dayGoal }).map((_, i) => (
+              <div key={i} style={{
+                flex: 1, minWidth: 14, height: 7, borderRadius: 4,
+                background: i < todaySessions ? `linear-gradient(90deg,${P.gold},${P.goldRich})` : "rgba(255,255,255,.12)",
+                boxShadow: i < todaySessions ? `0 0 8px ${P.gold}55` : "none", transition: "all .3s",
+              }} />
+            ))}
+          </div>
+          {todaySessions >= dayGoal && (
+            <div style={{ fontSize: 11.5, color: P.gold, fontWeight: 800, marginTop: 8, textAlign: "center" }}>🎉 أنجزت هدف اليوم — أحسنت!</div>
+          )}
         </div>
 
         {/* Mode + preset */}
@@ -2954,57 +3131,117 @@ const DEFAULT_CALENDAR = {
 
 // Bottom strip showing ALL calendar events horizontally; content comes from
 // the admin panel (site_content['calendar']) with a built-in fallback.
+// Formats an event's Hijri-free Gregorian date in Arabic.
+function calDate(iso) {
+  try { return new Date(iso + "T00:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { year: "numeric", month: "long", day: "numeric" }); }
+  catch { return iso; }
+}
+function calChip(days) {
+  if (days <= 0) return { bg: `${P.green}20`, col: P.green, text: "انتهى" };
+  if (days === 1) return { bg: `${P.red}20`, col: P.red, text: "غداً" };
+  if (days <= 14) return { bg: `${P.red}18`, col: P.red, text: `${days} يوم` };
+  return { bg: `${P.blue2}15`, col: P.blue2, text: `${days} يوم` };
+}
+
+// Full-screen calendar view opened from the home strip — a clean vertical
+// timeline of every academic event (upcoming first, then finished).
+function CalendarModal({ t, events, onClose }) {
+  const upcoming = events.filter(e => e.days >= 0);
+  const past = events.filter(e => e.days < 0);
+  const Row = (e, i) => {
+    const Ic = CAL_ICONS[e.icon] || Calendar;
+    const col = e.color || P.blue2;
+    const chip = calChip(e.days);
+    return (
+      <div key={i} style={{ display: "flex", gap: 12, padding: "13px 14px", background: t.s1, borderRadius: 14, border: `1px solid ${t.bd}`, borderRight: `3px solid ${col}`, marginBottom: 10, opacity: e.days < 0 ? 0.6 : 1 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 12, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1px solid ${col}30` }}>
+          <Ic size={19} color={col} strokeWidth={2} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, lineHeight: 1.5 }}>{e.label}</div>
+          <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>{calDate(e.date)}</div>
+          {audienceLabel(e.audience) && (
+            <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 8px", marginTop: 6 }}>خاص بـ {audienceLabel(e.audience)}</div>
+          )}
+        </div>
+        <div style={{ background: chip.bg, color: chip.col, borderRadius: 9, padding: "4px 10px", fontSize: 11.5, fontWeight: 800, alignSelf: "flex-start", flexShrink: 0 }}>{chip.text}</div>
+      </div>
+    );
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ fontSize: 17, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Calendar size={18} color={P.gold} /> التقويم الأكاديمي
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px", maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        {upcoming.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, marginBottom: 10 }}>القادمة</div>}
+        {upcoming.map(Row)}
+        {past.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, margin: "18px 0 10px" }}>المنتهية</div>}
+        {past.map(Row)}
+        {events.length === 0 && <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>لا أحداث في التقويم بعد</div>}
+      </div>
+    </div>
+  );
+}
+
 function AcademicCalendar({ t, profile }) {
   const { data: content } = useSiteContent("calendar");
+  const [open, setOpen] = useState(false);
   const now = new Date();
+  // Public site: everyone sees every event. The audience tag stays only as an
+  // informational badge ("خاص بـ خطة أ") — it never hides anything.
   const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
-    .filter(e => audienceMatches(e.audience, profile))
     .map(e => ({ ...e, days: Math.ceil((new Date(e.date + "T00:00:00") - now) / 86400000) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (!events.length) return null;
-  // Is the calendar tailored to this student's plan/track?
-  const scoped = profile?.plan
-    ? `${profile.track} · ${profile.plan}`
-    : profile?.track || "";
+  const upcoming = events.filter(e => e.days >= 0);
+  const strip = (upcoming.length ? upcoming : events).slice(0, 8);
 
   return (
-    <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
-        {scoped && <span style={{ fontSize: 10.5, fontWeight: 700, color: P.blue2, background: `${P.blue2}14`, border: `1px solid ${P.blue2}25`, borderRadius: 8, padding: "2px 7px" }}>{scoped}</span>}
+    <>
+      {open && <CalendarModal t={t} events={events} onClose={() => setOpen(false)} />}
+      <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
+        <button onClick={() => setOpen(true)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+            <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
+          </span>
+          <span style={{ fontSize: 12, color: P.blue2, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>عرض الكل <ChevronLeft size={12} /></span>
+        </button>
+        <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
+          {strip.map((e, i) => {
+            const Ic = CAL_ICONS[e.icon] || Calendar;
+            const col = e.color || P.blue2;
+            const chip = calChip(e.days);
+            return (
+              <button key={i} onClick={() => setOpen(true)} style={{
+                flexShrink: 0, width: 158, background: t.s2, borderRadius: 14, textAlign: "right", cursor: "pointer", fontFamily: "inherit",
+                border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${col}30` }}>
+                    <Ic size={16} color={col} strokeWidth={2} />
+                  </div>
+                  <div style={{ background: chip.bg, color: chip.col, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>{chip.text}</div>
+                </div>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.5, minHeight: 36 }}>{e.label}</div>
+                <div style={{ fontSize: 11.5, color: t.mu }}>{calDate(e.date)}</div>
+                {audienceLabel(e.audience) && (
+                  <div style={{ fontSize: 10, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 6px", alignSelf: "flex-start" }}>
+                    خاص بـ {audienceLabel(e.audience)}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
-        {events.map((e, i) => {
-          const Ic = CAL_ICONS[e.icon] || Calendar;
-          const col = e.color || P.blue2;
-          const chipBg = e.days <= 0 ? `${P.green}20` : e.days <= 14 ? `${P.red}20` : `${col}15`;
-          const chipCol = e.days <= 0 ? P.green : e.days <= 14 ? P.red : col;
-          return (
-            <div key={i} style={{
-              flexShrink: 0, width: 158, background: t.s2, borderRadius: 14,
-              border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: `${col}18`, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${col}30` }}>
-                  <Ic size={16} color={col} strokeWidth={2} />
-                </div>
-                <div style={{ background: chipBg, color: chipCol, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>
-                  {e.days <= 0 ? "انتهى" : e.days === 1 ? "غداً" : `${e.days} يوم`}
-                </div>
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.5, minHeight: 36 }}>{e.label}</div>
-              <div style={{ fontSize: 11.5, color: t.mu }}>{new Date(e.date + "T00:00:00").toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" })}</div>
-              {audienceLabel(e.audience) && (
-                <div style={{ fontSize: 10, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 6px", alignSelf: "flex-start" }}>
-                  خاص بـ {audienceLabel(e.audience)}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -3057,32 +3294,30 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           {profile?.track ? `مسارك: ${profile.track}${profile.plan ? " — " + profile.plan : ""} • بوابتك الأكاديمية الذكية` : "بوابتك الأكاديمية الذكية للجامعة السعودية الإلكترونية"}
         </p>
         <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-          <Btn onClick={() => setActiveTab("explore")} size="sm" variant="gold">
-            <GradCap size={13} /> اختر مسارك
-          </Btn>
-          <button onClick={() => setActiveTab("gpa")} style={{
-            background: "rgba(255,255,255,.1)", border: "none", borderRadius: 20,
-            padding: "6px 14px", cursor: "pointer", fontSize: 13, color: "rgba(255,255,255,.8)",
-            fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
-          }}>
-            <Calculator size={12} /> احسب معدلك
-          </button>
-          <button onClick={onOpenAI} style={{
-            background: `linear-gradient(135deg,${P.gold}22,${P.gold}44)`, border: `1px solid ${P.gold}60`,
-            borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 13,
-            color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
-          }}>
-            <Sparkles size={12} /> المساعد الذكي
-          </button>
-          {pwaPrompt && (
-            <button onClick={installPwa} style={{
-              background: `${P.green}25`, border: `1px solid ${P.green}50`,
-              borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 13,
-              color: P.green, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5,
-            }}>
-              <Download size={12} /> ثبّت التطبيق
-            </button>
-          )}
+          {(() => {
+            // Uniform hero pills — one primary (gold, filled), the rest subtle
+            // glass chips, all the same height/radius for a tidy row.
+            const base = { height: 34, padding: "0 14px", borderRadius: 17, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
+            const ghost = { ...base, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.16)", color: "rgba(255,255,255,.9)" };
+            return (
+              <>
+                <button onClick={() => setActiveTab("explore")} style={{ ...base, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", color: "#3a2e05", fontWeight: 800, boxShadow: `0 6px 18px ${P.gold}44` }}>
+                  <GradCap size={14} /> اختر مسارك
+                </button>
+                <button onClick={onOpenAI} style={ghost}>
+                  <Sparkles size={13} color={P.gold} /> المساعد الذكي
+                </button>
+                <button onClick={() => setActiveTab("gpa")} style={ghost}>
+                  <Calculator size={13} /> احسب معدلك
+                </button>
+                {pwaPrompt && (
+                  <button onClick={installPwa} style={{ ...base, background: `${P.green}22`, border: `1px solid ${P.green}55`, color: "#8ff0c0" }}>
+                    <Download size={13} /> ثبّت التطبيق
+                  </button>
+                )}
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -3155,24 +3390,28 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       )}
 
       <div style={{
-        background: t.s1, borderRadius: 18,
+        background: `linear-gradient(135deg, ${P.gold}14, ${P.gold}05)`, borderRadius: 18,
         padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
-        boxShadow: `0 4px 20px ${P.gold}15`,
+        boxShadow: `0 4px 20px ${P.gold}12`, position: "relative", overflow: "hidden",
       }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ position: "absolute", top: -24, left: -14, width: 90, height: 90, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 10, background: `${P.gold}20`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Lightbulb size={15} color={P.gold} />
+            <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40` }}>
+              <Lightbulb size={17} color="#3a2e05" />
             </div>
-            <span style={{ fontSize: 13, fontWeight: 800, color: P.gold }}>نصيحة الساعة</span>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
+              <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>{tipIdx + 1} من {TIPS.length}</div>
+            </div>
           </div>
           <button
             onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
-            style={{ background: `${P.gold}15`, border: `1px solid ${P.gold}35`, borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, color: P.gold, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 700 }}>
-            <RotateCcw size={11} /> التالية
+            style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 20, padding: "6px 13px", cursor: "pointer", fontSize: 12, color: "#3a2e05", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, fontWeight: 800 }}>
+            <RotateCcw size={12} /> التالية
           </button>
         </div>
-        <p style={{ margin: 0, fontSize: 13.5, color: t.tx, lineHeight: 1.8, fontWeight: 500, paddingRight: 4, borderRight: `3px solid ${P.gold}`, paddingRight: 12 }}>{tip}</p>
+        <p style={{ margin: 0, fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative" }}>{tip}</p>
       </div>
 
       <div style={{ marginBottom: 16 }}>
@@ -3702,6 +3941,49 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
         </div>
       )}
 
+      {/* My study plan — shows the subjects of the student's chosen plan */}
+      {!editing && profile?.track && (() => {
+        const planKey = profile.plan === "خطة ب" ? "b" : profile.plan === "خطة أ" ? "a" : null;
+        let subjects = [];
+        let heading = profile.track;
+        if (profile.track === "تحضيري" && planKey) {
+          subjects = TREE.preparatory.plans[planKey]?.subjects || [];
+          heading = `التحضيري — ${profile.plan}`;
+        }
+        return (
+          <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.blue2}30`, boxShadow: t.shSm }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                <GraduationCap size={15} color={P.blue2} /> خطتي الدراسية
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 800, color: P.blue2, background: `${P.blue2}14`, borderRadius: 8, padding: "2px 9px" }}>{heading}</span>
+            </div>
+            {subjects.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {subjects.map((s) => {
+                  const SIcon = getIcon(s);
+                  return (
+                    <button key={s} onClick={() => openCourse(s)} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "11px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "right", display: "flex", alignItems: "center", gap: 10, transition: "all .2s" }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2 + "55"}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                      <div style={{ width: 32, height: 32, borderRadius: 9, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <SIcon size={15} color={P.blue2} />
+                      </div>
+                      <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
+                      <ChevronLeft size={14} color={t.dim} />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <button onClick={() => setActiveTab("explore")} style={{ width: "100%", background: t.s2, border: `1px dashed ${t.bd}`, borderRadius: 12, padding: "13px", cursor: "pointer", fontFamily: "inherit", color: t.mu, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Compass size={14} color={P.blue2} /> استكشف مواد {profile.track} ومقرراته
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       {/* All my notes in one place */}
       {!editing && (() => {
         const myNotes = Object.entries(notes || {}).filter(([, v]) => (v || "").trim());
@@ -3825,6 +4107,7 @@ function NotifBanner({ notifs, setNotifs, t }) {
         <Icon size={15} color={meta.color} />
       </div>
       <div style={{ flex: 1, minWidth: 0, lineHeight: 1.4 }}>
+        {item.audienceText && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 6, padding: "1px 7px", marginLeft: 6 }}>{item.audienceText}</span>}
         <span style={{ fontSize: 12.5, fontWeight: 800, color: meta.color }}>{item.title}</span>
         <span style={{ fontSize: 12.5, color: t.tx, marginRight: 6 }}>— {item.text}</span>
       </div>
@@ -3942,8 +4225,9 @@ function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
               <NIcon size={16} color={meta.color} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: "1px 7px" }}>{meta.label}</span>
+                {n.audienceText && <span style={{ fontSize: 10.5, fontWeight: 700, color: P.gold, background: `${P.gold}18`, borderRadius: 6, padding: "1px 7px" }}>{n.audienceText}</span>}
                 {!n.read && <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, display: "inline-block" }} />}
               </div>
               <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{n.title}</div>
@@ -4784,6 +5068,7 @@ export default function App() {
           subject={course} favorites={favorites} toggleFav={toggleFav}
           notes={notes} setNotes={setNotes} t={t}
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
+          onAskAI={(subj) => { setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
           onBack={() => { setCourse(null); setTab("explore"); }} />}
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
@@ -4870,7 +5155,8 @@ export default function App() {
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
         onReset={resetAll} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
-        query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
+        query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
+        onNavigate={(id) => { setTab(id); setCourse(null); }} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
 
       {showAI && (
@@ -4961,7 +5247,18 @@ export default function App() {
 /* ══════════════════════════════════════════════════════════════
    SEARCH OVERLAY (with input bar)
    ══════════════════════════════════════════════════════════════ */
-function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
+// Navigable destinations (pages/tools) so search finds "anything", not just
+// subjects. Each has keywords to match loosely.
+const SEARCH_PAGES = [
+  { tab: "explore", label: "المسارات والتخصصات", Icon: Compass, color: "#0a8a58", kw: "مسار تخصص استكشاف كليات برامج تجميعات ملخصات خطط مقررات" },
+  { tab: "schedule", label: "جدولي الأسبوعي", Icon: CalendarDays, color: "#0891b2", kw: "جدول محاضرات حصص مواعيد" },
+  { tab: "gpa", label: "حاسبة المعدل", Icon: Calculator, color: "#2563eb", kw: "حساب معدل درجات gpa تراكمي فصلي" },
+  { tab: "fav", label: "المفضلة", Icon: Star, color: "#c8a84b", kw: "مفضلة محفوظات نجمة" },
+  { tab: "links", label: "روابط الجامعة", Icon: Link2, color: "#0891b2", kw: "روابط بلاك بورد بوابة sso بريد مكتبة رابط" },
+  { tab: "profile", label: "حسابي", Icon: CircleUser, color: "#6d28d9", kw: "حساب ملف اعدادات بروفايل خطة تخصص" },
+];
+
+function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate }) {
   const ref = useRef(null);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
@@ -4982,7 +5279,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
           }}>
             <Search size={18} color={t.mu} />
             <input ref={ref} value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="ابحث عن مادة، تخصص، أو برنامج..."
+              placeholder="ابحث عن أي شيء — مادة، تخصص، صفحة، أداة..."
               style={{
                 flex: 1, border: "none", outline: "none", fontSize: 14, color: t.tx,
                 background: "transparent", fontFamily: "inherit", direction: "rtl",
@@ -5026,7 +5323,9 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
                 else items = TREE.graduate.programs.filter(s => s.toLowerCase().includes(q));
                 return { label, color, items };
               }).filter(g => g.items.length);
-              const total = groups.reduce((a, g) => a + g.items.length, 0);
+              // Pages/tools that match the query (label or keywords).
+              const pageHits = onNavigate ? SEARCH_PAGES.filter(p => p.label.toLowerCase().includes(q) || p.kw.includes(q)) : [];
+              const total = groups.reduce((a, g) => a + g.items.length, 0) + pageHits.length;
               if (!total) return (
                 <div style={{ textAlign: "center", padding: 30, color: t.mu, fontSize: 13 }}>
                   لا توجد نتائج لـ «{query}»
@@ -5035,6 +5334,27 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
               return (
                 <>
                   <div style={{ fontSize: 12, color: t.mu, marginBottom: 10, padding: "0 4px" }}>{total} نتيجة</div>
+                  {pageHits.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                        <div style={{ width: 3, height: 10, borderRadius: 2, background: t.mu }} /> صفحات وأدوات
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        {pageHits.map((p, i) => (
+                          <button key={i} onClick={() => { onNavigate(p.tab); onClose(); }} style={{
+                            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11, padding: "10px 12px", cursor: "pointer",
+                            display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", textAlign: "right",
+                          }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 9, background: `${p.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <p.Icon size={15} color={p.color} />
+                            </div>
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{p.label}</div>
+                            <ChevronLeft size={13} color={t.dim} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {groups.map((g, gi) => (
                     <div key={gi} style={{ marginBottom: 12 }}>
                       <div style={{ fontSize: 11.5, fontWeight: 800, color: g.color, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>

@@ -42,15 +42,14 @@ function timeAgo(iso) {
   } catch { return '' }
 }
 
-// Does a broadcast's audience tag apply to the current student's saved profile?
-// Guests (no profile) only see 'all'.
-function matchesAudience(aud) {
-  if (!aud || aud === 'all') return true
-  let profile = null
-  try { profile = JSON.parse(localStorage.getItem('student_profile') || 'null') } catch {}
-  if (aud.startsWith('track:')) return profile?.track === aud.slice(6)
-  if (aud.startsWith('plan:')) { const [tr, pl] = aud.slice(5).split('|'); return profile?.track === tr && profile?.plan === pl }
-  return true
+// Public site: every visitor sees every broadcast. The audience tag is no
+// longer used to hide notifications — it is surfaced as a label instead
+// (see audienceText) so a targeted announcement reads e.g. "لطلاب خطة أ".
+function audienceText(aud) {
+  if (!aud || aud === 'all') return ''
+  if (aud.startsWith('track:')) return `لطلاب ${aud.slice(6)}`
+  if (aud.startsWith('plan:')) { const [tr, pl] = aud.slice(5).split('|'); return `لطلاب ${tr} — ${pl}` }
+  return ''
 }
 
 export function useLiveNotifications() {
@@ -86,13 +85,15 @@ export function useLiveNotifications() {
     return () => { supabase.removeChannel(channel) }
   }, [load, supabase])
 
-  const notifs = raw.filter(n => matchesAudience(n.audience)).map(n => ({
+  const notifs = raw.map(n => ({
     id: n.id,
     type: n.type || 'info',
     title: n.title,
     text: n.body,
     time: timeAgo(n.created_at),
     iconKey: TYPE_ICON[n.type] || 'bell',
+    audience: n.audience || 'all',
+    audienceText: audienceText(n.audience),
     read: readIds.has(n.id),
   }))
 
