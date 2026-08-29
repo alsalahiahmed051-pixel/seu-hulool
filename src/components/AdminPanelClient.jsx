@@ -116,6 +116,15 @@ const AUDIENCE_OPTIONS = [
   { v: 'plan:تحضيري|خطة ب', l: 'التحضيري — خطة ب' },
 ]
 
+// Short label shown on a sent announcement so the admin sees who it targets.
+// Matches the wording students see in the app.
+function audienceBadge(aud) {
+  if (!aud || aud === 'all') return ''
+  if (aud.startsWith('track:')) return `لطلاب ${aud.slice(6)}`
+  if (aud.startsWith('plan:')) { const [tr, pl] = aud.slice(5).split('|'); return `لطلاب ${tr} — ${pl}` }
+  return ''
+}
+
 // Icons an admin can assign to a calendar event (mirror CAL_ICONS in the app).
 const CAL_ICON_NAMES = ['Flame', 'Trophy', 'FileText', 'GraduationCap', 'PenLine', 'Calendar', 'Award', 'Bell', 'Star', 'BookOpen', 'CheckCircle', 'CreditCard']
 const CAL_SEED = {
@@ -671,7 +680,9 @@ function NotificationsTab({ flash }) {
           {AUDIENCE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
         </select>
         <div style={{ fontSize: 12, color: 'var(--mu)', marginBottom: 12, lineHeight: 1.6 }}>
-          «إعلان» و«تنبيه» يظهران كشريط بارز أعلى الموقع لكل الطلاب (قابل للإغلاق)، بينما «معلومة» و«خبر جيد» تظهر فقط عند فتح زر الجرس.
+          «إعلان» و«تنبيه» يظهران كشريط بارز أعلى الموقع (قابل للإغلاق)، بينما «معلومة» و«خبر جيد» تظهر عند فتح زر الجرس.
+          <br />
+          الموقع عام، فالإعلان يصل الجميع — واختيار جمهور محدّد يضيف وسماً واضحاً على الإعلان مثل «لطلاب خطة أ».
         </div>
         <button type="submit" disabled={sending || !title.trim() || !body.trim()} style={{ ...S.btn(), width: '100%', opacity: (sending || !title.trim() || !body.trim()) ? 0.5 : 1 }}>
           {sending ? 'جارٍ الإرسال...' : <><Send size={14} /> بث الإشعار</>}
@@ -684,7 +695,12 @@ function NotificationsTab({ flash }) {
           <div key={n.id} style={rowStyle}>
             <div style={{ width: 8, height: 8, borderRadius: '50%', background: typeColors[n.type] || P.blue2, flexShrink: 0, marginTop: 6 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx)' }}>{n.title}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {n.title}
+                {audienceBadge(n.audience) && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: P.gold, background: `${P.gold}20`, borderRadius: 6, padding: '1px 7px' }}>{audienceBadge(n.audience)}</span>
+                )}
+              </div>
               <div style={{ fontSize: 11.5, color: 'var(--mu2)', lineHeight: 1.6 }}>{n.body}</div>
               <div style={{ fontSize: 11.5, color: 'var(--mu)', marginTop: 2 }}>{fmtDate(n.created_at)}</div>
             </div>

@@ -12,12 +12,15 @@ export async function GET() {
 
   const db = createAdminClient()
   // Broadcasts only (user_id IS NULL) — the ones an admin sends to everyone.
-  const { data, error } = await db
+  const run = (cols) => db
     .from('notifications')
-    .select('id, type, title, body, link_url, created_at')
+    .select(cols)
     .is('user_id', null)
     .order('created_at', { ascending: false })
     .limit(50)
+  // Prefer the audience column; fall back if the migration isn't applied yet.
+  let { data, error } = await run('id, type, title, body, link_url, created_at, audience')
+  if (error) ({ data, error } = await run('id, type, title, body, link_url, created_at'))
   if (error) return Response.json({ error: error.message }, { status: 500 })
   return Response.json({ notifications: data || [] })
 }
