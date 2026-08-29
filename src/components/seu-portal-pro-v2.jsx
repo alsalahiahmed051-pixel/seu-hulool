@@ -2850,6 +2850,30 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
 // Icons an admin can pick for a calendar event (JSON stores the name).
 const CAL_ICONS = { Flame, Trophy, FileText, GraduationCap, PenLine, Calendar, Award, Bell, Star, BookOpen, CheckCircle, CreditCard };
 const CAL_ICON_NAMES = Object.keys(CAL_ICONS);
+
+// Shared audience matcher — used by the calendar (and mirrors the notification
+// filter). An event/announcement tagged with an audience shows only to the
+// students it targets. Values:
+//   undefined | 'all'          → everyone (guests included)
+//   'track:<track>'            → any student in that track
+//   'plan:<track>|<plan>'      → only that track+plan (e.g. تحضيري خطة أ)
+// Guests (no profile) see only 'all'.
+function audienceMatches(aud, profile) {
+  if (!aud || aud === "all") return true;
+  if (aud.startsWith("track:")) return profile?.track === aud.slice(6);
+  if (aud.startsWith("plan:")) {
+    const [tr, pl] = aud.slice(5).split("|");
+    return profile?.track === tr && profile?.plan === pl;
+  }
+  return true;
+}
+// Short human label for an audience tag (used in badges).
+function audienceLabel(aud) {
+  if (!aud || aud === "all") return "";
+  if (aud.startsWith("track:")) return aud.slice(6);
+  if (aud.startsWith("plan:")) { const [tr, pl] = aud.slice(5).split("|"); return `${tr} · ${pl}`; }
+  return "";
+}
 // Default academic calendar — admin edits override this via site_content.
 const DEFAULT_CALENDAR = {
   events: [
@@ -2864,17 +2888,25 @@ const DEFAULT_CALENDAR = {
 
 // Bottom strip showing ALL calendar events horizontally; content comes from
 // the admin panel (site_content['calendar']) with a built-in fallback.
-function AcademicCalendar({ t }) {
+function AcademicCalendar({ t, profile }) {
   const { data: content } = useSiteContent("calendar");
   const now = new Date();
   const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
+    .filter(e => audienceMatches(e.audience, profile))
     .map(e => ({ ...e, days: Math.ceil((new Date(e.date + "T00:00:00") - now) / 86400000) }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  if (!events.length) return null;
+  // Is the calendar tailored to this student's plan/track?
+  const scoped = profile?.plan
+    ? `${profile.track} · ${profile.plan}`
+    : profile?.track || "";
+
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
+        {scoped && <span style={{ fontSize: 10.5, fontWeight: 700, color: P.blue2, background: `${P.blue2}14`, border: `1px solid ${P.blue2}25`, borderRadius: 8, padding: "2px 7px" }}>{scoped}</span>}
       </div>
       <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
         {events.map((e, i) => {
@@ -2897,6 +2929,11 @@ function AcademicCalendar({ t }) {
               </div>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.5, minHeight: 36 }}>{e.label}</div>
               <div style={{ fontSize: 11.5, color: t.mu }}>{new Date(e.date + "T00:00:00").toLocaleDateString("ar-SA", { year: "numeric", month: "long", day: "numeric" })}</div>
+              {audienceLabel(e.audience) && (
+                <div style={{ fontSize: 10, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 6px", alignSelf: "flex-start" }}>
+                  خاص بـ {audienceLabel(e.audience)}
+                </div>
+              )}
             </div>
           );
         })}
@@ -3099,7 +3136,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       </div>
 
       {/* Academic calendar strip — bottom */}
-      <AcademicCalendar t={t} />
+      <AcademicCalendar t={t} profile={profile} />
 
       {/* Focus mode — bottom */}
       <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit", marginBottom: 8 }}>

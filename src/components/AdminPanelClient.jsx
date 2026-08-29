@@ -104,6 +104,18 @@ const TABS = [
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
+// Audience targeting options shared by notifications and calendar events.
+// Values mirror audienceMatches() in seu-portal-pro-v2.jsx.
+const AUDIENCE_OPTIONS = [
+  { v: 'all', l: 'كل الطلاب' },
+  { v: 'track:تحضيري', l: 'مسار: التحضيري' },
+  { v: 'track:تخصص', l: 'مسار: التخصص' },
+  { v: 'track:دبلوم', l: 'مسار: الدبلوم' },
+  { v: 'track:دراسات عليا', l: 'مسار: الدراسات العليا' },
+  { v: 'plan:تحضيري|خطة أ', l: 'التحضيري — خطة أ' },
+  { v: 'plan:تحضيري|خطة ب', l: 'التحضيري — خطة ب' },
+]
+
 // Icons an admin can assign to a calendar event (mirror CAL_ICONS in the app).
 const CAL_ICON_NAMES = ['Flame', 'Trophy', 'FileText', 'GraduationCap', 'PenLine', 'Calendar', 'Award', 'Bell', 'Star', 'BookOpen', 'CheckCircle', 'CreditCard']
 const CAL_SEED = {
@@ -656,13 +668,7 @@ function NotificationsTab({ flash }) {
         </select>
         <label style={S.label}>الجمهور المستهدف</label>
         <select value={audience} onChange={e => setAudience(e.target.value)} style={{ ...S.input, marginBottom: 6 }}>
-          <option value="all">كل الطلاب</option>
-          <option value="track:تحضيري">مسار: التحضيري</option>
-          <option value="track:تخصص">مسار: التخصص</option>
-          <option value="track:دبلوم">مسار: الدبلوم</option>
-          <option value="track:دراسات عليا">مسار: الدراسات العليا</option>
-          <option value="plan:تحضيري|خطة أ">التحضيري — خطة أ</option>
-          <option value="plan:تحضيري|خطة ب">التحضيري — خطة ب</option>
+          {AUDIENCE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
         </select>
         <div style={{ fontSize: 12, color: 'var(--mu)', marginBottom: 12, lineHeight: 1.6 }}>
           «إعلان» و«تنبيه» يظهران كشريط بارز أعلى الموقع لكل الطلاب (قابل للإغلاق)، بينما «معلومة» و«خبر جيد» تظهر فقط عند فتح زر الجرس.
@@ -936,6 +942,10 @@ function CalendarTab({ flash }) {
             </div>
             <div><label style={S.label}>اللون</label><input type="color" value={e.color || '#2563eb'} onChange={ev => set(i, { color: ev.target.value })} style={{ ...S.input, padding: 4, width: 52, height: 38 }} /></div>
           </div>
+          <label style={{ ...S.label, marginTop: 10 }}>يظهر لـ</label>
+          <select value={e.audience || 'all'} onChange={ev => set(i, { audience: ev.target.value })} style={S.input}>
+            {AUDIENCE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
         </div>
       ))}
       <button onClick={addEv} style={{ ...S.btn(P.blue2), width: '100%', marginBottom: 16 }}><Plus size={14} /> إضافة حدث</button>
