@@ -337,6 +337,7 @@ function FilesTab({ flash }) {
   const [loading, setLoading] = useState(true)
   const [blobEnabled, setBlobEnabled] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
   const [course, setCourse] = useState('')
   const [category, setCategory] = useState('collections')
   const [displayName, setDisplayName] = useState('')
@@ -356,20 +357,43 @@ function FilesTab({ flash }) {
     e.preventDefault()
     if (!selected || !course) return
     setUploading(true)
-    const form = new FormData()
-    form.append('file', selected)
-    form.append('courseName', course)
-    form.append('category', category)
-    form.append('displayName', displayName || selected.name.replace(/\.pdf$/i, ''))
-    const res = await fetch('/api/upload', { method: 'POST', body: form })
-    const d = await res.json().catch(() => ({}))
-    setUploading(false)
-    if (d.ok) {
+    setProgress(0)
+    try {
+      // Send the file straight to Blob storage. Routing it through our own
+      // function meant a double transfer that stalled and then timed out; the
+      // function now only signs the upload.
+      const { upload: blobUpload } = await import('@vercel/blob/client')
+      const blob = await blobUpload(selected.name, selected, {
+        access: 'public',
+        handleUploadUrl: '/api/upload',
+        contentType: 'application/pdf',
+        onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
+      })
+
+      // Then record it in the library index.
+      const { ok, data } = await apiJSON('/api/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          courseName: course,
+          category,
+          name: displayName || selected.name.replace(/\.pdf$/i, ''),
+          size: selected.size,
+        }),
+      })
+      if (!ok) throw new Error(data.error || 'تعذّر حفظ بيانات الملف')
+
       flash('تم رفع الملف بنجاح')
       setSelected(null); setDisplayName('')
       if (fileRef.current) fileRef.current.value = ''
       load()
-    } else flash(d.error || 'فشل الرفع', 'error')
+    } catch (err) {
+      flash(err.message || 'فشل الرفع', 'error')
+    } finally {
+      setUploading(false)
+      setProgress(0)
+    }
   }
 
   async function remove(f) {
@@ -426,7 +450,9 @@ function FilesTab({ flash }) {
             )}
           </div>
           <button type="submit" disabled={uploading || !selected || !course} style={{ ...S.btn(), width: '100%', opacity: (uploading || !selected || !course) ? 0.5 : 1 }}>
-            {uploading ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> جارٍ الرفع...</> : <><Upload size={14} /> رفع الملف</>}
+            {uploading
+              ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> جارٍ الرفع {progress > 0 ? `${progress}%` : '...'}</>
+              : <><Upload size={14} /> رفع الملف</>}
           </button>
         </form>
       )}

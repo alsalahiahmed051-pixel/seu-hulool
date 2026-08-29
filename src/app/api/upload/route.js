@@ -1,96 +1,50 @@
-import { put, list, del } from '@vercel/blob'
+import { handleUpload } from '@vercel/blob/client'
 import { requireAdmin } from '@/lib/admin-guard'
 
 export const runtime = 'nodejs'
-export const maxDuration = 60
 
 const BLOB_ENABLED = !!process.env.BLOB_READ_WRITE_TOKEN &&
   !process.env.BLOB_READ_WRITE_TOKEN.includes('placeholder')
 
-const META_PREFIX = 'hulool-files-db'
 const MAX_SIZE = 20 * 1024 * 1024
 
-async function readMeta() {
-  try {
-    const { blobs } = await list({ prefix: META_PREFIX })
-    if (!blobs.length) return []
-    const latest = blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0]
-    const res = await fetch(latest.url, {
-      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
-    })
-    return await res.json()
-  } catch { return [] }
-}
-
-async function writeMeta(records) {
-  try {
-    const { blobs } = await list({ prefix: META_PREFIX })
-    if (blobs.length) await del(blobs.map(b => b.url))
-  } catch { /* ignore */ }
-
-  await put(`${META_PREFIX}-${Date.now()}.json`, JSON.stringify(records), {
-    access: 'private',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-  })
-}
-
+/**
+ * Issues a short-lived token so the browser uploads straight to Blob storage.
+ *
+ * The file used to be POSTed through this function, which meant it crossed the
+ * network twice (browser → function → Blob) while the function stayed open for
+ * the whole transfer. On Vercel that also capped uploads at the ~4.5 MB
+ * serverless request-body limit, and the metadata round-trips afterwards
+ * pushed even small files past the function timeout — the "hangs, then fails"
+ * report. Now only this tiny JSON handshake touches the function; the file
+ * goes browser → Blob directly, so size and duration limits no longer apply.
+ */
 export async function POST(request) {
   const gate = await requireAdmin()
-  if (!gate.ok) {
-    return Response.json({ error: gate.error }, { status: gate.status })
-  }
-  if (!BLOB_ENABLED) {
-    return Response.json({ error: 'BLOB_READ_WRITE_TOKEN غير مضبوط' }, { status: 503 })
-  }
+  if (!gate.ok) return Response.json({ error: gate.error }, { status: gate.status })
+  if (!BLOB_ENABLED) return Response.json({ error: 'BLOB_READ_WRITE_TOKEN غير مضبوط' }, { status: 503 })
+
+  const body = await request.json().catch(() => null)
+  if (!body) return Response.json({ error: 'صيغة الطلب غير صحيحة' }, { status: 400 })
 
   try {
-    const formData = await request.formData()
-    const file = formData.get('file')
-    const courseName = formData.get('courseName')
-    const category = formData.get('category')
-    const displayName = formData.get('displayName') || file?.name || 'ملف'
-
-    if (!file || !courseName || !category)
-      return Response.json({ error: 'البيانات ناقصة' }, { status: 400 })
-    if (file.size > MAX_SIZE)
-      return Response.json({ error: 'حجم الملف يتجاوز 20 ميجابايت' }, { status: 400 })
-
-    const allowedExts = ['.pdf', '.PDF']
-    if (!allowedExts.some(e => file.name.endsWith(e)) && file.type !== 'application/pdf')
-      return Response.json({ error: 'فقط ملفات PDF مسموحة' }, { status: 400 })
-
-    const safeName = file.name.replace(/[^a-zA-Z0-9.؀-ۿ_-]/g, '_')
-    const blob = await put(`files/${Date.now()}-${safeName}`, file, {
-      access: 'private',
-      contentType: 'application/pdf',
-      addRandomSuffix: false,
+    const result = await handleUpload({
+      body,
+      request,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      // Admin identity is already verified above; constrain what the issued
+      // token may store so it can't be repurposed for arbitrary content.
+      onBeforeGenerateToken: async () => ({
+        allowedContentTypes: ['application/pdf'],
+        maximumSizeInBytes: MAX_SIZE,
+        addRandomSuffix: true,
+      }),
+      // Metadata is recorded by the client calling POST /api/files once the
+      // upload resolves; nothing to do here.
+      onUploadCompleted: async () => {},
     })
-
-    const id = crypto.randomUUID()
-    const record = {
-      id,
-      name: displayName,
-      courseName,
-      category,
-      size: file.size,
-      sizeLabel: formatSize(file.size),
-      blobUrl: blob.url,
-      uploadedAt: new Date().toISOString(),
-      downloads: 0,
-    }
-
-    const all = await readMeta()
-    all.unshift(record)
-    await writeMeta(all)
-
-    return Response.json({ ok: true, file: record })
+    return Response.json(result)
   } catch (err) {
-    return Response.json({ error: 'خطأ في الرفع: ' + err.message }, { status: 500 })
+    return Response.json({ error: 'تعذّر بدء الرفع: ' + err.message }, { status: 500 })
   }
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
