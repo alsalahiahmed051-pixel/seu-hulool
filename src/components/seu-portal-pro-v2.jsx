@@ -307,7 +307,6 @@ const SECTIONS = [
   { id: "programs", Icon: Award, label: "البرامج والتخصصات", color: "#b45309", desc: "نظرة عامة وشروط القبول والرسوم" },
   { id: "flashcards", Icon: Hash, label: "بطاقات تعليمية", color: "#0891b2", desc: "أنشئ بطاقات سؤال وجواب للمراجعة" },
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
-  { id: "ai", Icon: Sparkles, label: "اسأل الذكاء الاصطناعي", color: P.blue2, desc: "مساعد ذكي يجيب عن أي سؤال" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
 ];
 
@@ -2361,7 +2360,7 @@ function AISection({ subject, t, onChat, files, onToast }) {
   );
 }
 
-function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast }) {
+function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast, onAskAI }) {
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
   const [realLoading, setRealLoading] = useState(true);
@@ -2428,6 +2427,22 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
           </button>
         </div>
       </div>
+
+      {onAskAI && (
+        <button onClick={() => onAskAI(subject)} style={{
+          width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14,
+          padding: "13px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 11, fontFamily: "inherit", marginBottom: 14,
+        }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(255,255,255,.15)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Sparkles size={18} color={P.gold} />
+          </div>
+          <div style={{ textAlign: "right", flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: "#fff" }}>اسأل المساعد الذكي عن {subject}</div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.7)" }}>شرح، تلخيص، حل أمثلة — بالعربية</div>
+          </div>
+          <ChevronLeft size={18} color="rgba(255,255,255,.6)" />
+        </button>
+      )}
 
       <CourseProgress subject={subject} t={t} />
       <GradeCalc subject={subject} t={t} />
@@ -4844,6 +4859,7 @@ export default function App() {
           subject={course} favorites={favorites} toggleFav={toggleFav}
           notes={notes} setNotes={setNotes} t={t}
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
+          onAskAI={(subj) => { setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
           onBack={() => { setCourse(null); setTab("explore"); }} />}
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
@@ -4930,7 +4946,8 @@ export default function App() {
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
         onReset={resetAll} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
-        query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
+        query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
+        onNavigate={(id) => { setTab(id); setCourse(null); }} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
 
       {showAI && (
@@ -5021,7 +5038,18 @@ export default function App() {
 /* ══════════════════════════════════════════════════════════════
    SEARCH OVERLAY (with input bar)
    ══════════════════════════════════════════════════════════════ */
-function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
+// Navigable destinations (pages/tools) so search finds "anything", not just
+// subjects. Each has keywords to match loosely.
+const SEARCH_PAGES = [
+  { tab: "explore", label: "المسارات والتخصصات", Icon: Compass, color: "#0a8a58", kw: "مسار تخصص استكشاف كليات برامج تجميعات ملخصات خطط مقررات" },
+  { tab: "schedule", label: "جدولي الأسبوعي", Icon: CalendarDays, color: "#0891b2", kw: "جدول محاضرات حصص مواعيد" },
+  { tab: "gpa", label: "حاسبة المعدل", Icon: Calculator, color: "#2563eb", kw: "حساب معدل درجات gpa تراكمي فصلي" },
+  { tab: "fav", label: "المفضلة", Icon: Star, color: "#c8a84b", kw: "مفضلة محفوظات نجمة" },
+  { tab: "links", label: "روابط الجامعة", Icon: Link2, color: "#0891b2", kw: "روابط بلاك بورد بوابة sso بريد مكتبة رابط" },
+  { tab: "profile", label: "حسابي", Icon: CircleUser, color: "#6d28d9", kw: "حساب ملف اعدادات بروفايل خطة تخصص" },
+];
+
+function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate }) {
   const ref = useRef(null);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
@@ -5042,7 +5070,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
           }}>
             <Search size={18} color={t.mu} />
             <input ref={ref} value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="ابحث عن مادة، تخصص، أو برنامج..."
+              placeholder="ابحث عن أي شيء — مادة، تخصص، صفحة، أداة..."
               style={{
                 flex: 1, border: "none", outline: "none", fontSize: 14, color: t.tx,
                 background: "transparent", fontFamily: "inherit", direction: "rtl",
@@ -5086,7 +5114,9 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
                 else items = TREE.graduate.programs.filter(s => s.toLowerCase().includes(q));
                 return { label, color, items };
               }).filter(g => g.items.length);
-              const total = groups.reduce((a, g) => a + g.items.length, 0);
+              // Pages/tools that match the query (label or keywords).
+              const pageHits = onNavigate ? SEARCH_PAGES.filter(p => p.label.toLowerCase().includes(q) || p.kw.includes(q)) : [];
+              const total = groups.reduce((a, g) => a + g.items.length, 0) + pageHits.length;
               if (!total) return (
                 <div style={{ textAlign: "center", padding: 30, color: t.mu, fontSize: 13 }}>
                   لا توجد نتائج لـ «{query}»
@@ -5095,6 +5125,27 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t }) {
               return (
                 <>
                   <div style={{ fontSize: 12, color: t.mu, marginBottom: 10, padding: "0 4px" }}>{total} نتيجة</div>
+                  {pageHits.length > 0 && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
+                        <div style={{ width: 3, height: 10, borderRadius: 2, background: t.mu }} /> صفحات وأدوات
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                        {pageHits.map((p, i) => (
+                          <button key={i} onClick={() => { onNavigate(p.tab); onClose(); }} style={{
+                            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11, padding: "10px 12px", cursor: "pointer",
+                            display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit", textAlign: "right",
+                          }}>
+                            <div style={{ width: 32, height: 32, borderRadius: 9, background: `${p.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <p.Icon size={15} color={p.color} />
+                            </div>
+                            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{p.label}</div>
+                            <ChevronLeft size={13} color={t.dim} />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {groups.map((g, gi) => (
                     <div key={gi} style={{ marginBottom: 12 }}>
                       <div style={{ fontSize: 11.5, fontWeight: 800, color: g.color, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
