@@ -65,8 +65,20 @@ const storage = {
 };
 
 function useStored(key, initial) {
-  const [val, setVal] = useState(() => storage.get(key, initial));
-  useEffect(() => { storage.set(key, val); }, [key, val]);
+  // Always render `initial` first so the server HTML and the browser's first
+  // paint agree — reading localStorage during render makes them diverge for
+  // anyone with saved data, and React then aborts hydration (the app dies
+  // with "a client-side exception has occurred"). The stored value is adopted
+  // right after mount, and only then do we start writing back.
+  const [val, setVal] = useState(initial);
+  const hydrated = useRef(false);
+  useEffect(() => {
+    const stored = storage.get(key, initial);
+    hydrated.current = true;
+    setVal(stored);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  useEffect(() => { if (hydrated.current) storage.set(key, val); }, [key, val]);
   return [val, setVal];
 }
 
@@ -3246,15 +3258,26 @@ function AcademicCalendar({ t, profile }) {
 }
 
 function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, profile, guest, onShowFocus, onShowReport }) {
-  const hour = new Date().getHours();
-  const greeting = hour < 5 ? "طاب ليلك" : hour < 12 ? "صباح الخير" : hour < 17 ? "مساء الخير" : "طاب مساؤك";
-  const todayStr = (() => {
-    try { return new Date().toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
-    catch { try { return new Date().toLocaleDateString("ar", { weekday: "long", day: "numeric", month: "long" }); } catch { return ""; } }
-  })();
-  const [tipIdx, setTipIdx] = useState(() => Math.floor(Date.now() / 3600000) % TIPS.length);
+  // Clock-dependent text is computed after mount only. Rendering it during SSR
+  // would bake in the server's time/locale, which rarely matches the visitor's
+  // and makes React fail hydration (the app then dies with a client-side
+  // exception). Empty on the first paint, filled a tick later.
+  const [clock, setClock] = useState({ greeting: "", todayStr: "" });
+  useEffect(() => {
+    const h = new Date().getHours();
+    const greeting = h < 5 ? "طاب ليلك" : h < 12 ? "صباح الخير" : h < 17 ? "مساء الخير" : "طاب مساؤك";
+    let todayStr = "";
+    try { todayStr = new Date().toLocaleDateString("ar-SA-u-ca-gregory", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); }
+    catch { try { todayStr = new Date().toLocaleDateString("ar", { weekday: "long", day: "numeric", month: "long" }); } catch { todayStr = ""; } }
+    setClock({ greeting, todayStr });
+  }, []);
+  const { greeting, todayStr } = clock;
+  // Starts at 0 for a stable first render; the hour-based tip is picked after
+  // mount (see the interval effect below) to stay hydration-safe.
+  const [tipIdx, setTipIdx] = useState(0);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   useEffect(() => {
+    setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length);
     const iv = setInterval(() => setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length), 60000);
     return () => clearInterval(iv);
   }, []);
@@ -4978,7 +5001,6 @@ export default function App() {
       transition: "background .3s ease, color .3s ease",
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&family=Reem+Kufi:wght@500;700&display=swap');
         @keyframes fadeUp { from { opacity:0; transform:translateY(18px) } to { opacity:1; transform:translateY(0) } }
         @keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
         @keyframes slideUp { from { transform:translateY(100%) } to { transform:translateY(0) } }

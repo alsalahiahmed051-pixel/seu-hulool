@@ -1,4 +1,5 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
+import { deviceIdentity, paidQuotaExhausted, consumePaidQuota, PAID_DAILY_LIMIT } from '@/lib/ai-quota'
 
 export const runtime = 'nodejs'
 
@@ -213,36 +214,62 @@ export async function POST(request) {
     )
   }
 
+  // 4) Providers, FREE FIRST. Paid Anthropic is only appended when this
+  // visitor still has paid allowance left today, so ordinary use costs
+  // nothing and the paid key is a quality fallback rather than the default.
+  const { deviceId, setCookie } = deviceIdentity(request)
   const providers = []
-  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder'))
-    providers.push({ name: 'Anthropic', fn: () => callAnthropic(subject, messages, fileContext) })
-  if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', fn: () => callOpenRouter(subject, messages, fileContext) })
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', fn: () => callGroq(subject, messages, fileContext) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, fileContext) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', fn: () => callGemini(subject, messages, fileContext) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext) })
+  if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, fileContext) })
+
+  let paidAllowed = false
+  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
+    paidAllowed = !(await paidQuotaExhausted(request, deviceId))
+    if (paidAllowed) {
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
+    }
+  }
+
+  const reply = (bodyObj, status = 200) => {
+    const res = Response.json(bodyObj, { status })
+    if (setCookie) res.headers.append('Set-Cookie', setCookie)
+    return res
+  }
 
   if (providers.length === 0) {
-    return Response.json({
+    // Either nothing is configured, or only the paid key is and it is spent.
+    if (paidAllowed === false && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
+      return reply({
+        error: `استهلكت رصيدك اليومي من المساعد الذكي (${PAID_DAILY_LIMIT} رسائل). جرّب غداً.`,
+      }, 429)
+    }
+    return reply({
       text: `المساعد الذكي غير مفعّل بعد.\n\nللتفعيل المجاني:\n١. افتح openrouter.ai\n٢. سجّل دخولك بحساب Google\n٣. اضغط "Keys" ← "Create Key"\n٤. أضف OPENROUTER_API_KEY في Vercel → Settings → Environment Variables`,
     })
   }
 
   // try each provider in turn — return first success
   const errors = []
-  for (const { name, fn } of providers) {
+  for (const { name, paid, fn } of providers) {
     try {
       const text = await fn()
-      if (text) return Response.json({ text })
+      if (text) {
+        // Only a successful paid reply spends allowance; free ones never do.
+        if (paid) await consumePaidQuota(request, deviceId)
+        return reply({ text })
+      }
     } catch (err) {
       errors.push(`${name}: ${err.message}`)
     }
   }
 
   console.error('[api/ai] all providers failed:', errors.join(' | '))
-  return Response.json(
+  return reply(
     { error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.` },
-    { status: 500 }
+    500
   )
 }
