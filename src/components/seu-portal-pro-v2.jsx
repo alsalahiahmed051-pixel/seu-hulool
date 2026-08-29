@@ -3456,7 +3456,7 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onLogout, openCourse, openSettings }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onLogout, notes, openCourse, openSettings }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
@@ -3598,6 +3598,36 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           ))}
         </div>
       )}
+
+      {/* All my notes in one place */}
+      {!editing && (() => {
+        const myNotes = Object.entries(notes || {}).filter(([, v]) => (v || "").trim());
+        if (myNotes.length === 0) return null;
+        return (
+          <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+              <PenLine size={15} color={P.purple} /> ملاحظاتي <span style={{ fontSize: 12, color: t.mu, fontWeight: 500 }}>({myNotes.length})</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {myNotes.map(([subject, text]) => (
+                <button key={subject} onClick={() => openCourse(subject)} style={{
+                  background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "11px 12px",
+                  cursor: "pointer", fontFamily: "inherit", textAlign: "right", transition: "all .2s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = P.purple + "55"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: P.purple, flexShrink: 0 }} />
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, flex: 1 }}>{subject}</div>
+                    <ChevronLeft size={14} color={t.dim} />
+                  </div>
+                  <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.6, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{text}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {!editing && (
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
@@ -4757,7 +4787,7 @@ export default function App() {
             try { if (!keep) localStorage.removeItem("seu_saved_login"); } catch {}
             setProfile(null); setBrowseOnly(false);
           }}
-          openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
+          notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
       {/* Floating AI assistant button — reachable from any main tab */}
