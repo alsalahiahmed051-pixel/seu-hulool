@@ -7,6 +7,7 @@ import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
+import { pushSupported, pushState, enablePush, disablePush, registerServiceWorker } from "@/lib/push-client";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
@@ -3837,7 +3838,70 @@ function NotifBanner({ notifs, setNotifs, t }) {
 /* ══════════════════════════════════════════════════════════════
    NOTIFICATIONS PANEL
    ══════════════════════════════════════════════════════════════ */
-function NotifPanel({ t, onClose, notifs, setNotifs }) {
+// Opt-in card for real device Push notifications (arrive when the app is
+// closed). Hidden entirely when the browser can't do push or the server has
+// no VAPID keys configured, so it never shows a dead control.
+function PushToggle({ t, profile, onToast }) {
+  const [state, setState] = useState(null); // {supported, subscribed, permission}
+  const [serverOn, setServerOn] = useState(null); // null=checking, bool
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!pushSupported()) { if (alive) { setState({ supported: false }); setServerOn(false); } return; }
+      try {
+        const res = await fetch("/api/push/subscribe");
+        const cfg = res.ok ? await res.json() : { configured: false };
+        if (alive) setServerOn(Boolean(cfg.configured));
+      } catch { if (alive) setServerOn(false); }
+      const st = await pushState();
+      if (alive) setState(st);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  if (state && !state.supported) return null;
+  if (serverOn === false) return null;
+  if (!state || serverOn === null) return null; // still checking — stay quiet
+
+  const on = state.subscribed && state.permission === "granted";
+  const toggle = async () => {
+    setBusy(true);
+    if (on) {
+      await disablePush();
+      setState(s => ({ ...s, subscribed: false }));
+      onToast?.("أُوقفت إشعارات الجهاز", "info");
+    } else {
+      const r = await enablePush(profile);
+      if (r.ok) { setState(s => ({ ...s, subscribed: true, permission: "granted" })); onToast?.("تم تفعيل إشعارات الجهاز 🔔", "success"); }
+      else if (r.reason === "denied") onToast?.("لم يُمنح إذن الإشعارات من المتصفح", "warn");
+      else onToast?.("تعذّر تفعيل الإشعارات", "warn");
+    }
+    setBusy(false);
+  };
+
+  return (
+    <button onClick={toggle} disabled={busy} style={{
+      width: "100%", display: "flex", alignItems: "center", gap: 11, textAlign: "right",
+      background: on ? `${P.green}12` : t.s2, border: `1px solid ${on ? P.green + "45" : t.bd}`,
+      borderRadius: 14, padding: "12px 14px", marginBottom: 14, cursor: "pointer", fontFamily: "inherit", opacity: busy ? 0.6 : 1,
+    }}>
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: on ? `${P.green}20` : `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Bell size={17} color={on ? P.green : P.gold} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx }}>إشعارات الجهاز</div>
+        <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.5 }}>{on ? "مفعّلة — تصلك حتى والتطبيق مغلق" : "فعّلها لتصلك إعلانات حلول حتى والتطبيق مغلق"}</div>
+      </div>
+      <div style={{ width: 44, height: 25, borderRadius: 20, background: on ? P.green : t.bd, position: "relative", flexShrink: 0, transition: "background .2s" }}>
+        <div style={{ width: 19, height: 19, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, right: on ? 3 : 22, transition: "right .2s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
+      </div>
+    </button>
+  );
+}
+
+function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 200, display: "flex",
@@ -3861,6 +3925,7 @@ function NotifPanel({ t, onClose, notifs, setNotifs }) {
             }}><X size={16} /></button>
           </div>
         </div>
+        <PushToggle t={t} profile={profile} onToast={onToast} />
         {notifs.length === 0 && (
           <div style={{ textAlign: "center", padding: "30px 0", color: t.mu, fontSize: 13 }}>لا توجد إشعارات بعد</div>
         )}
@@ -4669,6 +4734,10 @@ export default function App() {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }, [tab]);
 
+  // Register the push service worker once so opted-in devices can receive
+  // broadcasts while the app is closed. No-ops on unsupported browsers.
+  useEffect(() => { registerServiceWorker(); }, []);
+
   // ── Comprehensive back-button / Android back gesture support ──
   // Tracks EVERY navigation change (tabs, overlays, courses) in a local stack
   // and in browser history so popstate fires correctly every time.
@@ -4949,7 +5018,7 @@ export default function App() {
       </div>
 
       {/* PANELS / MODALS */}
-      {notifOpen && <NotifPanel t={t} onClose={() => setNotifOpen(false)} notifs={notifs} setNotifs={setNotifs} />}
+      {notifOpen && <NotifPanel t={t} onClose={() => setNotifOpen(false)} notifs={notifs} setNotifs={setNotifs} profile={profile} onToast={toasts.push} />}
       {settingsOpen && <SettingsPanel t={t} onClose={() => setSettingsOpen(false)}
         dark={dark} setDark={setDark} soundOn={soundOn} setSoundOn={setSoundOn}
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
