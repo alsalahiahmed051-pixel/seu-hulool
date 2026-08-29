@@ -1630,7 +1630,7 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
           مهامي
           {pending > 0 && <span style={{ fontSize: 11.5, fontWeight: 800, color: P.blue2, background: `${P.blue2}15`, borderRadius: 6, padding: "1px 7px" }}>{pending}</span>}
         </div>
-        <button onClick={() => { if (guest) { onToast?.("سجّل حسابك لإضافة مهامك ✍️", "warn"); return; } setShowAdd(s => !s); }} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 800 }}>
+        <button onClick={() => setShowAdd(s => !s)} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 12px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, fontWeight: 800 }}>
           <Plus size={13} /> إضافة
         </button>
       </div>
@@ -3790,12 +3790,12 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       )}
 
       {!editing && profile && (
-        <button onClick={() => { if (confirm("تسجيل الخروج؟ ستحتاج لإدخال اسمك ومسارك مجدداً.")) onLogout?.(); }} style={{
+        <button onClick={() => { if (confirm("مسح ملفك الشخصي؟ (اسمك ومسارك المحفوظين على هذا الجهاز فقط)")) onLogout?.(); }} style={{
           width: "100%", marginTop: 4, background: `${P.red}0d`, border: `1px solid ${P.red}30`, borderRadius: 12,
           padding: "12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: P.red,
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         }}>
-          <LogOut size={16} /> تسجيل الخروج
+          <Trash2 size={16} /> مسح ملفي الشخصي
         </button>
       )}
     </div>
@@ -4463,140 +4463,6 @@ const AUTH_TRACKS = [
 ];
 const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
 
-// One elegant screen: name + track (+ plan for تحضيري) + password. A single
-// button logs in if the name exists, else creates the account. Or browse.
-function AuthGate({ t, setProfile, onBrowse, onToast }) {
-  const savedName = (() => { try { return JSON.parse(localStorage.getItem("seu_saved_login") || "{}").name || ""; } catch { return ""; } })();
-  const [f, setF] = useState({ name: savedName, track: "تحضيري", plan: "", password: "" });
-  const [remember, setRemember] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const plans = AUTH_PLANS[f.track] || null;
-
-  const finish = (student) => {
-    try {
-      if (remember) localStorage.setItem("seu_saved_login", JSON.stringify({ name: student.name }));
-      else localStorage.removeItem("seu_saved_login");
-    } catch {}
-    setProfile({ ...student, created: Date.now() });
-  };
-
-  const submit = async () => {
-    setErr("");
-    if (f.name.trim().length < 2) return setErr("اكتب اسمك");
-    if (plans && !f.plan) return setErr("حدّد الخطة أولاً");
-    if (f.password.length < 4) return setErr("كلمة المرور 4 أحرف على الأقل");
-    setLoading(true);
-    try {
-      const res = await fetch("/api/student/enter", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ full_name: f.name.trim(), track: f.track, plan: f.plan || "", password: f.password }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (res.ok) {
-        finish({ name: d.student?.full_name || f.name.trim(), track: d.student?.track || f.track, plan: d.student?.plan || f.plan || "" });
-        onToast?.(d.mode === "login" ? `أهلاً بعودتك ${d.student?.full_name || ""} 👋` : "مرحباً بك في حلول 🎉", "success");
-        setLoading(false);
-        return;
-      }
-      if (res.status === 401 || res.status === 400) { setErr(d.error || "تعذّر الدخول"); setLoading(false); return; }
-      // Server/DB not ready — don't lock the user out; continue locally.
-      finish({ name: f.name.trim(), track: f.track, plan: f.plan || "" });
-      onToast?.("تم الدخول (تعذّر حفظ الحساب على الخادم)", "warn");
-    } catch {
-      finish({ name: f.name.trim(), track: f.track, plan: f.plan || "" });
-      onToast?.("تم الدخول محليًا (تعذّر الاتصال)", "warn");
-    }
-    setLoading(false);
-  };
-
-  const field = (icon, node) => (
-    <div style={{ position: "relative", marginBottom: 12 }}>
-      <div style={{ position: "absolute", top: "50%", right: 14, transform: "translateY(-50%)", color: "rgba(255,255,255,.5)", display: "flex" }}>{icon}</div>
-      {node}
-    </div>
-  );
-  const inp = { width: "100%", border: "1.5px solid rgba(255,255,255,.22)", borderRadius: 14, padding: "13px 44px 13px 14px", fontSize: 14.5, background: "rgba(255,255,255,.08)", color: "#fff", fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" };
-
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 600, overflowY: "auto",
-      background: "linear-gradient(165deg, #041a12 0%, #06422c 42%, #0a6b45 72%, #041209 100%)",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 22 }}>
-      {/* floating orbs */}
-      <div style={{ position: "absolute", top: "12%", right: "14%", width: 200, height: 200, borderRadius: "50%", background: `radial-gradient(circle, ${P.gold}22 0%, transparent 70%)`, pointerEvents: "none", animation: "floatOrb 6s ease-in-out infinite" }} />
-      <div style={{ position: "absolute", bottom: "14%", left: "10%", width: 240, height: 240, borderRadius: "50%", background: "radial-gradient(circle, rgba(52,211,153,.16) 0%, transparent 70%)", pointerEvents: "none", animation: "floatOrb 7s ease-in-out infinite" }} />
-
-      <div style={{ width: "100%", maxWidth: 430, position: "relative", animation: "fadeUp .5s ease" }}>
-        <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <div style={{ width: 78, height: 78, borderRadius: 24, margin: "0 auto 14px", background: "linear-gradient(135deg,#0a3d29,#0a8a58)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 14px 44px rgba(10,138,88,.55)", border: "1.5px solid rgba(255,255,255,.14)" }}>
-            <GradCap size={40} color={P.gold} strokeWidth={1.6} />
-          </div>
-          <div style={{ fontSize: 27, fontWeight: 900, color: "#fff" }}>خصّص تجربتك</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.65)", marginTop: 5, lineHeight: 1.6 }}>حساب اختياري يحفظ ملاحظاتك ومهامك ويعرض لك تقويم مسارك وخطتك فقط — بدون بريد إلكتروني.</div>
-        </div>
-
-        <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 24, padding: 22, border: "1px solid rgba(255,255,255,.12)", backdropFilter: "blur(10px)", boxShadow: "0 20px 60px rgba(0,0,0,.35)" }}>
-          {field(<User size={18} />, <input value={f.name} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="الاسم" style={inp} />)}
-
-          <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.65)", fontWeight: 700, margin: "6px 2px 9px" }}>اختر مسارك</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: plans ? 12 : 14 }}>
-            {AUTH_TRACKS.map(({ id, Icon, desc }) => {
-              const active = f.track === id;
-              return (
-                <button key={id} onClick={() => setF(p => ({ ...p, track: id, plan: "" }))} type="button" style={{
-                  textAlign: "right", padding: "11px 12px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
-                  background: active ? "rgba(255,255,255,.16)" : "rgba(255,255,255,.05)",
-                  border: `1.5px solid ${active ? "#fff" : "rgba(255,255,255,.15)"}`, transition: "all .18s",
-                }}>
-                  <Icon size={18} color={active ? P.gold : "rgba(255,255,255,.75)"} />
-                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#fff", marginTop: 5 }}>{id}</div>
-                  <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", marginTop: 1 }}>{desc}</div>
-                </button>
-              );
-            })}
-          </div>
-
-          {plans && (
-            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-              {plans.map(pl => {
-                const active = f.plan === pl;
-                return (
-                  <button key={pl} type="button" onClick={() => setF(p => ({ ...p, plan: pl }))} style={{
-                    flex: 1, padding: "9px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                    background: active ? `${P.gold}28` : "rgba(255,255,255,.05)", border: `1.5px solid ${active ? P.gold : "rgba(255,255,255,.15)"}`, color: "#fff",
-                  }}>{pl}</button>
-                );
-              })}
-            </div>
-          )}
-
-          {field(<Lock size={18} />, <input type="password" value={f.password} onChange={e => setF(p => ({ ...p, password: e.target.value }))} onKeyDown={e => e.key === "Enter" && submit()} placeholder="كلمة المرور" style={inp} />)}
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", color: "rgba(255,255,255,.8)", fontSize: 13, marginBottom: 14, padding: "2px 2px" }}>
-            <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} style={{ width: 17, height: 17, accentColor: P.gold }} />
-            تذكّر بيانات دخولي
-          </label>
-
-          {err && <div style={{ background: "rgba(220,38,38,.2)", border: "1px solid rgba(248,113,113,.4)", color: "#fca5a5", borderRadius: 11, padding: "9px 12px", fontSize: 12.5, marginBottom: 12, textAlign: "center" }}>{err}</div>}
-
-          <button onClick={submit} disabled={loading} style={{
-            width: "100%", padding: "14px", borderRadius: 16, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 16, fontWeight: 900,
-            background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, color: "#3a2e05", opacity: loading ? 0.6 : 1,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: `0 10px 30px ${P.gold}44`,
-          }}>
-            {loading ? "لحظة..." : <><LogIn size={18} /> دخول</>}
-          </button>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,.45)", textAlign: "center", marginTop: 9 }}>حساب جديد؟ سيُنشأ تلقائيًا. لديك حساب؟ اكتب نفس الاسم وكلمة المرور.</div>
-        </div>
-
-        <button onClick={onBrowse} style={{ width: "100%", marginTop: 14, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.14)", borderRadius: 14, color: "rgba(255,255,255,.85)", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-          <Compass size={16} /> تصفّح الموقع بدون حساب
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // Fires a reminder 5 minutes before any lecture on the current day (while the
 // app is open): in-app toast + sound + a browser notification if permitted.
 function useLectureReminders(schedule, soundOn, push) {
@@ -4654,9 +4520,10 @@ export default function App() {
   const { data: themeContent } = useSiteContent("theme");
   const brandPreset = getPreset(themeContent?.preset);
   applyBrand(brandPreset); // recolour P for this render
-  // Lightweight local student profile — name + track + plan, no email.
+  // Fully public site — no login/registration. `profile` is an OPTIONAL local
+  // preference (name + track + plan) that only personalises the greeting and
+  // the plan-scoped calendar; everything works with or without it.
   const [profile, setProfile] = useStored("student_profile", null);
-  const [browseOnly, setBrowseOnly] = useStored("browse_only", false);
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -4788,16 +4655,10 @@ export default function App() {
     setRecent(prev => [s, ...(prev || []).filter(x => x !== s)].slice(0, 12));
   };
 
-  // In browse-only (guest) mode, interactive actions ask the visitor to sign
-  // up first instead of running. Clearing browseOnly re-opens the sign-up gate.
-  const requireAccount = (msg) => {
-    if (browseOnly && !profile) { toasts.push(msg || "أنشئ حساباً لاستخدام هذه الميزة ✨", "warn"); setBrowseOnly(false); return true; }
-    return false;
-  };
-  const requestAI = () => { if (requireAccount("سجّل حسابك لاستخدام المساعد الذكي ✨")) return; setShowAI(true); };
+  // Public site: every feature is open to everyone, no account required.
+  const requestAI = () => setShowAI(true);
 
   const toggleFav = (s) => {
-    if (requireAccount("سجّل حسابك لحفظ المفضلة ⭐")) return;
     const exists = favorites.includes(s);
     toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
     setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
@@ -4812,11 +4673,8 @@ export default function App() {
     setTab("home"); setCourse(null);
   };
 
-  // Browse-first: after the welcome, land the visitor straight on the site as
-  // a guest instead of a forced sign-up wall. An account is optional and only
-  // unlocks personalisation (saved notes, tasks, plan-scoped calendar); guests
-  // are gently invited to register via the top banner and gated actions.
-  const finishOnboard = () => { setSeen(true); setShowOnboard(false); if (!profile) setBrowseOnly(true); };
+  // After the welcome, land straight on the (public) site — no gate.
+  const finishOnboard = () => { setSeen(true); setShowOnboard(false); };
 
   const achievementsState = { viewed: recent, favorites, totalSessions, gpaCalcs, streak, notes, aiChats };
 
@@ -4906,14 +4764,6 @@ export default function App() {
       {/* Announcement / warning banner strip */}
       <NotifBanner notifs={notifs} setNotifs={setNotifs} t={t} />
 
-      {browseOnly && !profile && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: `linear-gradient(90deg, ${P.gold}22, ${P.gold}0a)`, borderBottom: `1px solid ${P.gold}44` }}>
-          <User size={16} color={P.gold} style={{ flexShrink: 0 }} />
-          <div style={{ flex: 1, fontSize: 12.5, color: t.tx, fontWeight: 600 }}>أنت تتصفّح كزائر — أنشئ حساباً للاستفادة الكاملة (حفظ، مفضلة، مساعد ذكي).</div>
-          <button onClick={() => setBrowseOnly(false)} style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 9, padding: "6px 14px", cursor: "pointer", color: "#3a2e05", fontSize: 12.5, fontWeight: 800, fontFamily: "inherit", flexShrink: 0 }}>تسجيل</button>
-        </div>
-      )}
-
       {/* MAIN */}
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px" }}>
         {tab === "home" && <HomePage
@@ -4923,7 +4773,7 @@ export default function App() {
           achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} xp={xp} setXp={setXp} profile={profile}
-          guest={browseOnly && !profile}
+          guest={false}
           onShowFocus={() => setShowFocus(true)} onShowReport={() => setShowMonthlyReport(true)} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
@@ -4957,11 +4807,7 @@ export default function App() {
           favorites={favorites} totalSessions={totalSessions}
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
-          onLogout={() => {
-            const keep = window.confirm("هل تريد حفظ اسمك للدخول السريع لاحقاً؟\n\nموافق = احفظ بياناتي • إلغاء = امسحها");
-            try { if (!keep) localStorage.removeItem("seu_saved_login"); } catch {}
-            setProfile(null); setBrowseOnly(false);
-          }}
+          onLogout={() => { setProfile(null); toasts.push("تم مسح ملفك الشخصي", "info"); }}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
@@ -5027,10 +4873,6 @@ export default function App() {
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
 
-      {/* First-open sign-up / sign-in gate (no email) */}
-      {!showOnboard && !profile && !browseOnly && (
-        <AuthGate t={t} setProfile={setProfile} onBrowse={() => setBrowseOnly(true)} onToast={toasts.push} />
-      )}
       {showAI && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: t.bg }}>
           {/* WhatsApp-like header */}
