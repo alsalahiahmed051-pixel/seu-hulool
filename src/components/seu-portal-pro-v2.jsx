@@ -3145,8 +3145,12 @@ const DEFAULT_CALENDAR = {
 // the admin panel (site_content['calendar']) with a built-in fallback.
 // Formats an event's Hijri-free Gregorian date in Arabic.
 function calDate(iso) {
-  try { return new Date(iso + "T00:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { year: "numeric", month: "long", day: "numeric" }); }
-  catch { return iso; }
+  if (!iso) return "بدون تاريخ";
+  try {
+    const d = new Date(iso + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return String(iso);
+    return d.toLocaleDateString("ar-SA-u-ca-gregory", { year: "numeric", month: "long", day: "numeric" });
+  } catch { return String(iso); }
 }
 function calChip(days) {
   if (days <= 0) return { bg: `${P.green}20`, col: P.green, text: "انتهى" };
@@ -3207,9 +3211,16 @@ function AcademicCalendar({ t, profile }) {
   const now = new Date();
   // Public site: everyone sees every event. The audience tag stays only as an
   // informational badge ("خاص بـ خطة أ") — it never hides anything.
+  // Admin-entered events may be missing or have a blank date; never let one
+  // bad row throw (an exception here would blank the entire app).
   const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
-    .map(e => ({ ...e, days: Math.ceil((new Date(e.date + "T00:00:00") - now) / 86400000) }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .filter(e => e && typeof e === "object")
+    .map(e => {
+      const date = typeof e.date === "string" ? e.date : "";
+      const ms = date ? new Date(date + "T00:00:00").getTime() : NaN;
+      return { ...e, date, days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000) };
+    })
+    .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
 
   if (!events.length) return null;
   const upcoming = events.filter(e => e.days >= 0);

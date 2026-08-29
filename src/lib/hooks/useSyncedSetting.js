@@ -29,10 +29,21 @@ function lsSet(key, val) {
  */
 export function useSyncedSetting(localKey, column, initial) {
   const supabase = createClient()
-  const [val, setValState] = useState(() => lsGet(localKey, initial))
+  // Render `initial` first so the server HTML and the browser's first paint
+  // agree. Reading localStorage during render diverges for anyone with a saved
+  // value (dark mode above all), and React then aborts hydration — which in a
+  // production build takes the whole app down with a client-side exception.
+  const [val, setValState] = useState(initial)
+  const hydrated = useRef(false)
   const userIdRef = useRef(null)
 
-  useEffect(() => { lsSet(localKey, val) }, [localKey, val])
+  useEffect(() => {
+    hydrated.current = true
+    setValState(lsGet(localKey, initial))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localKey])
+
+  useEffect(() => { if (hydrated.current) lsSet(localKey, val) }, [localKey, val])
 
   useEffect(() => {
     let cancelled = false
