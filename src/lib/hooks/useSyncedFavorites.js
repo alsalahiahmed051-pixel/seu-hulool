@@ -26,10 +26,15 @@ function lsSet(arr) {
  */
 export function useSyncedFavorites() {
   const supabase = createClient()
-  const [favorites, setFavState] = useState(() => lsGet())
+  // Empty on the first render so server and client markup match; the saved
+  // list is adopted right after mount. See useSyncedSetting for why.
+  const [favorites, setFavState] = useState([])
+  const hydrated = useRef(false)
   const userIdRef = useRef(null)
 
-  useEffect(() => { lsSet(favorites) }, [favorites])
+  useEffect(() => { hydrated.current = true; setFavState(lsGet()) }, [])
+
+  useEffect(() => { if (hydrated.current) lsSet(favorites) }, [favorites])
 
   // Replace the server's copy with the full current list (idempotent,
   // tiny data). Fire-and-forget; errors ignored.

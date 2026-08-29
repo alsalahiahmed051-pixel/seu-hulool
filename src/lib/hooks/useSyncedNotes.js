@@ -24,10 +24,15 @@ function lsSet(obj) {
  */
 export function useSyncedNotes() {
   const supabase = createClient()
-  const [notes, setNotesState] = useState(() => lsGet())
+  // Empty on the first render so server and client markup match; saved notes
+  // are adopted right after mount. See useSyncedSetting for why.
+  const [notes, setNotesState] = useState({})
+  const hydrated = useRef(false)
   const userIdRef = useRef(null)
 
-  useEffect(() => { lsSet(notes) }, [notes])
+  useEffect(() => { hydrated.current = true; setNotesState(lsGet()) }, [])
+
+  useEffect(() => { if (hydrated.current) lsSet(notes) }, [notes])
 
   const pushToServer = useCallback(async (obj) => {
     const uid = userIdRef.current
