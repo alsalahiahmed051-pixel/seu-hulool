@@ -634,10 +634,13 @@ function NotificationsTab({ flash }) {
   const [audience, setAudience] = useState('all')
   const [sending, setSending] = useState(false)
 
+  const [push, setPush] = useState(null)
+
   const load = useCallback(async () => {
     setLoading(true)
     const { data } = await apiJSON('/api/admin/notifications')
     setItems(data.notifications || [])
+    setPush(data.push || null)
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
@@ -660,8 +663,38 @@ function NotificationsTab({ flash }) {
 
   const typeColors = { info: P.blue2, announcement: P.gold, warning: P.orange, success: P.green }
 
+  // Traffic-light for device (push) notifications: green when a broadcast will
+  // actually reach phones, amber when a setup step is still missing.
+  const pushCard = () => {
+    if (!push) return null
+    const ok = push.configured && push.tableReady
+    const col = ok ? P.green : P.gold
+    const title = !push.configured
+      ? 'إشعارات الجهاز غير مفعّلة'
+      : !push.tableReady
+        ? 'ينقص جدول الاشتراكات'
+        : `إشعارات الجهاز مفعّلة — ${push.devices} جهاز مشترك`
+    const hint = !push.configured
+      ? 'أضف مفاتيح VAPID في Vercel (NEXT_PUBLIC_VAPID_PUBLIC_KEY، VAPID_PUBLIC_KEY، VAPID_PRIVATE_KEY، VAPID_SUBJECT) ثم أعد النشر.'
+      : !push.tableReady
+        ? 'شغّل migration 011_push_subscriptions.sql في Supabase.'
+        : push.devices === 0
+          ? 'لا أجهزة مشتركة بعد — افتح الموقع، اضغط زر الجرس، وفعّل «إشعارات الجهاز».'
+          : 'كل إعلان ترسله سيصل هذه الأجهزة حتى لو كان التطبيق مغلقاً.'
+    return (
+      <div style={{ ...S.card, borderRight: `3px solid ${col}`, display: 'flex', gap: 11 }}>
+        <Bell size={17} color={col} style={{ flexShrink: 0, marginTop: 2 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tx)' }}>{title}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginTop: 3 }}>{hint}</div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
+      {pushCard()}
       <form onSubmit={send} style={S.card}>
         <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Send size={15} color={P.blue2} /> بث إشعار لكل الطلاب</h3>
         <label style={S.label}>العنوان *</label>

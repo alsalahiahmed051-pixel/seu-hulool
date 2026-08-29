@@ -5119,7 +5119,7 @@ export default function App() {
         }}>
           {dark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
-        <button onClick={() => setNotifOpen(true)} style={{
+        <button onClick={() => setNotifOpen(true)} title="الإشعارات" aria-label="الإشعارات" style={{
           position: "relative", background: t.s2, border: `1px solid ${t.bd}`,
           borderRadius: 10, padding: 8, cursor: "pointer", display: "flex", color: t.mu,
         }}>
