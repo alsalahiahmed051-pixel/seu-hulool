@@ -1619,6 +1619,45 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
     }}>{label}{count != null ? ` (${count})` : ""}</button>
   );
 
+  // One task row — used by the grouped list below.
+  const renderTask = (task) => {
+    const m = typeMeta(task.type);
+    const isOverdue = !task.done && task.dueDate && task.dueDate < today;
+    const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
+    const overdueDays = isOverdue ? Math.abs(days) : 0;
+    const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
+    const pc = prioColor[task.priority] || P.orange;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1, borderRight: `3px solid ${task.done ? P.green : m.color}` }}>
+        <button onClick={() => toggle(task.id)} title={task.done ? "إلغاء الإنجاز" : "تحديد كمنجزة"} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {task.done && <Check size={12} color={P.green} />}
+        </button>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: `${m.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <m.Icon size={14} color={m.color} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
+          <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
+            {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
+            {task.subject && <span>{task.subject}</span>}
+            {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { month: "short", day: "numeric" })}</span>}
+            {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
+          </div>
+        </div>
+        {!task.done && days != null && !isOverdue && (
+          <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, fontWeight: 800, flexShrink: 0, whiteSpace: "nowrap" }}>
+            {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
+          </div>
+        )}
+        <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={`أولوية ${task.priority}`} />
+        <button onClick={() => remove(task.id)} title="حذف" style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
+          <X size={12} />
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -1633,6 +1672,32 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
           <Plus size={13} /> إضافة
         </button>
       </div>
+
+      {/* Progress summary — completion bar + at-a-glance counters */}
+      {all.length > 0 && (() => {
+        const doneCount = all.filter(tk => tk.done).length;
+        const pct = Math.round((doneCount / all.length) * 100);
+        const overdueCount = all.filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
+        const todayCount = all.filter(tk => !tk.done && tk.dueDate === today).length;
+        const barCol = pct === 100 ? P.green : pct >= 50 ? P.blue2 : P.orange;
+        return (
+          <div style={{ background: t.s2, borderRadius: 13, padding: "11px 13px", marginBottom: 12, border: `1px solid ${t.bd}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
+              <span style={{ fontSize: 12, color: t.mu, fontWeight: 700 }}>أنجزت {doneCount} من {all.length}</span>
+              <span style={{ fontSize: 13, fontWeight: 900, color: barCol }}>{pct}%</span>
+            </div>
+            <div style={{ height: 7, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 9 }}>
+              <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barCol},${barCol}bb)`, borderRadius: 4, transition: "width .6s ease" }} />
+            </div>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {overdueCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.red, background: `${P.red}15`, borderRadius: 7, padding: "3px 9px" }}>⚠ متأخرة {overdueCount}</span>}
+              {todayCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.orange, background: `${P.orange}15`, borderRadius: 7, padding: "3px 9px" }}>اليوم {todayCount}</span>}
+              {examCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.purple, background: `${P.purple}15`, borderRadius: 7, padding: "3px 9px" }}>اختبارات {examCount}</span>}
+              {pct === 100 && <span style={{ fontSize: 11, fontWeight: 800, color: P.green, background: `${P.green}15`, borderRadius: 7, padding: "3px 9px" }}>🎉 أنجزت كل مهامك</span>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Filter chips */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
@@ -1734,43 +1799,33 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
-          {sorted.slice(0, 12).map(task => {
-            const m = typeMeta(task.type);
-            const isOverdue = !task.done && task.dueDate && task.dueDate < today;
-            const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
-            const overdueDays = isOverdue ? Math.abs(days) : 0;
-            const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
-            const pc = prioColor[task.priority] || P.orange;
-            return (
-              <div key={task.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1 }}>
-                <button onClick={() => toggle(task.id)} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  {task.done && <Check size={12} color={P.green} />}
-                </button>
-                <div style={{ width: 30, height: 30, borderRadius: 8, background: `${m.color}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <m.Icon size={14} color={m.color} />
+          {(() => {
+            // Group headers appear as the list crosses into a new bucket.
+            const bucketOf = (tk) => {
+              if (tk.done) return "منجزة";
+              if (!tk.dueDate) return "بلا موعد";
+              if (tk.dueDate < today) return "متأخرة";
+              if (tk.dueDate === today) return "اليوم";
+              return "قادمة";
+            };
+            const bucketCol = { "متأخرة": P.red, "اليوم": P.orange, "قادمة": P.blue2, "بلا موعد": t.mu, "منجزة": P.green };
+            let last = null;
+            return sorted.slice(0, 12).map(task => {
+              const b = bucketOf(task);
+              const header = b !== last ? b : null;
+              last = b;
+              return (
+                <div key={`g-${task.id}`}>
+                  {header && (
+                    <div style={{ fontSize: 11, fontWeight: 800, color: bucketCol[header], margin: "6px 2px 5px", display: "flex", alignItems: "center", gap: 5 }}>
+                      <span style={{ width: 3, height: 10, borderRadius: 2, background: bucketCol[header] }} /> {header}
+                    </div>
+                  )}
+                  {renderTask(task)}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
-                  <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
-                    {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
-                    {task.subject && <span>{task.subject}</span>}
-                    {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA", { month: "short", day: "numeric" })}</span>}
-                    {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
-                  </div>
-                </div>
-                {!task.done && days != null && !isOverdue && (
-                  <div style={{ background: `${cc}18`, color: cc, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, fontWeight: 800, flexShrink: 0, whiteSpace: "nowrap" }}>
-                    {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
-                  </div>
-                )}
-                <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={task.priority} />
-                <button onClick={() => remove(task.id)} style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
-                  <X size={12} />
-                </button>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
       )}
     </div>
@@ -2763,6 +2818,7 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
   const [focusA, setFocusA] = useState("");
   const [focusLoading, setFocusLoading] = useState(false);
   const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * FOCUS_QUOTES.length));
+  const [dayGoal, setDayGoal] = useStored("focusDayGoal", 4);
   const timerRef = useRef(null);
 
   const total = (mode === "work" ? workMin : breakMin) * 60;
@@ -2827,11 +2883,14 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
         ? "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(10,138,88,.28) 0%, transparent 60%), linear-gradient(180deg,#04120c,#02070f 60%,#04120c)"
         : "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(5,150,105,.28) 0%, transparent 60%), linear-gradient(180deg,#04140d,#02100a 60%,#04140d)",
       display: "flex", flexDirection: "column", animation: "fadeIn .3s ease", transition: "background .6s ease" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px" }}>
-        <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px" }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 10, padding: "8px 13px", cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ flex: 1, fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
           <Target size={18} color={P.gold} /> وضع التركيز
         </div>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 10, padding: 9, cursor: "pointer", color: "#fff", display: "flex" }}>
+        <button onClick={onClose} title="إغلاق" style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 10, padding: 9, cursor: "pointer", color: "#fff", display: "flex" }}>
           <X size={18} />
         </button>
       </div>
@@ -2846,6 +2905,30 @@ function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessio
               <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", marginTop: 3 }}>{l}</div>
             </div>
           ))}
+        </div>
+
+        {/* Daily session goal — visual dots that fill as sessions complete */}
+        <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 14, padding: "11px 13px", marginBottom: 18, border: "1px solid rgba(255,255,255,.08)" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
+            <span style={{ fontSize: 12, color: "rgba(255,255,255,.65)", fontWeight: 700 }}>هدف اليوم</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <button onClick={() => setDayGoal(g => Math.max(1, g - 1))} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, width: 22, height: 22, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={11} /></button>
+              <span style={{ fontSize: 12.5, fontWeight: 900, color: P.gold, minWidth: 44, textAlign: "center" }}>{todaySessions}/{dayGoal}</span>
+              <button onClick={() => setDayGoal(g => Math.min(12, g + 1))} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, width: 22, height: 22, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={11} /></button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+            {Array.from({ length: dayGoal }).map((_, i) => (
+              <div key={i} style={{
+                flex: 1, minWidth: 14, height: 7, borderRadius: 4,
+                background: i < todaySessions ? `linear-gradient(90deg,${P.gold},${P.goldRich})` : "rgba(255,255,255,.12)",
+                boxShadow: i < todaySessions ? `0 0 8px ${P.gold}55` : "none", transition: "all .3s",
+              }} />
+            ))}
+          </div>
+          {todaySessions >= dayGoal && (
+            <div style={{ fontSize: 11.5, color: P.gold, fontWeight: 800, marginTop: 8, textAlign: "center" }}>🎉 أنجزت هدف اليوم — أحسنت!</div>
+          )}
         </div>
 
         {/* Mode + preset */}
