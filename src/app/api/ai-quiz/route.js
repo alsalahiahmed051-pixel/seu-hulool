@@ -1,5 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
-import { aiPerMinuteLimit, aiDailyLimit } from '@/lib/rate-limit'
+import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 
@@ -98,13 +97,9 @@ async function callGemini(subject) {
 }
 
 export async function POST(request) {
-  // 1) Authenticate — this endpoint calls paid third-party AI providers,
-  // so it must never be reachable by a logged-out or anonymous caller.
-  const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return Response.json({ error: 'يجب تسجيل الدخول' }, { status: 401 })
-  }
+  // 1) Public site (no accounts) — anonymous callers are served, but every
+  // caller is rate limited by IP below since this hits paid providers.
+  const caller = callerKey(request)
 
   // 2) Parse + validate body
   let body
@@ -118,15 +113,15 @@ export async function POST(request) {
     return Response.json({ error: 'مادة غير صحيحة' }, { status: 400 })
   }
 
-  // 3) Rate limit — per authenticated user, not per IP
-  const minuteCheck = await aiPerMinuteLimit.limit(user.id)
+  // 3) Rate limit — per caller IP, since there are no accounts
+  const minuteCheck = await aiPerMinuteLimit.limit(caller)
   if (!minuteCheck.success) {
     return Response.json(
       { error: 'الرجاء الانتظار قليلاً قبل إرسال طلب آخر', retry_after: Math.ceil((minuteCheck.reset - Date.now()) / 1000) },
       { status: 429 }
     )
   }
-  const dayCheck = await aiDailyLimit.limit(user.id)
+  const dayCheck = await aiDailyLimit.limit(caller)
   if (!dayCheck.success) {
     return Response.json(
       { error: 'لقد استنفدت رصيدك اليومي من المساعد الذكي', reset_at: new Date(dayCheck.reset).toISOString() },

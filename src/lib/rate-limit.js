@@ -35,6 +35,32 @@ class MemoryStore {
 
 const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
 
+/**
+ * Real in-process limiter used when Upstash isn't configured.
+ *
+ * The AI endpoints are open to anonymous visitors (the site is public), so a
+ * permissive stub would leave paid providers unprotected. This enforces a
+ * genuine per-key budget within the running instance. It is per-instance, so
+ * a serverless fleet multiplies the effective ceiling — configure Upstash for
+ * a strict global limit — but it still stops the runaway single-client abuse
+ * that matters most.
+ */
+function memoryLimiter(max, windowMs, prefix) {
+  const hits = new Map() // key -> { count, reset }
+  return {
+    async limit(key) {
+      const k = `${prefix}:${key}`
+      const now = Date.now()
+      let e = hits.get(k)
+      if (!e || e.reset <= now) { e = { count: 0, reset: now + windowMs }; hits.set(k, e) }
+      e.count++
+      // Opportunistic cleanup so the map can't grow without bound.
+      if (hits.size > 5000) for (const [hk, hv] of hits) if (hv.reset <= now) hits.delete(hk)
+      return { success: e.count <= max, remaining: Math.max(0, max - e.count), reset: e.reset }
+    },
+  }
+}
+
 export const redis = hasUpstash
   ? new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
@@ -52,7 +78,7 @@ export const chatPerMinuteLimit = hasUpstash
       ),
       prefix: 'rl:chat:minute',
     })
-  : { limit: async () => ({ success: true, remaining: 5, reset: Date.now() + 60_000 }) }
+  : memoryLimiter(Number(process.env.CHAT_PER_MINUTE_LIMIT || 5), 60_000, 'chat:min')
 
 // 50 chat requests per day per user
 export const chatDailyLimit = hasUpstash
@@ -64,7 +90,7 @@ export const chatDailyLimit = hasUpstash
       ),
       prefix: 'rl:chat:day',
     })
-  : { limit: async () => ({ success: true, remaining: 50, reset: Date.now() + 86_400_000 }) }
+  : memoryLimiter(Number(process.env.CHAT_DAILY_LIMIT || 50), 86_400_000, 'chat:day')
 
 // GlobalAI overlay (/api/ai, /api/ai-quiz) — separate, slightly looser
 // budget from the per-subject chat above since it also powers quiz mode.
@@ -77,7 +103,7 @@ export const aiPerMinuteLimit = hasUpstash
       ),
       prefix: 'rl:ai:minute',
     })
-  : { limit: async () => ({ success: true, remaining: 10, reset: Date.now() + 60_000 }) }
+  : memoryLimiter(Number(process.env.AI_PER_MINUTE_LIMIT || 10), 60_000, 'ai:min')
 
 export const aiDailyLimit = hasUpstash
   ? new Ratelimit({
@@ -88,7 +114,20 @@ export const aiDailyLimit = hasUpstash
       ),
       prefix: 'rl:ai:day',
     })
-  : { limit: async () => ({ success: true, remaining: 80, reset: Date.now() + 86_400_000 }) }
+  : memoryLimiter(Number(process.env.AI_DAILY_LIMIT || 80), 86_400_000, 'ai:day')
+
+/**
+ * Identity used for rate limiting on the public AI endpoints.
+ *
+ * The site requires no account, so limit by client IP (from the proxy headers
+ * Vercel sets). Falls back to a shared bucket when no IP is available, which
+ * errs on the side of limiting rather than letting requests through unbounded.
+ */
+export function callerKey(request) {
+  const fwd = request.headers.get('x-forwarded-for') || ''
+  const ip = fwd.split(',')[0].trim() || request.headers.get('x-real-ip') || ''
+  return ip || 'anon'
+}
 
 /**
  * Hash an IP address for storing in DB (don't store raw IPs — PDPL compliance)
