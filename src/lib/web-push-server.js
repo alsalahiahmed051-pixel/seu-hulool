@@ -14,18 +14,37 @@ import { createAdminClient } from '@/lib/supabase/server'
  * the app keeps working without push configured.
  */
 
-const PUBLIC = process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ''
-const PRIVATE = process.env.VAPID_PRIVATE_KEY || ''
-const SUBJECT = process.env.VAPID_SUBJECT || 'mailto:support@hulool.app'
+// Read lazily rather than at module load: a value captured while the module
+// is first evaluated can go stale, and reading on demand always reflects the
+// environment the request is actually running in.
+const publicKey = () => (process.env.VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim()
+const privateKey = () => (process.env.VAPID_PRIVATE_KEY || '').trim()
+const subject = () => (process.env.VAPID_SUBJECT || 'mailto:support@hulool.app').trim()
 
 export function pushConfigured() {
-  return Boolean(PUBLIC && PRIVATE)
+  return Boolean(publicKey() && privateKey())
+}
+
+/**
+ * Which VAPID variables the running deployment can actually see.
+ *
+ * Reports presence only — never a key value — so an admin can tell "I never
+ * added it" apart from "I added it but haven't redeployed", which is
+ * otherwise indistinguishable from the outside.
+ */
+export function pushEnvStatus() {
+  return {
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: Boolean((process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '').trim()),
+    VAPID_PUBLIC_KEY: Boolean((process.env.VAPID_PUBLIC_KEY || '').trim()),
+    VAPID_PRIVATE_KEY: Boolean(privateKey()),
+    VAPID_SUBJECT: Boolean((process.env.VAPID_SUBJECT || '').trim()),
+  }
 }
 
 let configured = false
 function ensureConfigured() {
   if (configured || !pushConfigured()) return pushConfigured()
-  webpush.setVapidDetails(SUBJECT, PUBLIC, PRIVATE)
+  webpush.setVapidDetails(subject(), publicKey(), privateKey())
   configured = true
   return true
 }
