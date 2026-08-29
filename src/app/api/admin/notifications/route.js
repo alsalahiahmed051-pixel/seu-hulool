@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin-guard'
 import { createAdminClient } from '@/lib/supabase/server'
+import { sendPushToAudience } from '@/lib/web-push-server'
 
 export const runtime = 'nodejs'
 
@@ -41,7 +42,15 @@ export async function POST(request) {
     ({ data, error } = await db.from('notifications').insert(base).select().single())
   }
   if (error) return Response.json({ error: error.message }, { status: 500 })
-  return Response.json({ ok: true, notification: data })
+
+  // Fan out to opted-in devices via Web Push (no-ops if push isn't configured
+  // or the subscriptions table is absent). Never fail the broadcast on this.
+  let push = null
+  try {
+    push = await sendPushToAudience({ title, body: text, url: '/', audience })
+  } catch { /* push is best-effort */ }
+
+  return Response.json({ ok: true, notification: data, push })
 }
 
 export async function DELETE(request) {

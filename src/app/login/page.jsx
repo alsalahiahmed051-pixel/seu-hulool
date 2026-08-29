@@ -50,13 +50,13 @@ function LoginForm() {
 
   return (
     <AuthShell
-      title="مرحباً بك مجدداً"
-      subtitle="سجّل دخولك للوصول إلى تجميعاتك وتقدّمك الأكاديمي"
+      title="دخول الإدارة"
+      subtitle="هذه الصفحة مخصّصة لفريق إدارة المنصة فقط — الموقع متاح للطلاب بدون تسجيل دخول."
       footer={
         <>
-          ليس لديك حساب؟{' '}
-          <Link href="/signup" style={{ color: '#60a5fa', fontWeight: 700, textDecoration: 'none' }}>
-            أنشئ حساباً جديداً
+          طالب؟{' '}
+          <Link href="/" style={{ color: '#60a5fa', fontWeight: 700, textDecoration: 'none' }}>
+            ادخل الموقع مباشرة
           </Link>
         </>
       }
