@@ -1,4 +1,5 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
+import { deviceIdentity, paidQuotaExhausted, consumePaidQuota } from '@/lib/ai-quota'
 
 export const runtime = 'nodejs'
 
@@ -129,26 +130,38 @@ export async function POST(request) {
     )
   }
 
+  // Providers FREE FIRST — paid Anthropic only when this visitor still has
+  // paid allowance left today, and only a successful paid reply spends it.
+  const { deviceId, setCookie } = deviceIdentity(request)
   const providers = []
-  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder'))
-    providers.push({ name: 'Anthropic', fn: () => callAnthropic(subject) })
-  if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', fn: () => callOpenRouter(subject) })
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', fn: () => callGroq(subject) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', fn: () => callGemini(subject) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject) })
+  if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject) })
+  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
+    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject) })
 
-  if (providers.length === 0) {
-    return Response.json({ error: 'المساعد الذكي غير مفعّل' }, { status: 503 })
+  const reply = (bodyObj, status = 200) => {
+    const res = Response.json(bodyObj, { status })
+    if (setCookie) res.headers.append('Set-Cookie', setCookie)
+    return res
   }
 
-  for (const { name, fn } of providers) {
+  if (providers.length === 0) {
+    return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
+  }
+
+  for (const { paid, fn } of providers) {
     try {
       const quiz = await fn()
-      if (quiz && Array.isArray(quiz) && quiz.length > 0) return Response.json({ quiz })
+      if (quiz && Array.isArray(quiz) && quiz.length > 0) {
+        if (paid) await consumePaidQuota(request, deviceId)
+        return reply({ quiz })
+      }
     } catch {}
   }
 
-  return Response.json({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, { status: 500 })
+  return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
 }
