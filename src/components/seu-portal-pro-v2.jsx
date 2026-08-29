@@ -623,7 +623,14 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
   useEffect(() => {
     if (msgs.length > 1) storage.set(histKey, msgs.slice(-20));
   }, [msgs]);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
+  // Body must be braced: React stores whatever an effect returns as its
+  // cleanup and calls it on the next run/unmount. A concise body returns
+  // scrollIntoView's result, and any browser that returns a non-undefined
+  // value there makes React throw "destroy is not a function", which unmounts
+  // the whole app.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [msgs]);
 
   useEffect(() => {
     if (!files) return;
