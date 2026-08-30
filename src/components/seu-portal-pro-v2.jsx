@@ -645,7 +645,191 @@ function StreakWeek({ activeDays, t }) {
 /* ══════════════════════════════════════════════════════════════
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
-function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "" }) {
+/* ══════════════════════════════════════════════════════════════
+   AI SUBSCRIPTION — payment details and the request
+   ══════════════════════════════════════════════════════════════ */
+// Shown until an admin saves real details in the panel. Deliberately blank
+// where a real value belongs: inventing an IBAN would be worse than empty.
+const DEFAULT_PAYMENT = {
+  title: "اشتراك المساعد الذكي",
+  price: "",
+  bank: "",
+  accountName: "",
+  iban: "",
+  terms: "بعد التحويل أرفق صورة الإيصال هنا. تُراجع الطلبات يدوياً وعادةً خلال ١٠ دقائق.",
+  verifyNote: "المراجعة يدوية — عادةً خلال ١٠ دقائق",
+};
+
+/**
+ * The sheet a student sees when the free questions run out.
+ *
+ * It says plainly what they get, what it costs, where to send it, and that a
+ * human checks the receipt — no automatic payment, no card form, nothing that
+ * pretends to be an instant purchase.
+ */
+function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
+  const { data: content } = useSiteContent("payment");
+  const pay = { ...DEFAULT_PAYMENT, ...(content && typeof content === "object" ? content : {}) };
+  const [note, setNote] = useState("");
+  const [receipt, setReceipt] = useState("");
+  const [sending, setSending] = useState(false);
+  const [mine, setMine] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/subscription")
+      .then(r => r.json())
+      .then(d => setMine(d.request || null))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const submit = async () => {
+    setSending(true);
+    try {
+      const res = await fetch("/api/subscription", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile?.name, studentId: profile?.studentId,
+          email, note: note.trim(), receiptUrl: receipt.trim(),
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { onToast?.("وصل طلبك — ستصلك النتيجة قريباً ✅", "success"); setMine({ status: "pending" }); }
+      else onToast?.(safeText(d.error, "تعذّر إرسال الطلب"), "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setSending(false);
+  };
+
+  const Row = ({ label, value }) => value ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 0", borderBottom: `1px solid ${t.bd}` }}>
+      <span style={{ fontSize: 12, color: t.mu, fontWeight: 700, flexShrink: 0 }}>{label}</span>
+      <span style={{ flex: 1, fontSize: 12.5, color: t.tx, fontWeight: 700, textAlign: "left", direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", fontFamily: label === "الآيبان" ? "monospace" : "inherit" }}>{value}</span>
+      <button onClick={() => { try { navigator.clipboard.writeText(value); onToast?.("تم النسخ", "success"); } catch { } }}
+        style={{ background: "none", border: "none", cursor: "pointer", color: P.blue2, display: "flex", padding: 2, flexShrink: 0 }}>
+        <Copy size={13} />
+      </button>
+    </div>
+  ) : null;
+
+  const configured = pay.bank || pay.iban || pay.accountName || pay.price;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 600, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={17} color={P.gold} /> {safeText(pay.title, DEFAULT_PAYMENT.title)}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        {gate && !gate.subscribed && (
+          <div style={{ background: `${P.orange}10`, border: `1px solid ${P.orange}35`, borderRadius: 14, padding: "12px 14px", marginBottom: 14, display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <AlertTriangle size={16} color={P.orange} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12.5, color: t.tx, lineHeight: 1.75 }}>
+              استخدمت {gate.used ?? gate.limit} من {gate.limit} أسئلة.
+              {gate.resetAt ? ` تتجدّد مجاناً ${untilLabel(gate.resetAt)}` : ""} — أو اشترك للاستخدام بلا حدّ.
+            </div>
+          </div>
+        )}
+
+        {/* An answered request replaces the form: nothing to fill in twice. */}
+        {loaded && mine && mine.status === "pending" && (
+          <div style={{ background: t.s1, border: `1px solid ${P.blue2}45`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: P.blue2, marginBottom: 5 }}>طلبك قيد المراجعة</div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.8 }}>{safeText(pay.verifyNote, DEFAULT_PAYMENT.verifyNote)}</div>
+          </div>
+        )}
+        {loaded && mine && mine.status === "rejected" && (
+          <div style={{ background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: P.red, marginBottom: 5 }}>لم يُقبل الطلب</div>
+            {mine.admin_reply && <div style={{ fontSize: 12.5, color: t.tx, lineHeight: 1.8 }}>{safeText(mine.admin_reply, "")}</div>}
+            <div style={{ fontSize: 11.5, color: t.mu, marginTop: 6 }}>يمكنك إرسال طلب جديد بعد التصحيح.</div>
+          </div>
+        )}
+        {loaded && mine && mine.status === "approved" && (
+          <div style={{ background: `${P.green}0d`, border: `1px solid ${P.green}40`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: P.green, marginBottom: 5 }}>اشتراكك مفعّل ✅</div>
+            {mine.expires_at && <div style={{ fontSize: 12.5, color: t.mu }}>ينتهي في {calDate(String(mine.expires_at).slice(0, 10))}</div>}
+          </div>
+        )}
+
+        {/* Payment details — whatever the admin saved */}
+        <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 16, marginBottom: 14, boxShadow: t.shSm }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <CreditCard size={15} color={P.green} /> بيانات التحويل
+          </div>
+          {configured ? (
+            <>
+              <Row label="المبلغ" value={safeText(pay.price, "")} />
+              <Row label="البنك" value={safeText(pay.bank, "")} />
+              <Row label="اسم الحساب" value={safeText(pay.accountName, "")} />
+              <Row label="الآيبان" value={safeText(pay.iban, "")} />
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.8, paddingTop: 6 }}>
+              لم تُضَف بيانات التحويل بعد. تُضبط من لوحة التحكم ← الاشتراكات.
+            </div>
+          )}
+          {pay.terms && (
+            <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.8, marginTop: 12, background: t.s2, borderRadius: 10, padding: "10px 12px" }}>
+              {safeText(pay.terms, "")}
+            </div>
+          )}
+        </div>
+
+        {/* The request itself */}
+        {(!mine || mine.status === "rejected") && (
+          <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 16, boxShadow: t.shSm }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 10 }}>أرسل طلبك</div>
+
+            {!profileComplete(profile) && (
+              <div style={{ fontSize: 12, color: P.orange, background: `${P.orange}10`, border: `1px solid ${P.orange}30`, borderRadius: 10, padding: "9px 11px", marginBottom: 10, lineHeight: 1.7 }}>
+                أكمل اسمك ورقمك الجامعي في «حسابي» أولاً — يُرسَلان مع الطلب.
+              </div>
+            )}
+
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>رابط صورة الإيصال</div>
+            <input value={receipt} onChange={e => setReceipt(e.target.value)} placeholder="ألصق رابط الصورة"
+              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 12 }} />
+
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>ملاحظة (اختياري)</div>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="أي تفاصيل تساعد في المراجعة"
+              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", resize: "vertical", marginBottom: 12 }} />
+
+            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, marginBottom: 12 }}>
+              يُرسَل مع الطلب: اسمك، رقمك الجامعي، وبريدك ({email || "—"}).
+            </div>
+
+            <Btn variant="primary" onClick={submit} style={{ width: "100%" }}
+              disabled={sending || !profileComplete(profile) || (!receipt.trim() && !note.trim())}>
+              <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال الطلب"}
+            </Btn>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Same shape check the server applies — enough to catch typos, not to verify. */
+const looksLikeEmail = (v) => {
+  const x = String(v || "").trim();
+  return x.length >= 6 && x.length <= 160 && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(x);
+};
+/** "خلال ٤٢ دقيقة" — how long until the allowance rolls over. */
+const untilLabel = (resetAt) => {
+  const mins = Math.max(0, Math.ceil((resetAt - Date.now()) / 60000));
+  if (mins <= 0) return "الآن";
+  if (mins < 60) return `خلال ${mins} دقيقة`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `خلال ${h} ساعة${m ? ` و${m} د` : ""}`;
+};
+
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null }) {
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
@@ -659,6 +843,30 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   // or change their mind — nothing is spent on their behalf.
   const [inp, setInp] = useState(seed || "");
   const [loading, setLoading] = useState(false);
+  // The email is owned by App and passed in. Two useStored hooks on one key
+  // is a race — each keeps its own copy of the value and the loser writes its
+  // stale one back — so there is exactly one owner and this is a prop.
+  const aiEmail = email;
+  const setAiEmail = onSaveEmail || (() => {});
+  const [askEmail, setAskEmail] = useState(false);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [gate, setGate] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/ai/usage")
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled || !d) return;
+        setGate({
+          subscribed: !!d.subscribed, limit: d.limit ?? 5, used: d.used ?? 0,
+          remaining: d.subscribed ? Infinity : (d.remaining ?? d.limit ?? 5),
+          resetAt: d.resetAt || 0,
+          blocked: !d.subscribed && (d.remaining ?? 1) <= 0,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [menuId, setMenuId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [fileContext, setFileContext] = useState(null);
@@ -799,6 +1007,10 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   const send = async (q) => {
     const text = (q || inp).trim();
     if (!text || loading) return;
+    // The email is asked for once and kept locally; the server checks its
+    // shape and records it, so there is no point sending a question without it.
+    if (!looksLikeEmail(aiEmail)) { setAskEmail(true); return; }
+    if (gate && gate.blocked) { onSubscribe?.(gate); return; }
     setInp("");
     const newMsg = { r: "u", id: mkId(), text, ts: Date.now() };
     const newMsgs = [...msgs, newMsg];
@@ -809,9 +1021,22 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, messages: history, fileContext }),
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail }),
       });
       const d = await res.json();
+      // The server is the authority on what is left; mirror whatever it says.
+      if (d.subscribed || d.remaining != null || d.resetAt) {
+        setGate({
+          subscribed: !!d.subscribed,
+          limit: d.limit ?? 5,
+          used: d.used ?? 0,
+          remaining: d.subscribed ? Infinity : (d.remaining ?? 0),
+          resetAt: d.resetAt || 0,
+          blocked: !d.subscribed && d.need === "subscription",
+        });
+      }
+      if (d.need === "email") { setAskEmail(true); setLoading(false); return; }
+      if (d.need === "subscription") { onSubscribe?.({ used: d.used, limit: d.limit, resetAt: d.resetAt }); setLoading(false); return; }
       const errText = d.error
         ? d._debug?.length
           ? `${d.error}\n\n🔍 تفاصيل: ${d._debug.join(" | ")}`
@@ -978,6 +1203,55 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
               {i < fileSugs.length ? "📄 " : ""}{s}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Email gate — asked once, then never again on this device */}
+      {askEmail && (
+        <div style={{ padding: "12px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, animation: "fadeUp .25s ease" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+            <Mail size={14} color={P.blue2} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>بريدك الإلكتروني للمتابعة</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 9 }}>
+            يُحفظ على جهازك ويُستخدم لطلبات الاشتراك — يُطلب مرة واحدة فقط.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={emailDraft} onChange={e => setEmailDraft(e.target.value)} placeholder="you@example.com"
+              onKeyDown={e => { if (e.key === "Enter" && looksLikeEmail(emailDraft)) { setAiEmail(emailDraft.trim()); setAskEmail(false); } }}
+              style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "10px 14px", fontSize: 13, outline: "none", direction: "ltr", textAlign: "left", fontFamily: "inherit", color: t.tx, background: t.s2, minWidth: 0 }} />
+            <Btn variant="primary" size="sm" disabled={!looksLikeEmail(emailDraft)}
+              onClick={() => { setAiEmail(emailDraft.trim()); setAskEmail(false); }}>حفظ</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* What is left of the allowance — the server's number, not a guess */}
+      {gate && !gate.subscribed && !askEmail && (
+        <div style={{
+          padding: "7px 12px", background: gate.blocked ? `${P.orange}12` : t.s1,
+          borderTop: `1px solid ${t.bd}`, flexShrink: 0,
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+        }}>
+          <Sparkles size={12} color={gate.blocked ? P.orange : t.mu} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 11.5, color: gate.blocked ? P.orange : t.mu, fontWeight: gate.blocked ? 800 : 600, flex: 1, minWidth: 0 }}>
+            {gate.blocked
+              ? `انتهت أسئلتك المجانية — تتجدّد ${untilLabel(gate.resetAt)}`
+              : `بقي ${gate.remaining} من ${gate.limit} أسئلة`}
+          </span>
+          {onSubscribe && (
+            <button onClick={() => onSubscribe(gate)} style={{
+              background: gate.blocked ? P.orange : "transparent", border: `1px solid ${gate.blocked ? P.orange : t.bd}`,
+              borderRadius: 14, padding: "3px 11px", cursor: "pointer", fontFamily: "inherit",
+              fontSize: 11.5, fontWeight: 800, color: gate.blocked ? "#fff" : P.blue2, flexShrink: 0,
+            }}>اشتراك</button>
+          )}
+        </div>
+      )}
+      {gate?.subscribed && (
+        <div style={{ padding: "7px 12px", background: `${P.green}10`, borderTop: `1px solid ${t.bd}`, flexShrink: 0, display: "flex", alignItems: "center", gap: 7 }}>
+          <Check size={12} color={P.green} />
+          <span style={{ fontSize: 11.5, color: P.green, fontWeight: 800 }}>اشتراكك فعّال — أسئلة بلا حدّ</span>
         </div>
       )}
 
@@ -6246,6 +6520,10 @@ export default function App() {
   // Public site: every feature is open to everyone, no account required.
   // A caller may hand the assistant an opening question (the study tip does).
   const [aiSeed, setAiSeed] = useState("");
+  // The subscription sheet, opened from the assistant when the free
+  // allowance runs out (or from the "اشتراك" chip at any time).
+  const [subOpen, setSubOpen] = useState(null); // null | gate object
+  const [aiEmail, setAiEmail] = useStored("ai_email", "");
   const requestAI = (seed) => { setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true); };
 
   const toggleFav = (s) => {
@@ -6526,6 +6804,9 @@ export default function App() {
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
+      {subOpen && <SubscribeSheet t={t} onClose={() => setSubOpen(null)} profile={profile}
+        email={aiEmail} gate={subOpen} onToast={toasts.push} />}
+
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
 
       {/* Came back after signing out with an account saved on this device */}
@@ -6624,7 +6905,9 @@ export default function App() {
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {aiGlobalTab === "chat"
-              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} />
+              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed}
+                  profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
+                  email={aiEmail} onSaveEmail={setAiEmail} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} /></div>
             }
           </div>
