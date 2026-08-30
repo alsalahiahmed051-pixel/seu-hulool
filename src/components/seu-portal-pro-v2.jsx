@@ -3870,26 +3870,62 @@ function useCalendarEvents() {
   }, [content]);
 }
 
-/** The calendar as a full page — its own tab in the bottom nav. */
-function CalendarPage({ t }) {
+/**
+ * The calendar as a full page — its own tab in the bottom nav.
+ *
+ * Everything is shown to everyone by default: an event tagged for another
+ * plan is still a date this student may need to know, and hiding it was the
+ * behaviour that got reverted earlier. What the plan buys you is a filter you
+ * choose — "يخصّني" narrows to your track — and never a silent omission.
+ */
+function CalendarPage({ t, profile }) {
   const events = useCalendarEvents();
+  const [mineOnly, setMineOnly] = useState(false);
+  const mineCount = useMemo(
+    () => events.filter(e => e.audience && e.audience !== "all" && audienceMatches(e.audience, profile)).length,
+    [events, profile]);
+  const shown = mineOnly ? events.filter(e => audienceMatches(e.audience, profile)) : events;
+
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
       <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
         <Calendar size={20} color={P.blue2} /> التقويم الأكاديمي
       </h2>
-      <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 16, lineHeight: 1.7 }}>
+      <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>
         مواعيد الفصل: التسجيل، الحذف والإضافة، الاختبارات، والإجازات.
       </div>
-      {events.length === 0
-        ? <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>لا أحداث في التقويم بعد</div>
-        : <CalendarList t={t} events={events} />}
+
+      {/* Only offered when the student has a track and some event is tagged
+          for it — otherwise the toggle would filter nothing. */}
+      {profile?.track && mineCount > 0 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[{ id: false, label: `الكل (${events.length})` }, { id: true, label: `يخصّني (${shownCountFor(events, profile)})` }].map(({ id, label }) => {
+            const active = mineOnly === id;
+            return (
+              <button key={String(id)} onClick={() => setMineOnly(id)} style={{
+                padding: "6px 14px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
+                background: active ? P.blue2 : t.s2, border: `1px solid ${active ? P.blue2 : t.bd}`,
+                color: active ? "#fff" : t.mu,
+              }}>{label}</button>
+            );
+          })}
+        </div>
+      )}
+
+      {shown.length === 0
+        ? <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>
+            {events.length === 0 ? "لا أحداث في التقويم بعد" : "لا أحداث تخصّ مسارك"}
+          </div>
+        : <CalendarList t={t} events={shown} profile={profile} />}
     </div>
   );
 }
+/** How many events a student would see under the "يخصّني" filter. */
+const shownCountFor = (events, profile) => events.filter(e => audienceMatches(e.audience, profile)).length;
 
 /** The upcoming/past split, shared by the calendar page and the modal. */
-function CalendarList({ t, events }) {
+function CalendarList({ t, events, profile }) {
   const upcoming = events.filter(e => e.days >= 0);
   const past = events.filter(e => e.days < 0);
   const Row = (e, i) => {
@@ -3904,9 +3940,22 @@ function CalendarList({ t, events }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, lineHeight: 1.5 }}>{e.label}</div>
           <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>{calDate(e.date)}</div>
-          {audienceLabel(e.audience) && (
-            <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 8px", marginTop: 6 }}>خاص بـ {audienceLabel(e.audience)}</div>
-          )}
+          {audienceLabel(e.audience) && (() => {
+            // An event aimed at this student's own track is worth spotting in
+            // a long list, so it says "مسارك" instead of repeating the label.
+            const mine = audienceMatches(e.audience, profile);
+            return (
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700,
+                color: mine ? P.green : col, background: `${mine ? P.green : col}14`,
+                border: mine ? `1px solid ${P.green}45` : "none",
+                borderRadius: 7, padding: "2px 8px", marginTop: 6,
+              }}>
+                {mine && <Check size={10} />}
+                {mine ? "مسارك" : `خاص بـ ${audienceLabel(e.audience)}`}
+              </div>
+            );
+          })()}
         </div>
         <div style={{ background: chip.bg, color: chip.col, borderRadius: 9, padding: "4px 10px", fontSize: 11.5, fontWeight: 800, alignSelf: "flex-start", flexShrink: 0 }}>{chip.text}</div>
       </div>
@@ -4341,16 +4390,25 @@ function ExplorePage({ onCourse, t, profile }) {
   const [path, setPath] = useState(null);
   const [sub, setSub] = useState(null);
 
-  // Personalise: jump straight to the student's track (and plan) on first open.
+  // Open on the student's own subjects, not on a picker they already answered.
+  //
+  // This is also the landing spot when you back out of a course, so it has to
+  // be the deepest place their profile actually determines: the term's
+  // subjects for تحضيري, and their college's programmes for تخصص — not the
+  // list of five colleges they'd have to re-navigate every single time.
   useEffect(() => {
     const key = TRACK_TO_TREE[profile?.track];
     if (!key) return;
     setPath(key);
     if (key === "preparatory" && PLAN_TO_SUB[profile?.plan]) {
       setSub(PLAN_TO_SUB[profile.plan]); setStep("level3");
-    } else {
-      setStep("level2");
+      return;
     }
+    if (key === "bachelor" && profile?.college) {
+      const col = TREE.bachelor.colleges.find(c => c.label === profile.college);
+      if (col) { setSub(col.id); setStep("level3"); return; }
+    }
+    setStep("level2");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -6088,6 +6146,11 @@ export default function App() {
   const [showFocus, setShowFocus] = useState(false);
   const [showMonthlyReport, setShowMonthlyReport] = useState(false);
   const [aiSubject, setAiSubject] = useState("عام");
+  // The assistant's subject list, with the student's own plan lifted to the top.
+  const aiSubjectGroups = useMemo(() => {
+    const mine = myTrackSubjects(profile).filter(s => ALL_COURSES.includes(s));
+    return { mine, rest: ALL_COURSES.filter(c => !mine.includes(c)) };
+  }, [profile]);
   const [aiGlobalTab, setAiGlobalTab] = useState("chat");
   const [aiClearKey, setAiClearKey] = useState(0);
   const clearGlobalAI = () => {
@@ -6281,7 +6344,9 @@ export default function App() {
 
   const TABS = [
     { id: "home", Icon: Home, label: "الرئيسية" },
-    { id: "explore", Icon: Compass, label: "المسارات" },
+    // Once a track is confirmed the explorer is scoped to it, so the label
+    // "المسارات" (plural, all of them) stops being true.
+    { id: "explore", Icon: Compass, label: profile?.track ? "مساري" : "المسارات" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
     // The academic calendar earns its own tab: it was buried as a link on the
     // links page and a strip at the bottom of home, and it is the thing
@@ -6397,7 +6462,7 @@ export default function App() {
 
         {tab === "links" && <SEULinksPage t={t} content={linksContent} />}
 
-        {tab === "calendar" && <CalendarPage t={t} />}
+        {tab === "calendar" && <CalendarPage t={t} profile={profile} />}
 
         {tab === "gpa" && (
           <div style={{ animation: "fadeUp .4s ease" }}>
@@ -6544,7 +6609,21 @@ export default function App() {
                     direction: "rtl",
                   }}>
                   <option value="عام" style={{ background: "#0a3d29", color: "#fff" }}>🌐 عام — مساعد SEU</option>
-                  {ALL_COURSES.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                  {/* Your own subjects first, then everything else. Scrolling
+                      a 20-programme list to reach your one course was the
+                      slowest thing about switching subject. */}
+                  {aiSubjectGroups.mine.length > 0 && (
+                    <optgroup label="موادي" style={{ background: "#0a3d29", color: "#fff" }}>
+                      {aiSubjectGroups.mine.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                    </optgroup>
+                  )}
+                  {aiSubjectGroups.mine.length > 0 ? (
+                    <optgroup label="كل المواد" style={{ background: "#0a3d29", color: "#fff" }}>
+                      {aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                    </optgroup>
+                  ) : (
+                    aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)
+                  )}
                 </select>
                 <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               </div>
