@@ -703,7 +703,7 @@ function StreakWeek({ activeDays, t }) {
 /* ══════════════════════════════════════════════════════════════
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
-function AIChat({ subject, t, onChat, standalone = true, files = null }) {
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "" }) {
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
@@ -712,7 +712,10 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
     if (stored && stored.length > 0) return stored.map(m => ({ ...m, id: m.id || mkId() }));
     return [makeDefault()];
   });
-  const [inp, setInp] = useState("");
+  // A caller can hand the chat an opening question (the study tip does).
+  // It lands in the box rather than being sent, so the student can edit it
+  // or change their mind — nothing is spent on their behalf.
+  const [inp, setInp] = useState(seed || "");
   const [loading, setLoading] = useState(false);
   const [menuId, setMenuId] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -3844,7 +3847,49 @@ function calChip(days) {
 
 // Full-screen calendar view opened from the home strip — a clean vertical
 // timeline of every academic event (upcoming first, then finished).
-function CalendarModal({ t, events, onClose }) {
+/**
+ * Read the admin-managed academic calendar into renderable rows.
+ *
+ * Shared by the home strip and the calendar tab so there is one source and
+ * one set of guards: an admin row can arrive with a missing or blank date, or
+ * a label that is an object, and either would take the whole app down if it
+ * reached React as a child.
+ */
+function useCalendarEvents() {
+  const { data: content } = useSiteContent("calendar");
+  return useMemo(() => {
+    const now = new Date();
+    return (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
+      .filter(e => e && typeof e === "object")
+      .map(e => {
+        const date = typeof e.date === "string" ? e.date : "";
+        const ms = date ? new Date(date + "T00:00:00").getTime() : NaN;
+        return { ...e, label: safeText(e.label, "حدث"), date, days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000) };
+      })
+      .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  }, [content]);
+}
+
+/** The calendar as a full page — its own tab in the bottom nav. */
+function CalendarPage({ t }) {
+  const events = useCalendarEvents();
+  return (
+    <div style={{ animation: "fadeUp .4s ease" }}>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+        <Calendar size={20} color={P.blue2} /> التقويم الأكاديمي
+      </h2>
+      <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 16, lineHeight: 1.7 }}>
+        مواعيد الفصل: التسجيل، الحذف والإضافة، الاختبارات، والإجازات.
+      </div>
+      {events.length === 0
+        ? <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>لا أحداث في التقويم بعد</div>
+        : <CalendarList t={t} events={events} />}
+    </div>
+  );
+}
+
+/** The upcoming/past split, shared by the calendar page and the modal. */
+function CalendarList({ t, events }) {
   const upcoming = events.filter(e => e.days >= 0);
   const past = events.filter(e => e.days < 0);
   const Row = (e, i) => {
@@ -3868,59 +3913,32 @@ function CalendarModal({ t, events, onClose }) {
     );
   };
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
-      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
-          <ArrowLeft size={15} /> رجوع
-        </button>
-        <div style={{ fontSize: 17, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-          <Calendar size={18} color={P.gold} /> التقويم الأكاديمي
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", maxWidth: 620, margin: "0 auto", width: "100%" }}>
-        {upcoming.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, marginBottom: 10 }}>القادمة</div>}
-        {upcoming.map(Row)}
-        {past.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, margin: "18px 0 10px" }}>المنتهية</div>}
-        {past.map(Row)}
-        {events.length === 0 && <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>لا أحداث في التقويم بعد</div>}
-      </div>
-    </div>
+    <>
+      {upcoming.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, marginBottom: 10 }}>القادمة</div>}
+      {upcoming.map(Row)}
+      {past.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, margin: "18px 0 10px" }}>المنتهية</div>}
+      {past.map(Row)}
+    </>
   );
 }
 
-function AcademicCalendar({ t, profile }) {
-  const { data: content } = useSiteContent("calendar");
-  const [open, setOpen] = useState(false);
-  const now = new Date();
-  // Public site: everyone sees every event. The audience tag stays only as an
-  // informational badge ("خاص بـ خطة أ") — it never hides anything.
-  // Admin-entered events may be missing or have a blank date; never let one
-  // bad row throw (an exception here would blank the entire app).
-  const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
-    .filter(e => e && typeof e === "object")
-    .map(e => {
-      const date = typeof e.date === "string" ? e.date : "";
-      const ms = date ? new Date(date + "T00:00:00").getTime() : NaN;
-      // label is rendered as a child — never let an object through (React
-      // throws "Objects are not valid as a React child" and the app dies).
-      return {
-        ...e,
-        label: safeText(e.label, "حدث"),
-        date,
-        days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000),
-      };
-    })
-    .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
-
+/**
+ * The next few dates, as a strip on the home page.
+ *
+ * Public site: everyone sees every event. The audience tag stays only as an
+ * informational badge ("خاص بـ خطة أ") — it never hides anything. "عرض الكل"
+ * now goes to the calendar tab rather than a modal, so there is one full view.
+ */
+function AcademicCalendar({ t, onOpenAll }) {
+  const events = useCalendarEvents();
   if (!events.length) return null;
   const upcoming = events.filter(e => e.days >= 0);
   const strip = (upcoming.length ? upcoming : events).slice(0, 8);
 
   return (
     <>
-      {open && <CalendarModal t={t} events={events} onClose={() => setOpen(false)} />}
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
-        <button onClick={() => setOpen(true)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: 0 }}>
+        <button onClick={onOpenAll} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
             <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
           </span>
@@ -3932,7 +3950,7 @@ function AcademicCalendar({ t, profile }) {
             const col = e.color || P.blue2;
             const chip = calChip(e.days);
             return (
-              <button key={i} onClick={() => setOpen(true)} style={{
+              <button key={i} onClick={onOpenAll} style={{
                 flexShrink: 0, width: 158, background: t.s2, borderRadius: 14, textAlign: "right", cursor: "pointer", fontFamily: "inherit",
                 border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
               }}>
@@ -3975,13 +3993,24 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
   const { greeting, todayStr } = clock;
   // Starts at 0 for a stable first render; the hour-based tip is picked after
   // mount (see the interval effect below) to stay hydration-safe.
-  const [tipIdx, setTipIdx] = useState(0);
+  // Tips are drawn without repeating: the card starts as an invitation rather
+  // than a fact nobody asked for, and every tip in the deck is shown once
+  // before any comes round again. The deck is remembered across visits, so
+  // "أعطني نصيحة" keeps giving you something new, not the same three.
+  const [tipSeen, setTipSeen] = useStored("tipsSeen", []);
+  const [tipIdx, setTipIdx] = useState(null);
+  const drawTip = useCallback(() => {
+    const pool = TIPS.map((_, i) => i).filter(i => !(tipSeen || []).includes(i) && i !== tipIdx);
+    // Deck exhausted — reshuffle, but never hand back the one on screen.
+    const from = pool.length ? pool : TIPS.map((_, i) => i).filter(i => i !== tipIdx);
+    const pick = from[Math.floor(Math.random() * from.length)];
+    setTipIdx(pick);
+    setTipSeen(pool.length ? [...(tipSeen || []), pick] : [pick]);
+  }, [tipSeen, tipIdx, setTipSeen]);
   const [pwaPrompt, setPwaPrompt] = useState(null);
-  useEffect(() => {
-    setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length);
-    const iv = setInterval(() => setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length), 60000);
-    return () => clearInterval(iv);
-  }, []);
+  // (A timer here used to force a tip on screen and swap it on the hour,
+  //  which is exactly the "it just repeats at me" behaviour being fixed —
+  //  the card is asked, not pushed, so the timer is gone.)
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setPwaPrompt(e); };
     window.addEventListener("beforeinstallprompt", handler);
@@ -3992,7 +4021,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
     pwaPrompt.prompt();
     pwaPrompt.userChoice.then(() => setPwaPrompt(null));
   };
-  const tip = TIPS[tipIdx];
+  const tip = tipIdx == null ? null : TIPS[tipIdx];
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
@@ -4025,14 +4054,17 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
             const ghost = { ...base, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.16)", color: "rgba(255,255,255,.9)" };
             return (
               <>
+                {/* The primary pill said "اختر مسارك" even to someone whose
+                    track was already picked and printed just above it. It now
+                    says what it will actually do for you. */}
                 <button onClick={() => setActiveTab("explore")} style={{ ...base, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", color: "#3a2e05", fontWeight: 800, boxShadow: `0 6px 18px ${P.gold}44` }}>
-                  <GradCap size={14} /> اختر مسارك
+                  <GradCap size={14} /> {profile?.track ? "تصفّح موادي" : "اختر مسارك"}
                 </button>
-                <button onClick={onOpenAI} style={ghost}>
-                  <Sparkles size={13} color={P.gold} /> المساعد الذكي
+                <button onClick={() => onOpenAI?.()} style={ghost}>
+                  <Sparkles size={13} color={P.gold} /> اسأل المساعد
                 </button>
                 <button onClick={() => setActiveTab("gpa")} style={ghost}>
-                  <Calculator size={13} /> احسب معدلك
+                  <Calculator size={13} /> احسب معدلي
                 </button>
                 {pwaPrompt && (
                   <button onClick={installPwa} style={{ ...base, background: `${P.green}22`, border: `1px solid ${P.green}55`, color: "#8ff0c0" }}>
@@ -4113,59 +4145,87 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         </div>
       )}
 
+      {/* Study tip — an invitation, not a fact nobody asked for */}
       <div style={{
         background: `linear-gradient(135deg, ${P.gold}14, ${P.gold}05)`, borderRadius: 18,
         padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
         boxShadow: `0 4px 20px ${P.gold}12`, position: "relative", overflow: "hidden",
       }}>
         <div style={{ position: "absolute", top: -24, left: -14, width: 90, height: 90, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40` }}>
-              <Lightbulb size={17} color="#3a2e05" />
-            </div>
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
-              <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>{tipIdx + 1} من {TIPS.length}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: tip ? 12 : 12, position: "relative" }}>
+          <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40`, flexShrink: 0 }}>
+            <Lightbulb size={17} color="#3a2e05" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
+            <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>
+              {tip ? `${Math.min((tipSeen || []).length, TIPS.length)} من ${TIPS.length}` : `${TIPS.length} نصيحة بانتظارك`}
             </div>
           </div>
-          <button
-            onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
-            style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 20, padding: "6px 13px", cursor: "pointer", fontSize: 12, color: "#3a2e05", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, fontWeight: 800 }}>
-            <RotateCcw size={12} /> التالية
-          </button>
         </div>
-        <p style={{ margin: 0, fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative" }}>{tip}</p>
+
+        {tip && (
+          <p style={{ margin: "0 0 12px", fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative", animation: "fadeUp .3s ease" }}>{tip}</p>
+        )}
+
+        <div style={{ display: "flex", gap: 8, position: "relative" }}>
+          <button onClick={drawTip} style={{
+            flex: tip ? 1 : "1 1 100%", background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none",
+            borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#3a2e05",
+            fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
+          }}>
+            {tip ? <><RotateCcw size={13} /> نصيحة أخرى</> : <><Lightbulb size={14} /> أعطني نصيحة</>}
+          </button>
+          {tip && (
+            /* The tip is a starting point, not the end of it — one tap hands
+               it to the assistant so you can actually ask about it. */
+            <button onClick={() => onOpenAI?.(`اشرح لي هذه النصيحة الدراسية وكيف أطبّقها عملياً على موادي:\n«${tip}»`)} style={{
+              flex: 1, background: t.s1, border: `1.5px solid ${P.blue2}45`, borderRadius: 12, padding: "10px 14px",
+              cursor: "pointer", fontSize: 13, color: P.blue2, fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
+            }}>
+              <Sparkles size={13} /> اسأل المساعد عنها
+            </button>
+          )}
+        </div>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12 }}>وصول سريع</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-          {[
-            { Icon: BookOpen, label: "تجميعات وملخصات", tab: "explore", color: P.blue2 },
-            { Icon: FileText, label: "خطط دراسية", tab: "explore", color: P.purple },
-            { Icon: GraduationCap, label: "المقررات", tab: "explore", color: "#be123c" },
-            { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold },
-            { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.green },
-            { Icon: Link2, label: "روابط الجامعة", tab: "links", color: P.cyan },
-          ].map(({ Icon, label, tab, color }, i) => (
-            <button key={i} onClick={() => setActiveTab(tab)} style={{
-              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14, padding: "14px 10px",
-              cursor: "pointer", textAlign: "center", transition: "all .22s", boxShadow: t.shSm, fontFamily: "inherit",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                <Icon size={18} color={color} strokeWidth={2} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{label}</div>
-            </button>
-          ))}
+      {/* Pick up where you left off — the most likely next tap, and the one
+          thing here the bottom nav cannot already do in one press. The old
+          "وصول سريع" grid sent three of its six tiles to the same tab and the
+          rest to tabs already sitting in the nav, so it was decoration. */}
+      {recent.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <History size={15} color={P.blue2} /> تابع من حيث توقفت
+          </div>
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
+            {recent.slice(0, 6).map((sname) => {
+              const SIcon = getIcon(sname);
+              return (
+                <button key={sname} onClick={() => openCourse(sname)} style={{
+                  flexShrink: 0, width: 140, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14,
+                  padding: 12, cursor: "pointer", textAlign: "right", fontFamily: "inherit", boxShadow: t.shSm,
+                  display: "flex", flexDirection: "column", gap: 8, transition: "all .2s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <SIcon size={16} color={P.blue2} />
+                  </div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, lineHeight: 1.45, minHeight: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{sname}</div>
+                  <div style={{ fontSize: 11, color: P.blue2, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>
+                    متابعة <ChevronLeft size={11} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Academic calendar strip — bottom */}
-      <AcademicCalendar t={t} profile={profile} />
+      <AcademicCalendar t={t} onOpenAll={() => setActiveTab("calendar")} />
 
       {/* Focus mode — bottom */}
       <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit", marginBottom: 8 }}>
@@ -5494,7 +5554,7 @@ const DEFAULT_LINKS = {
       { label: "المكتبة الرقمية السعودية (SDL)", desc: "الكتب والمراجع والأبحاث الأكاديمية", url: "https://sdl.edu.sa/SDLPortal/ar/login.aspx", icon: "BookOpen", color: "#be123c" },
       { label: "البريد الإلكتروني الجامعي", desc: "بريد @seu.edu.sa عبر Office 365", url: "https://sso.seu.edu.sa/SEUOffice365SSO/pages/login.jsp", icon: "Mail", color: "#0369a1" },
       { label: "بوابة القبول والتسجيل", desc: "التسجيل وقبول الطلاب الجدد", url: "https://admission.seu.edu.sa", icon: "CheckCircle", color: "#0891b2" },
-      { label: "التقويم الأكاديمي", desc: "مواعيد الفصول والاختبارات والتسجيل", url: "https://www.seu.edu.sa/en/academic-calendar/1448/", icon: "Calendar", color: "#d97706" },
+      // The academic calendar lives in its own tab now, not as a link out.
     ]},
     { group: "الخدمات المالية والإدارية", color: P.green, items: [
       { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://erpgate.seu.edu.sa", icon: "CreditCard", color: "#059669" },
@@ -6145,7 +6205,9 @@ export default function App() {
   };
 
   // Public site: every feature is open to everyone, no account required.
-  const requestAI = () => setShowAI(true);
+  // A caller may hand the assistant an opening question (the study tip does).
+  const [aiSeed, setAiSeed] = useState("");
+  const requestAI = (seed) => { setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true); };
 
   const toggleFav = (s) => {
     const exists = favorites.includes(s);
@@ -6221,8 +6283,14 @@ export default function App() {
     { id: "home", Icon: Home, label: "الرئيسية" },
     { id: "explore", Icon: Compass, label: "المسارات" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
+    // The academic calendar earns its own tab: it was buried as a link on the
+    // links page and a strip at the bottom of home, and it is the thing
+    // students check most often after their own schedule.
+    { id: "calendar", Icon: Calendar, label: "التقويم" },
     { id: "fav", Icon: Star, label: "المفضلة" },
-    { id: "links", Icon: Link2, label: "روابط SEU" },
+    // "روابط SEU" → "روابط": with seven tabs the extra word was enough to
+    // push حسابي off the edge of a phone screen.
+    { id: "links", Icon: Link2, label: "روابط" },
     { id: "profile", Icon: CircleUser, label: "حسابي" },
   ];
 
@@ -6329,6 +6397,8 @@ export default function App() {
 
         {tab === "links" && <SEULinksPage t={t} content={linksContent} />}
 
+        {tab === "calendar" && <CalendarPage t={t} />}
+
         {tab === "gpa" && (
           <div style={{ animation: "fadeUp .4s ease" }}>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
@@ -6383,11 +6453,11 @@ export default function App() {
             <button key={id} onClick={() => { setTab(id); setCourse(null); }}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                background: "none", border: "none", cursor: "pointer", padding: "5px 10px",
+                background: "none", border: "none", cursor: "pointer", padding: "5px 4px",
                 transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
               }}>
               <div style={{
-                width: 40, height: 32, borderRadius: 12, position: "relative",
+                width: 38, height: 31, borderRadius: 12, position: "relative",
                 background: active ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "all .25s",
@@ -6396,7 +6466,7 @@ export default function App() {
                 <Icon size={17} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
                 {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
               </div>
-              <span style={{ fontSize: 11.5, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 10.5, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
@@ -6499,7 +6569,7 @@ export default function App() {
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {aiGlobalTab === "chat"
-              ? <AIChat key={`${aiSubject}-${aiClearKey}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
+              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} /></div>
             }
           </div>
