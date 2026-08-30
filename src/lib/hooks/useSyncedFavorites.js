@@ -29,12 +29,16 @@ export function useSyncedFavorites() {
   // Empty on the first render so server and client markup match; the saved
   // list is adopted right after mount. See useSyncedSetting for why.
   const [favorites, setFavState] = useState([])
-  const hydrated = useRef(false)
+  // State, not a ref: a ref is already true when the writer effect runs later
+  // in the same commit, where `favorites` is still the empty initial value —
+  // so it would stamp [] over the saved list before the next render restores
+  // it. Batching both setState calls closes that window. See useStored.
+  const [ready, setReady] = useState(false)
   const userIdRef = useRef(null)
 
-  useEffect(() => { hydrated.current = true; setFavState(lsGet()) }, [])
+  useEffect(() => { setFavState(lsGet()); setReady(true) }, [])
 
-  useEffect(() => { if (hydrated.current) lsSet(favorites) }, [favorites])
+  useEffect(() => { if (ready) lsSet(favorites) }, [ready, favorites])
 
   // Replace the server's copy with the full current list (idempotent,
   // tiny data). Fire-and-forget; errors ignored.

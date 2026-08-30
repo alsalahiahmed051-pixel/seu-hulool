@@ -1,5 +1,6 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota, PAID_DAILY_LIMIT } from '@/lib/ai-quota'
+import { readUsage, spendMessage, isSubscribed, looksLikeEmail, FREE_MESSAGES } from '@/lib/ai-usage'
 
 export const runtime = 'nodejs'
 
@@ -214,10 +215,43 @@ export async function POST(request) {
     )
   }
 
+  const { deviceId, setCookie } = deviceIdentity(request)
+
+  // Every response from here must carry the device cookie when one was
+  // freshly minted, or the next request starts a brand-new allowance.
+  const reply = (obj, status = 200) => {
+    const res = Response.json(obj, { status })
+    if (setCookie) res.headers.append('Set-Cookie', setCookie)
+    return res
+  }
+
+  // 3b) An email identifies who is asking. It is a product gate, not proof of
+  // anything — we cannot verify an address here — so it is checked for shape
+  // and recorded, and that is all it claims to be.
+  if (!looksLikeEmail(body.email)) {
+    return reply({ error: 'أدخل بريدك الإلكتروني للمتابعة', need: 'email' }, 400)
+  }
+
+  // 3c) The allowance the student actually sees. Subscribers skip it. Checked
+  // here, on the server, against the signed device cookie — the client is
+  // told the numbers only so it can display them.
+  const subscribed = await isSubscribed(deviceId)
+  if (!subscribed) {
+    const usage = await readUsage(deviceId)
+    if (usage.remaining <= 0) {
+      return reply({
+        error: `استهلكت ${FREE_MESSAGES} أسئلة. انتظر حتى تنتهي المهلة أو اطلب اشتراكاً.`,
+        need: 'subscription',
+        limit: FREE_MESSAGES,
+        used: usage.used,
+        resetAt: usage.resetAt,
+      }, 429)
+    }
+  }
+
   // 4) Providers, FREE FIRST. Paid Anthropic is only appended when this
   // visitor still has paid allowance left today, so ordinary use costs
   // nothing and the paid key is a quality fallback rather than the default.
-  const { deviceId, setCookie } = deviceIdentity(request)
   const providers = []
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
     providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, fileContext) })
@@ -232,12 +266,6 @@ export async function POST(request) {
     if (paidAllowed) {
       providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
     }
-  }
-
-  const reply = (bodyObj, status = 200) => {
-    const res = Response.json(bodyObj, { status })
-    if (setCookie) res.headers.append('Set-Cookie', setCookie)
-    return res
   }
 
   if (providers.length === 0) {
@@ -258,9 +286,17 @@ export async function POST(request) {
     try {
       const text = await fn()
       if (text) {
-        // Only a successful paid reply spends allowance; free ones never do.
+        // Only a successful paid reply spends the provider budget; free ones
+        // never do. The student's own allowance is spent on any answered
+        // question, free or paid, but never on a failure.
         if (paid) await consumePaidQuota(request, deviceId)
-        return reply({ text })
+        const usage = subscribed ? null : await spendMessage(deviceId)
+        return reply({
+          text,
+          subscribed,
+          limit: FREE_MESSAGES,
+          ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
+        })
       }
     } catch (err) {
       errors.push(`${name}: ${err.message}`)

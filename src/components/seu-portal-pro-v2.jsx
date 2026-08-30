@@ -1,7 +1,5 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
@@ -71,14 +69,19 @@ function useStored(key, initial) {
   // with "a client-side exception has occurred"). The stored value is adopted
   // right after mount, and only then do we start writing back.
   const [val, setVal] = useState(initial);
-  const hydrated = useRef(false);
+  // `ready` is state, not a ref, on purpose. A ref flipped by the reader
+  // effect is already true when the writer effect runs later in the SAME
+  // commit — where `val` is still `initial` — so the writer would stamp the
+  // empty value over the saved one, and only put it back on the next render.
+  // Batching both setState calls means the writer's first run already sees
+  // the hydrated value, and storage is never briefly wrong.
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    const stored = storage.get(key, initial);
-    hydrated.current = true;
-    setVal(stored);
+    setVal(storage.get(key, initial));
+    setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  useEffect(() => { if (hydrated.current) storage.set(key, val); }, [key, val]);
+  useEffect(() => { if (ready) storage.set(key, val); }, [ready, key, val]);
   return [val, setVal];
 }
 
@@ -287,30 +290,16 @@ const NOTIFS_SEED = [
   { id: 4, title: "ملخص شامل", text: "ملخص وحدات 1-6 لمادة مهارات الاتصال والتواصل", time: "منذ 3 أيام", read: true, iconKey: "star" },
 ];
 
-const FILES = {
-  collections: (s) => [
-    { name: `تجميع نهاية الفصل الثاني 1445 – ${s}`, sz: "2.4 MB", views: 2180, dl: 843, date: "1445/08/12", r: 4.9 },
-    { name: `بنك أسئلة مع الإجابات النموذجية – ${s}`, sz: "3.1 MB", views: 3540, dl: 1421, date: "1445/07/20", r: 5.0 },
-    { name: `تجميع ميدترم الفصل الأول 1444 – ${s}`, sz: "1.8 MB", views: 1205, dl: 490, date: "1444/12/18", r: 4.7 },
-    { name: `ملخص شامل للوحدات 1-6 – ${s}`, sz: "4.0 MB", views: 2870, dl: 1103, date: "1445/06/30", r: 4.8 },
-  ],
-  plans: (s) => [
-    { name: `الخطة الدراسية الكاملة الفصل الثاني 1445 – ${s}`, sz: "0.9 MB", views: 960, dl: 380, date: "1445/06/01", r: 4.6 },
-    { name: `جدول الوحدات والمحاضرات – ${s}`, sz: "0.5 MB", views: 720, dl: 290, date: "1445/06/01", r: 4.5 },
-    { name: `توصيف المقرر الرسمي – ${s}`, sz: "1.2 MB", views: 540, dl: 210, date: "1445/05/15", r: 4.7 },
-  ],
-  curriculum: (s) => [
-    { name: `محتوى المقرر الكامل – ${s}`, sz: "8.5 MB", views: 1830, dl: 720, date: "1445/06/05", r: 4.8 },
-    { name: `وحدة 1 – ${s} (المحاضرات والشرائح)`, sz: "2.1 MB", views: 2410, dl: 960, date: "1445/06/08", r: 4.9 },
-    { name: `وحدة 2 – ${s} (تطبيقات وأنشطة)`, sz: "1.9 MB", views: 1980, dl: 810, date: "1445/06/15", r: 4.7 },
-    { name: `نموذج مشروع نهاية الفصل – ${s}`, sz: "0.7 MB", views: 1120, dl: 540, date: "1445/06/20", r: 4.6 },
-  ],
-  programs: (s) => [
-    { name: `نظرة عامة على برنامج ${s}`, sz: "1.4 MB", views: 880, dl: 260, date: "1445/04/10", r: 4.5 },
-    { name: `دليل شروط القبول والتسجيل – ${s}`, sz: "0.8 MB", views: 1340, dl: 440, date: "1445/04/10", r: 4.6 },
-    { name: `جدول الرسوم الدراسية 1445-1446`, sz: "0.3 MB", views: 2100, dl: 800, date: "1445/05/01", r: 4.4 },
-  ],
-};
+/*
+ * There used to be a FILES table here: four fabricated PDFs per section,
+ * templated from the subject name, complete with invented view counts,
+ * download counts, Hijri dates and 4.9-star ratings. Every course showed the
+ * same twelve, none of them existed, and tapping one did nothing.
+ *
+ * It is gone. The course page shows the files an admin actually uploaded, and
+ * says plainly when a section is still empty. An empty shelf is honest; a
+ * shelf of props is not.
+ */
 
 const SECTIONS = [
   { id: "collections", Icon: Bookmark, label: "تجميعات وملخصات", color: "#1d4ed8", desc: "تجميعات الاختبارات والملخصات الشاملة" },
@@ -321,6 +310,17 @@ const SECTIONS = [
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
 ];
+// Which sections hold uploaded files (the rest are tools or contact info).
+const FILE_SECTIONS = ["collections", "plans", "curriculum", "programs"];
+/**
+ * Is this course a whole programme, or one subject inside the prep year?
+ *
+ * "البرامج والتخصصات" — admission requirements, fees, programme overview —
+ * is meaningless on "مهارات الحاسب", which is a single first-year subject.
+ * The section is dropped there rather than opening onto nothing.
+ */
+const PREP_SUBJECTS = new Set(Object.values(TREE.preparatory.plans).flatMap(p => p.subjects));
+const isProgramme = (subject) => !PREP_SUBJECTS.has(subject);
 
 const GRADE_SCALE = [
   { label: "A+", min: 95, pts: 5.00, color: "#059669" }, { label: "A", min: 90, pts: 4.75, color: "#059669" },
@@ -349,7 +349,6 @@ const ACHIEVEMENTS = [
 /* ══════════════════════════════════════════════════════════════
    UTILITIES
    ══════════════════════════════════════════════════════════════ */
-const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "K" : n;
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const last7Days = () => {
   const out = [];
@@ -490,60 +489,6 @@ function StatCard({ Icon, value, suffix = "", label, color, t }) {
   );
 }
 
-function FileItem({ name, sz, views, dl, date, r, t, onToast }) {
-  const [dlAnim, setDlAnim] = useState(false);
-  const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[name] || 0));
-  const [hoverRating, setHoverRating] = useState(0);
-  const rateFile = (star) => {
-    const ratings = storage.get("ratings", {});
-    ratings[name] = star;
-    storage.set("ratings", ratings);
-    setMyRating(star);
-    onToast?.(`قيّمت بـ ${star} نجوم`, "success");
-  };
-  const displayRating = myRating > 0 ? ((r + myRating) / 2) : r;
-  return (
-    <div style={{
-      background: t.s2, borderRadius: 12, padding: "12px 14px", border: `1px solid ${t.bd}`,
-      display: "flex", flexDirection: "column", gap: 8, cursor: "pointer", transition: "all .2s",
-    }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2 + "60"}
-      onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${P.blue}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-          <FileText size={16} color={P.blue2} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{name}</div>
-          <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>PDF • {sz} • {date}</div>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: t.mu }}><Eye size={11} /> {fmt(views)}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: t.mu }}><Download size={11} /> {fmt(dl)}</span>
-        <div style={{ display: "flex", gap: 2, marginRight: "auto", alignItems: "center" }}>
-          {[1, 2, 3, 4, 5].map(i => (
-            <span key={i}
-              onClick={() => rateFile(i)}
-              onMouseEnter={() => setHoverRating(i)}
-              onMouseLeave={() => setHoverRating(0)}
-              style={{ fontSize: 13, color: i <= (hoverRating || Math.round(myRating > 0 ? displayRating : r)) ? P.gold : "#ccc", cursor: "pointer", transition: "color .1s" }}>★</span>
-          ))}
-        </div>
-        <button
-          onClick={() => { setDlAnim(true); onToast?.("بدأ التحميل…", "success"); setTimeout(() => setDlAnim(false), 1500); }}
-          style={{
-            background: dlAnim ? `${P.green}20` : `${P.blue}15`, border: "none", borderRadius: 8,
-            padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700,
-            color: dlAnim ? P.green : P.blue2, display: "flex", alignItems: "center", gap: 4, transition: "all .3s",
-          }}>
-          <Download size={11} />{dlAnim ? "✓ تم" : "تحميل"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function EmptyState({ Icon, title, desc, action, t }) {
   return (
     <div style={{ textAlign: "center", padding: "50px 20px", animation: "fadeUp .4s ease" }}>
@@ -560,8 +505,58 @@ function EmptyState({ Icon, title, desc, action, t }) {
   );
 }
 
-function ConfirmDialog({ open, title, desc, onConfirm, onClose, danger, t }) {
+/* ══════════════════════════════════════════════════════════════
+   RESET — say exactly what disappears, and offer the smaller option
+   ══════════════════════════════════════════════════════════════ */
+/**
+ * "إعادة تعيين كل البيانات" used to be one red button behind a vague warning,
+ * so nobody could tell what it actually did. It now lists what is on the
+ * device with live counts and splits into two honest choices:
+ *
+ *   • study data only — favourites, notes, tasks, schedule, exams, statistics.
+ *     The profile and the chosen track survive, which is what most people
+ *     actually want when they say "start the semester fresh".
+ *   • everything — the above plus the profile and the saved account.
+ *
+ * Neither clears the track lock stamp: a reset must not become a way around
+ * the 15-day hold on changing tracks.
+ */
+function ResetDialog({ open, counts, onClose, onResetData, onResetAll, t }) {
+  const [mode, setMode] = useState("data"); // data | all
   if (!open) return null;
+
+  const rows = [
+    { label: "المفضلة", n: counts.favorites, keep: false },
+    { label: "الملاحظات", n: counts.notes, keep: false },
+    { label: "المهام", n: counts.tasks, keep: false },
+    { label: "المحاضرات في جدولك", n: counts.schedule, keep: false },
+    { label: "الاختبارات", n: counts.exams, keep: false },
+    { label: "جلسات التركيز والإحصائيات", n: counts.sessions, keep: false },
+    { label: "ملفك الشخصي ومسارك", n: counts.profile, keep: mode === "data" },
+  ];
+
+  const Choice = ({ id, title, desc, color }) => (
+    <button onClick={() => setMode(id)} style={{
+      width: "100%", textAlign: "right", background: mode === id ? `${color}12` : t.s2,
+      border: `1.5px solid ${mode === id ? color : t.bd}`, borderRadius: 14,
+      padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
+      display: "flex", gap: 10, alignItems: "flex-start",
+    }}>
+      <div style={{
+        width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+        border: `2px solid ${mode === id ? color : t.dim}`,
+        background: mode === id ? color : "transparent",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {mode === id && <Check size={11} color="#fff" strokeWidth={3.5} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{title}</div>
+        <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.65, marginTop: 3 }}>{desc}</div>
+      </div>
+    </button>
+  );
+
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 250,
@@ -569,17 +564,50 @@ function ConfirmDialog({ open, title, desc, onConfirm, onClose, danger, t }) {
       backdropFilter: "blur(4px)", animation: "fadeIn .2s ease",
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: t.s1, borderRadius: 20, padding: 24, maxWidth: 360, width: "100%",
+        background: t.s1, borderRadius: 20, padding: 22, maxWidth: 380, width: "100%",
+        maxHeight: "90vh", overflowY: "auto",
         border: `1px solid ${t.bd}`, boxShadow: t.sh, animation: "scaleIn .25s ease",
       }}>
-        <div style={{ width: 48, height: 48, borderRadius: 14, background: `${danger ? P.red : P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
-          {danger ? <Trash2 size={22} color={P.red} /> : <Shield size={22} color={P.blue2} />}
+        <div style={{ width: 46, height: 46, borderRadius: 14, background: `${P.red}15`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+          <Trash2 size={21} color={P.red} />
         </div>
-        <h3 style={{ fontSize: 17, fontWeight: 800, color: t.tx, marginBottom: 6 }}>{title}</h3>
-        <p style={{ fontSize: 13, color: t.mu, lineHeight: 1.7, marginBottom: 18 }}>{desc}</p>
+        <h3 style={{ fontSize: 17, fontWeight: 900, color: t.tx, marginBottom: 6 }}>إعادة تعيين البيانات</h3>
+        <p style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.7, marginBottom: 16 }}>
+          كل شيء محفوظ على هذا الجهاز وحده. اختر ما تريد حذفه:
+        </p>
+
+        <Choice id="data" color={P.orange}
+          title="بيانات الدراسة فقط"
+          desc="المفضلة والملاحظات والمهام والجدول والإحصائيات — مع الاحتفاظ باسمك ومسارك." />
+        <Choice id="all" color={P.red}
+          title="كل شيء"
+          desc="ما سبق، بالإضافة إلى ملفك الشخصي والحساب المحفوظ على هذا الجهاز." />
+
+        <div style={{ background: t.s2, borderRadius: 14, padding: "12px 14px", margin: "6px 0 14px" }}>
+          {rows.map(r => (
+            <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+              <span style={{ fontSize: 12.5, color: r.keep ? t.mu : t.tx, flex: 1, textDecoration: r.keep ? "none" : "none" }}>{r.label}</span>
+              <span style={{ fontSize: 11.5, color: t.dim, fontFamily: "monospace" }}>{r.n}</span>
+              <span style={{
+                fontSize: 10.5, fontWeight: 800, borderRadius: 6, padding: "2px 7px",
+                background: r.keep ? `${P.green}15` : `${P.red}12`, color: r.keep ? P.green : P.red,
+              }}>{r.keep ? "يبقى" : "يُحذف"}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: `${P.gold}0f`, border: `1px solid ${P.gold}35`, borderRadius: 10, padding: "10px 12px", marginBottom: 16 }}>
+          <Lock size={14} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.65 }}>
+            قفل المسار ({TRACK_LOCK_DAYS} يوماً) لا يُلغى بإعادة التعيين — لتغيير مسارك أرسل طلباً للإدارة.
+          </span>
+        </div>
+
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose} style={{ flex: 1 }}>إلغاء</Btn>
-          <Btn variant={danger ? "danger" : "primary"} onClick={() => { onConfirm(); onClose(); }} style={{ flex: 1 }}>تأكيد</Btn>
+          <Btn variant="danger" onClick={() => { (mode === "all" ? onResetAll : onResetData)(); onClose(); }} style={{ flex: 1.4 }}>
+            <Trash2 size={14} /> {mode === "all" ? "حذف كل شيء" : "إعادة التعيين"}
+          </Btn>
         </div>
       </div>
     </div>
@@ -617,7 +645,191 @@ function StreakWeek({ activeDays, t }) {
 /* ══════════════════════════════════════════════════════════════
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
-function AIChat({ subject, t, onChat, standalone = true, files = null }) {
+/* ══════════════════════════════════════════════════════════════
+   AI SUBSCRIPTION — payment details and the request
+   ══════════════════════════════════════════════════════════════ */
+// Shown until an admin saves real details in the panel. Deliberately blank
+// where a real value belongs: inventing an IBAN would be worse than empty.
+const DEFAULT_PAYMENT = {
+  title: "اشتراك المساعد الذكي",
+  price: "",
+  bank: "",
+  accountName: "",
+  iban: "",
+  terms: "بعد التحويل أرفق صورة الإيصال هنا. تُراجع الطلبات يدوياً وعادةً خلال ١٠ دقائق.",
+  verifyNote: "المراجعة يدوية — عادةً خلال ١٠ دقائق",
+};
+
+/**
+ * The sheet a student sees when the free questions run out.
+ *
+ * It says plainly what they get, what it costs, where to send it, and that a
+ * human checks the receipt — no automatic payment, no card form, nothing that
+ * pretends to be an instant purchase.
+ */
+function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
+  const { data: content } = useSiteContent("payment");
+  const pay = { ...DEFAULT_PAYMENT, ...(content && typeof content === "object" ? content : {}) };
+  const [note, setNote] = useState("");
+  const [receipt, setReceipt] = useState("");
+  const [sending, setSending] = useState(false);
+  const [mine, setMine] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/subscription")
+      .then(r => r.json())
+      .then(d => setMine(d.request || null))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const submit = async () => {
+    setSending(true);
+    try {
+      const res = await fetch("/api/subscription", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile?.name, studentId: profile?.studentId,
+          email, note: note.trim(), receiptUrl: receipt.trim(),
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { onToast?.("وصل طلبك — ستصلك النتيجة قريباً ✅", "success"); setMine({ status: "pending" }); }
+      else onToast?.(safeText(d.error, "تعذّر إرسال الطلب"), "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setSending(false);
+  };
+
+  const Row = ({ label, value }) => value ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 0", borderBottom: `1px solid ${t.bd}` }}>
+      <span style={{ fontSize: 12, color: t.mu, fontWeight: 700, flexShrink: 0 }}>{label}</span>
+      <span style={{ flex: 1, fontSize: 12.5, color: t.tx, fontWeight: 700, textAlign: "left", direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", fontFamily: label === "الآيبان" ? "monospace" : "inherit" }}>{value}</span>
+      <button onClick={() => { try { navigator.clipboard.writeText(value); onToast?.("تم النسخ", "success"); } catch { } }}
+        style={{ background: "none", border: "none", cursor: "pointer", color: P.blue2, display: "flex", padding: 2, flexShrink: 0 }}>
+        <Copy size={13} />
+      </button>
+    </div>
+  ) : null;
+
+  const configured = pay.bank || pay.iban || pay.accountName || pay.price;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 600, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={17} color={P.gold} /> {safeText(pay.title, DEFAULT_PAYMENT.title)}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        {gate && !gate.subscribed && (
+          <div style={{ background: `${P.orange}10`, border: `1px solid ${P.orange}35`, borderRadius: 14, padding: "12px 14px", marginBottom: 14, display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <AlertTriangle size={16} color={P.orange} style={{ flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontSize: 12.5, color: t.tx, lineHeight: 1.75 }}>
+              استخدمت {gate.used ?? gate.limit} من {gate.limit} أسئلة.
+              {gate.resetAt ? ` تتجدّد مجاناً ${untilLabel(gate.resetAt)}` : ""} — أو اشترك للاستخدام بلا حدّ.
+            </div>
+          </div>
+        )}
+
+        {/* An answered request replaces the form: nothing to fill in twice. */}
+        {loaded && mine && mine.status === "pending" && (
+          <div style={{ background: t.s1, border: `1px solid ${P.blue2}45`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: P.blue2, marginBottom: 5 }}>طلبك قيد المراجعة</div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.8 }}>{safeText(pay.verifyNote, DEFAULT_PAYMENT.verifyNote)}</div>
+          </div>
+        )}
+        {loaded && mine && mine.status === "rejected" && (
+          <div style={{ background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: P.red, marginBottom: 5 }}>لم يُقبل الطلب</div>
+            {mine.admin_reply && <div style={{ fontSize: 12.5, color: t.tx, lineHeight: 1.8 }}>{safeText(mine.admin_reply, "")}</div>}
+            <div style={{ fontSize: 11.5, color: t.mu, marginTop: 6 }}>يمكنك إرسال طلب جديد بعد التصحيح.</div>
+          </div>
+        )}
+        {loaded && mine && mine.status === "approved" && (
+          <div style={{ background: `${P.green}0d`, border: `1px solid ${P.green}40`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: P.green, marginBottom: 5 }}>اشتراكك مفعّل ✅</div>
+            {mine.expires_at && <div style={{ fontSize: 12.5, color: t.mu }}>ينتهي في {calDate(String(mine.expires_at).slice(0, 10))}</div>}
+          </div>
+        )}
+
+        {/* Payment details — whatever the admin saved */}
+        <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 16, marginBottom: 14, boxShadow: t.shSm }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            <CreditCard size={15} color={P.green} /> بيانات التحويل
+          </div>
+          {configured ? (
+            <>
+              <Row label="المبلغ" value={safeText(pay.price, "")} />
+              <Row label="البنك" value={safeText(pay.bank, "")} />
+              <Row label="اسم الحساب" value={safeText(pay.accountName, "")} />
+              <Row label="الآيبان" value={safeText(pay.iban, "")} />
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.8, paddingTop: 6 }}>
+              لم تُضَف بيانات التحويل بعد. تُضبط من لوحة التحكم ← الاشتراكات.
+            </div>
+          )}
+          {pay.terms && (
+            <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.8, marginTop: 12, background: t.s2, borderRadius: 10, padding: "10px 12px" }}>
+              {safeText(pay.terms, "")}
+            </div>
+          )}
+        </div>
+
+        {/* The request itself */}
+        {(!mine || mine.status === "rejected") && (
+          <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 16, boxShadow: t.shSm }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 10 }}>أرسل طلبك</div>
+
+            {!profileComplete(profile) && (
+              <div style={{ fontSize: 12, color: P.orange, background: `${P.orange}10`, border: `1px solid ${P.orange}30`, borderRadius: 10, padding: "9px 11px", marginBottom: 10, lineHeight: 1.7 }}>
+                أكمل اسمك ورقمك الجامعي في «حسابي» أولاً — يُرسَلان مع الطلب.
+              </div>
+            )}
+
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>رابط صورة الإيصال</div>
+            <input value={receipt} onChange={e => setReceipt(e.target.value)} placeholder="ألصق رابط الصورة"
+              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 12 }} />
+
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>ملاحظة (اختياري)</div>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="أي تفاصيل تساعد في المراجعة"
+              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", resize: "vertical", marginBottom: 12 }} />
+
+            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, marginBottom: 12 }}>
+              يُرسَل مع الطلب: اسمك، رقمك الجامعي، وبريدك ({email || "—"}).
+            </div>
+
+            <Btn variant="primary" onClick={submit} style={{ width: "100%" }}
+              disabled={sending || !profileComplete(profile) || (!receipt.trim() && !note.trim())}>
+              <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال الطلب"}
+            </Btn>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Same shape check the server applies — enough to catch typos, not to verify. */
+const looksLikeEmail = (v) => {
+  const x = String(v || "").trim();
+  return x.length >= 6 && x.length <= 160 && /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(x);
+};
+/** "خلال ٤٢ دقيقة" — how long until the allowance rolls over. */
+const untilLabel = (resetAt) => {
+  const mins = Math.max(0, Math.ceil((resetAt - Date.now()) / 60000));
+  if (mins <= 0) return "الآن";
+  if (mins < 60) return `خلال ${mins} دقيقة`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return `خلال ${h} ساعة${m ? ` و${m} د` : ""}`;
+};
+
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null }) {
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
@@ -626,8 +838,35 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
     if (stored && stored.length > 0) return stored.map(m => ({ ...m, id: m.id || mkId() }));
     return [makeDefault()];
   });
-  const [inp, setInp] = useState("");
+  // A caller can hand the chat an opening question (the study tip does).
+  // It lands in the box rather than being sent, so the student can edit it
+  // or change their mind — nothing is spent on their behalf.
+  const [inp, setInp] = useState(seed || "");
   const [loading, setLoading] = useState(false);
+  // The email is owned by App and passed in. Two useStored hooks on one key
+  // is a race — each keeps its own copy of the value and the loser writes its
+  // stale one back — so there is exactly one owner and this is a prop.
+  const aiEmail = email;
+  const setAiEmail = onSaveEmail || (() => {});
+  const [askEmail, setAskEmail] = useState(false);
+  const [emailDraft, setEmailDraft] = useState("");
+  const [gate, setGate] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/ai/usage")
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled || !d) return;
+        setGate({
+          subscribed: !!d.subscribed, limit: d.limit ?? 5, used: d.used ?? 0,
+          remaining: d.subscribed ? Infinity : (d.remaining ?? d.limit ?? 5),
+          resetAt: d.resetAt || 0,
+          blocked: !d.subscribed && (d.remaining ?? 1) <= 0,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [menuId, setMenuId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [fileContext, setFileContext] = useState(null);
@@ -768,6 +1007,10 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
   const send = async (q) => {
     const text = (q || inp).trim();
     if (!text || loading) return;
+    // The email is asked for once and kept locally; the server checks its
+    // shape and records it, so there is no point sending a question without it.
+    if (!looksLikeEmail(aiEmail)) { setAskEmail(true); return; }
+    if (gate && gate.blocked) { onSubscribe?.(gate); return; }
     setInp("");
     const newMsg = { r: "u", id: mkId(), text, ts: Date.now() };
     const newMsgs = [...msgs, newMsg];
@@ -778,9 +1021,22 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, messages: history, fileContext }),
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail }),
       });
       const d = await res.json();
+      // The server is the authority on what is left; mirror whatever it says.
+      if (d.subscribed || d.remaining != null || d.resetAt) {
+        setGate({
+          subscribed: !!d.subscribed,
+          limit: d.limit ?? 5,
+          used: d.used ?? 0,
+          remaining: d.subscribed ? Infinity : (d.remaining ?? 0),
+          resetAt: d.resetAt || 0,
+          blocked: !d.subscribed && d.need === "subscription",
+        });
+      }
+      if (d.need === "email") { setAskEmail(true); setLoading(false); return; }
+      if (d.need === "subscription") { onSubscribe?.({ used: d.used, limit: d.limit, resetAt: d.resetAt }); setLoading(false); return; }
       const errText = d.error
         ? d._debug?.length
           ? `${d.error}\n\n🔍 تفاصيل: ${d._debug.join(" | ")}`
@@ -947,6 +1203,55 @@ function AIChat({ subject, t, onChat, standalone = true, files = null }) {
               {i < fileSugs.length ? "📄 " : ""}{s}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Email gate — asked once, then never again on this device */}
+      {askEmail && (
+        <div style={{ padding: "12px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, animation: "fadeUp .25s ease" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+            <Mail size={14} color={P.blue2} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>بريدك الإلكتروني للمتابعة</span>
+          </div>
+          <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 9 }}>
+            يُحفظ على جهازك ويُستخدم لطلبات الاشتراك — يُطلب مرة واحدة فقط.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={emailDraft} onChange={e => setEmailDraft(e.target.value)} placeholder="you@example.com"
+              onKeyDown={e => { if (e.key === "Enter" && looksLikeEmail(emailDraft)) { setAiEmail(emailDraft.trim()); setAskEmail(false); } }}
+              style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "10px 14px", fontSize: 13, outline: "none", direction: "ltr", textAlign: "left", fontFamily: "inherit", color: t.tx, background: t.s2, minWidth: 0 }} />
+            <Btn variant="primary" size="sm" disabled={!looksLikeEmail(emailDraft)}
+              onClick={() => { setAiEmail(emailDraft.trim()); setAskEmail(false); }}>حفظ</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* What is left of the allowance — the server's number, not a guess */}
+      {gate && !gate.subscribed && !askEmail && (
+        <div style={{
+          padding: "7px 12px", background: gate.blocked ? `${P.orange}12` : t.s1,
+          borderTop: `1px solid ${t.bd}`, flexShrink: 0,
+          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+        }}>
+          <Sparkles size={12} color={gate.blocked ? P.orange : t.mu} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 11.5, color: gate.blocked ? P.orange : t.mu, fontWeight: gate.blocked ? 800 : 600, flex: 1, minWidth: 0 }}>
+            {gate.blocked
+              ? `انتهت أسئلتك المجانية — تتجدّد ${untilLabel(gate.resetAt)}`
+              : `بقي ${gate.remaining} من ${gate.limit} أسئلة`}
+          </span>
+          {onSubscribe && (
+            <button onClick={() => onSubscribe(gate)} style={{
+              background: gate.blocked ? P.orange : "transparent", border: `1px solid ${gate.blocked ? P.orange : t.bd}`,
+              borderRadius: 14, padding: "3px 11px", cursor: "pointer", fontFamily: "inherit",
+              fontSize: 11.5, fontWeight: 800, color: gate.blocked ? "#fff" : P.blue2, flexShrink: 0,
+            }}>اشتراك</button>
+          )}
+        </div>
+      )}
+      {gate?.subscribed && (
+        <div style={{ padding: "7px 12px", background: `${P.green}10`, borderTop: `1px solid ${t.bd}`, flexShrink: 0, display: "flex", alignItems: "center", gap: 7 }}>
+          <Check size={12} color={P.green} />
+          <span style={{ fontSize: 11.5, color: P.green, fontWeight: 800 }}>اشتراكك فعّال — أسئلة بلا حدّ</span>
         </div>
       )}
 
@@ -1633,26 +1938,139 @@ function GradeCalc({ subject, t }) {
    TASK TRACKER
    ══════════════════════════════════════════════════════════════ */
 // Unified task/exam model. Every item lives in `tasks` with a `type`.
-const TASK_TYPES = ["واجب", "اسايمنت", "مشروع", "مناقشة", "كويز", "ميدترم", "فاينل", "أخرى"];
-const EXAM_TYPES = ["كويز", "ميدترم", "فاينل"];
-const TASK_TRACKS = ["تحضيري", "تخصص", "دبلوم", "دراسات عليا"];
+//
+// The types are grouped, because "كويز" and "واجب" are not the same kind of
+// thing to a student: one is graded on a date you cannot move, the other is a
+// deliverable with a window. The groups drive the picker, the filter chips,
+// and the default importance.
+const TASK_GROUPS = [
+  { id: "اختبارات", label: "اختبارات", Icon: FileQuestion, color: P.red,   types: ["كويز", "ميدترم", "فاينل"] },
+  { id: "واجبات",  label: "واجبات",  Icon: FileText,     color: P.blue2, types: ["واجب", "اسايمنت", "مشروع", "بروجكت", "مناقشة", "عرض"] },
+];
+const CUSTOM_TYPE = "يدوي";
+const TASK_TYPES = [...TASK_GROUPS.flatMap(g => g.types), CUSTOM_TYPE];
+const EXAM_TYPES = TASK_GROUPS[0].types;
+const groupOf = (ty) => TASK_GROUPS.find(g => g.types.includes(ty))?.id || "واجبات";
+const isExamType = (ty) => EXAM_TYPES.includes(ty);
+
 const TASK_TYPE_META = {
-  "واجب": { color: P.blue2, Icon: FileText },
-  "اسايمنت": { color: P.purple, Icon: FileText },
-  "مشروع": { color: P.orange, Icon: Briefcase },
-  "مناقشة": { color: P.cyan, Icon: MessageCircle },
   "كويز": { color: P.gold, Icon: Zap },
   "ميدترم": { color: P.red, Icon: Calendar },
   "فاينل": { color: "#b91c1c", Icon: Award },
-  "أخرى": { color: P.green, Icon: CheckCircle },
+  "واجب": { color: P.blue2, Icon: FileText },
+  "اسايمنت": { color: P.purple, Icon: FileText },
+  "مشروع": { color: P.orange, Icon: Briefcase },
+  "بروجكت": { color: P.orange, Icon: Briefcase },
+  "مناقشة": { color: P.cyan, Icon: MessageCircle },
+  "عرض": { color: P.purple, Icon: Monitor },
+  [CUSTOM_TYPE]: { color: P.green, Icon: PenLine },
 };
-const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
+const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META[CUSTOM_TYPE];
 
-function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }) {
+/**
+ * Titles worth offering for a type, so the common case is one tap.
+ *
+ * Students name these things the same way every term — "الكويز الأول",
+ * "الواجب الثاني" — and typing that on a phone keyboard in Arabic is the
+ * slowest part of adding a task. The field stays free text underneath.
+ */
+const TITLE_SUGGESTIONS = {
+  "كويز": ["الكويز الأول", "الكويز الثاني", "الكويز الثالث"],
+  "ميدترم": ["اختبار منتصف الفصل"],
+  "فاينل": ["الاختبار النهائي"],
+  "واجب": ["الواجب الأول", "الواجب الثاني", "الواجب الثالث"],
+  "اسايمنت": ["Assignment 1", "Assignment 2"],
+  "مشروع": ["مشروع الفصل", "المرحلة الأولى", "التسليم النهائي"],
+  "بروجكت": ["Project Phase 1", "Final Project"],
+  "مناقشة": ["مناقشة الأسبوع", "الردّ على الزملاء"],
+  "عرض": ["العرض التقديمي"],
+};
+
+/**
+ * Importance, stated as what it actually does.
+ *
+ * "عالي / متوسط / منخفض" told nobody anything — it was a coloured dot with no
+ * visible effect. These three sort within each due-date bucket and say so in
+ * the form, so the choice has a consequence you can see.
+ */
+const IMPORTANCE = [
+  { id: "مهم جداً", rank: 0, color: P.red,    desc: "يظهر أولاً" },
+  { id: "عادي",     rank: 1, color: P.blue2,  desc: "الترتيب الافتراضي" },
+  { id: "لاحقاً",   rank: 2, color: P.green,  desc: "ينزل لآخر القائمة" },
+];
+const impMeta = (id) => IMPORTANCE.find(i => i.id === id) || IMPORTANCE[1];
+// Older tasks used the abstract scale; map it rather than lose the choice.
+const LEGACY_IMPORTANCE = { "عالي": "مهم جداً", "متوسط": "عادي", "منخفض": "لاحقاً" };
+const normImportance = (tk) => LEGACY_IMPORTANCE[tk?.importance || tk?.priority] || tk?.importance || "عادي";
+
+/** How far ahead a task reminder fires. */
+const TASK_LEAD_CHOICES = [
+  { mins: 60, label: "قبل ساعة" },
+  { mins: 180, label: "قبل ٣ ساعات" },
+  { mins: 1440, label: "قبل يوم" },
+  { mins: 2880, label: "قبل يومين" },
+  { mins: 10080, label: "قبل أسبوع" },
+];
+const taskLead = (tk) => (tk?.leadMins == null ? 1440 : Number(tk.leadMins));
+const leadLabel = (m) => TASK_LEAD_CHOICES.find(c => c.mins === Number(m))?.label || `قبل ${m} دقيقة`;
+
+/**
+ * A task's deadline as a real instant.
+ *
+ * Tasks carry a date and, optionally, a closing time — an assignment that
+ * shuts at 23:59 is a different thing from one due "that day". With no time
+ * given, end-of-day is the honest reading.
+ */
+const taskDueAt = (tk) => {
+  if (!tk?.dueDate) return null;
+  const mins = timeToMin(tk.dueTime);
+  const d = new Date(`${tk.dueDate}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setMinutes(mins == null ? 23 * 60 + 59 : mins);
+  return d;
+};
+const taskOpenAt = (tk) => {
+  if (!tk?.openDate) return null;
+  const mins = timeToMin(tk.openTime);
+  const d = new Date(`${tk.openDate}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setMinutes(mins == null ? 0 : mins);
+  return d;
+};
+/** Has this task's window not opened yet? */
+const taskNotOpenYet = (tk) => {
+  const o = taskOpenAt(tk);
+  return !!o && o.getTime() > Date.now();
+};
+/** "٥ سبتمبر" or "٥ سبتمبر ١١:٥٩ م" — the clock only when one was set. */
+const fmtTaskWhen = (d) => {
+  if (!d) return "";
+  const date = d.toLocaleDateString("ar-SA-u-ca-gregory", { month: "short", day: "numeric" });
+  const atEndOfDay = d.getHours() === 23 && d.getMinutes() === 59;
+  if (atEndOfDay) return date;
+  return `${date} ${d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, profile }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
-  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
+  const [filter, setFilter] = useState("الكل");
+  const blank = () => ({
+    title: "", type: "واجب", customType: "",
+    subject: "", subjectCustomOn: false,
+    // The track comes from the profile — a student's tasks belong to the
+    // track they are enrolled in, and re-picking it on every task was busywork.
+    track: trackLabel(profile) || "", trackManual: false,
+    openDate: "", openTime: "", dueDate: "", dueTime: "",
+    importance: "عادي", remind: true, leadMins: 1440,
+  });
+  const [nt, setNt] = useState(blank);
+  const patch = (p) => setNt(x => ({ ...x, ...p }));
   const today = todayKey();
+
+  // Keep the auto-filled track in step with the profile until it's overridden.
+  useEffect(() => {
+    setNt(x => (x.trackManual ? x : { ...x, track: trackLabel(profile) || "" }));
+  }, [profile]);
 
   // One-time migration: fold legacy exams into the unified tasks list.
   useEffect(() => {
@@ -1662,8 +2080,8 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
       const mapped = exams.map(e => ({
         id: e.id || (Date.now() + Math.floor(Math.random() * 1000)),
         title: e.subject || "اختبار",
-        type: e.type === "نهائي" ? "فاينل" : e.type === "ميدترم" ? "ميدترم" : e.type === "مشروع" ? "مشروع" : (EXAM_TYPES.includes(e.type) ? e.type : "أخرى"),
-        track: "", subject: e.subject || "", dueDate: e.date || "", priority: "عالي", done: false,
+        type: e.type === "نهائي" ? "فاينل" : isExamType(e.type) ? e.type : e.type === "مشروع" ? "مشروع" : CUSTOM_TYPE,
+        track: "", subject: e.subject || "", dueDate: e.date || "", importance: "مهم جداً", done: false,
       })).filter(m => !ids.has(m.id));
       return [...(ts || []), ...mapped];
     });
@@ -1671,47 +2089,110 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
   const add = () => {
     if (!nt.title.trim()) return;
-    const finalType = nt.type === "أخرى" && nt.customType.trim() ? nt.customType.trim() : nt.type;
-    setTasks(ts => [...(ts || []), { title: nt.title, type: finalType, track: nt.track, subject: nt.subject, dueDate: nt.dueDate, priority: nt.priority, id: Date.now(), done: false }]);
-    setNt({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
+    const finalType = nt.type === CUSTOM_TYPE && nt.customType.trim() ? nt.customType.trim() : nt.type;
+    setTasks(ts => [...(ts || []), {
+      id: Date.now(), done: false,
+      title: nt.title.trim(), type: finalType,
+      track: nt.track, subject: nt.subject,
+      openDate: nt.openDate, openTime: nt.openTime,
+      dueDate: nt.dueDate, dueTime: nt.dueTime,
+      importance: nt.importance,
+      remind: nt.remind !== false, leadMins: Number(nt.leadMins ?? 1440),
+    }]);
+    setNt(blank());
     setShowAdd(false);
     const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
     onToast?.("تمت الإضافة +15 XP", "success");
   };
   const toggle = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
   const remove = (id) => setTasks(ts => (ts || []).filter(tk => tk.id !== id));
+  const toggleRemind = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, remind: tk.remind === false } : tk));
 
-  const all = (tasks || []).map(tk => ({ ...tk, type: tk.type || "واجب" }));
-  const filtered = all.filter(tk => filter === "الكل" ? true : filter === "اختبارات" ? EXAM_TYPES.includes(tk.type) : !EXAM_TYPES.includes(tk.type));
+  const all = useMemo(() => (tasks || []).map(tk => ({
+    ...tk, type: tk.type || "واجب", importance: normImportance(tk),
+  })), [tasks]);
+
+  const bucketOf = (tk) => {
+    if (tk.done) return "منجزة";
+    if (!tk.dueDate) return "بلا موعد";
+    if (tk.dueDate < today) return "متأخرة";
+    if (tk.dueDate === today) return "اليوم";
+    return "قادمة";
+  };
+  const BUCKET_ORDER = ["متأخرة", "اليوم", "قادمة", "بلا موعد", "منجزة"];
+  const bucketCol = { "متأخرة": P.red, "اليوم": P.orange, "قادمة": P.blue2, "بلا موعد": t.mu, "منجزة": P.green };
+
+  const counts = useMemo(() => {
+    const c = { الكل: all.length, اختبارات: 0, واجبات: 0, متأخرة: 0, اليوم: 0, منجزة: 0 };
+    all.forEach(tk => {
+      if (tk.done) { c.منجزة++; return; }
+      c[isExamType(tk.type) ? "اختبارات" : "واجبات"]++;
+      const b = bucketOf(tk);
+      if (b === "متأخرة") c.متأخرة++;
+      if (b === "اليوم") c.اليوم++;
+    });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, today]);
+
+  // Chips grow with the list: only "الكل" is always there, and a filter
+  // appears once there is something to filter. An empty board shows one chip,
+  // not six that all lead nowhere.
+  const chips = useMemo(() => {
+    const out = [{ id: "الكل", n: counts.الكل, color: P.blue2 }];
+    if (counts.متأخرة) out.push({ id: "متأخرة", n: counts.متأخرة, color: P.red });
+    if (counts.اليوم) out.push({ id: "اليوم", n: counts.اليوم, color: P.orange });
+    if (counts.اختبارات) out.push({ id: "اختبارات", n: counts.اختبارات, color: P.red });
+    if (counts.واجبات) out.push({ id: "واجبات", n: counts.واجبات, color: P.blue2 });
+    if (counts.منجزة) out.push({ id: "منجزة", n: counts.منجزة, color: P.green });
+    return out;
+  }, [counts]);
+
+  // A filter that no longer has anything behind it shouldn't strand the view.
+  useEffect(() => {
+    if (!chips.some(c => c.id === filter)) setFilter("الكل");
+  }, [chips, filter]);
+
+  const filtered = all.filter(tk => {
+    switch (filter) {
+      case "اختبارات": return !tk.done && isExamType(tk.type);
+      case "واجبات": return !tk.done && !isExamType(tk.type);
+      case "متأخرة": return bucketOf(tk) === "متأخرة";
+      case "اليوم": return bucketOf(tk) === "اليوم";
+      case "منجزة": return tk.done;
+      default: return true;
+    }
+  });
+
+  // Bucket first, then importance — so "مهم جداً" visibly earns its label —
+  // then the actual deadline instant.
   const sorted = [...filtered].sort((a, b) => {
-    if (a.done !== b.done) return a.done ? 1 : -1;
-    return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+    const ba = BUCKET_ORDER.indexOf(bucketOf(a)), bb = BUCKET_ORDER.indexOf(bucketOf(b));
+    if (ba !== bb) return ba - bb;
+    const ia = impMeta(a.importance).rank, ib = impMeta(b.importance).rank;
+    if (ia !== ib) return ia - ib;
+    return (taskDueAt(a)?.getTime() ?? 8.64e15) - (taskDueAt(b)?.getTime() ?? 8.64e15);
   });
   const pending = all.filter(tk => !tk.done).length;
-  const examCount = all.filter(tk => EXAM_TYPES.includes(tk.type) && !tk.done).length;
 
-  const chip = (label, active, onClick, count) => (
-    <button onClick={onClick} style={{
-      padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
-      fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
-      background: active ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
-      border: `1px solid ${active ? P.blue2 : t.bd}`, color: active ? "#fff" : t.mu,
-    }}>{label}{count != null ? ` (${count})` : ""}</button>
-  );
-
-  // One task row — used by the grouped list below.
   const renderTask = (task) => {
     const m = typeMeta(task.type);
-    const isOverdue = !task.done && task.dueDate && task.dueDate < today;
-    const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
-    const overdueDays = isOverdue ? Math.abs(days) : 0;
+    const due = taskDueAt(task);
+    const isOverdue = !task.done && due && due.getTime() < Date.now();
+    const days = task.dueDate
+      ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
     const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
-    const pc = prioColor[task.priority] || P.orange;
+    const imp = impMeta(task.importance);
+    const notOpen = taskNotOpenYet(task);
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1, borderRight: `3px solid ${task.done ? P.green : m.color}` }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9, padding: "10px 11px",
+        background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11,
+        border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1,
+        borderRight: `3px solid ${task.done ? P.green : m.color}`,
+      }}>
         <button onClick={() => toggle(task.id)} title={task.done ? "إلغاء الإنجاز" : "تحديد كمنجزة"} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           {task.done && <Check size={12} color={P.green} />}
         </button>
@@ -1719,13 +2200,16 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
           <m.Icon size={14} color={m.color} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+            {!task.done && task.importance === "مهم جداً" && <Flag size={11} color={P.red} style={{ flexShrink: 0 }} />}
+            {task.title}
+          </div>
           <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
-            {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
             {task.subject && <span>{task.subject}</span>}
-            {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { month: "short", day: "numeric" })}</span>}
-            {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
+            {notOpen && <span style={{ color: P.cyan, fontWeight: 700 }}>يفتح {fmtTaskWhen(taskOpenAt(task))}</span>}
+            {due && <span style={{ direction: "ltr", fontVariantNumeric: "tabular-nums" }}>{fmtTaskWhen(due)}</span>}
+            {isOverdue && !task.done && <span style={{ color: P.red, fontWeight: 700 }}>أُغلق</span>}
           </div>
         </div>
         {!task.done && days != null && !isOverdue && (
@@ -1733,13 +2217,24 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
             {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
           </div>
         )}
-        <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={`أولوية ${task.priority}`} />
+        {!task.done && task.dueDate && (
+          <button onClick={() => toggleRemind(task.id)}
+            title={task.remind === false ? "تفعيل التذكير" : `التذكير ${leadLabel(taskLead(task))}`}
+            style={{ background: task.remind === false ? `${t.mu}15` : `${P.gold}18`, border: "none", borderRadius: 7, padding: 5, cursor: "pointer", color: task.remind === false ? t.mu : P.gold, display: "flex", flexShrink: 0 }}>
+            <Bell size={12} />
+          </button>
+        )}
+        <span title={`${imp.id} — ${imp.desc}`} style={{ width: 7, height: 7, borderRadius: "50%", background: imp.color, flexShrink: 0 }} />
         <button onClick={() => remove(task.id)} title="حذف" style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
           <X size={12} />
         </button>
       </div>
     );
   };
+
+  const fieldStyle = { border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" };
+  const labelStyle = { fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 };
+  const suggestions = TITLE_SUGGESTIONS[nt.type] || [];
 
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
@@ -1756,12 +2251,9 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
         </button>
       </div>
 
-      {/* Progress summary — completion bar + at-a-glance counters */}
       {all.length > 0 && (() => {
         const doneCount = all.filter(tk => tk.done).length;
         const pct = Math.round((doneCount / all.length) * 100);
-        const overdueCount = all.filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
-        const todayCount = all.filter(tk => !tk.done && tk.dueDate === today).length;
         const barCol = pct === 100 ? P.green : pct >= 50 ? P.blue2 : P.orange;
         return (
           <div style={{ background: t.s2, borderRadius: 13, padding: "11px 13px", marginBottom: 12, border: `1px solid ${t.bd}` }}>
@@ -1769,104 +2261,191 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
               <span style={{ fontSize: 12, color: t.mu, fontWeight: 700 }}>أنجزت {doneCount} من {all.length}</span>
               <span style={{ fontSize: 13, fontWeight: 900, color: barCol }}>{pct}%</span>
             </div>
-            <div style={{ height: 7, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 9 }}>
+            <div style={{ height: 7, background: t.s3, borderRadius: 4, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barCol},${barCol}bb)`, borderRadius: 4, transition: "width .6s ease" }} />
             </div>
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              {overdueCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.red, background: `${P.red}15`, borderRadius: 7, padding: "3px 9px" }}>⚠ متأخرة {overdueCount}</span>}
-              {todayCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.orange, background: `${P.orange}15`, borderRadius: 7, padding: "3px 9px" }}>اليوم {todayCount}</span>}
-              {examCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.purple, background: `${P.purple}15`, borderRadius: 7, padding: "3px 9px" }}>اختبارات {examCount}</span>}
-              {pct === 100 && <span style={{ fontSize: 11, fontWeight: 800, color: P.green, background: `${P.green}15`, borderRadius: 7, padding: "3px 9px" }}>🎉 أنجزت كل مهامك</span>}
-            </div>
+            {pct === 100 && <div style={{ fontSize: 11, fontWeight: 800, color: P.green, marginTop: 8 }}>🎉 أنجزت كل مهامك</div>}
           </div>
         );
       })()}
 
-      {/* Filter chips */}
+      {/* Filter chips — grow with the list */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
-        {chip("الكل", filter === "الكل", () => setFilter("الكل"), all.length)}
-        {chip("اختبارات", filter === "اختبارات", () => setFilter("اختبارات"), examCount)}
-        {chip("مهام", filter === "مهام", () => setFilter("مهام"))}
+        {chips.map(c => {
+          const active = filter === c.id;
+          return (
+            <button key={c.id} onClick={() => setFilter(c.id)} style={{
+              padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+              fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
+              background: active ? c.color : t.s2,
+              border: `1px solid ${active ? c.color : t.bd}`, color: active ? "#fff" : t.mu,
+            }}>{c.id} ({c.n})</button>
+          );
+        })}
       </div>
 
       {showAdd && (
         <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input placeholder="العنوان (مطلوب)" value={nt.title} onChange={e => setNt(p => ({ ...p, title: e.target.value }))}
-              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "9px 11px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
 
-            {/* Type selector */}
+            {/* Type — grouped, because an exam and an assignment behave differently */}
             <div>
-              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>النوع</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {TASK_TYPES.map(ty => {
-                  const m = typeMeta(ty); const active = nt.type === ty;
-                  return (
-                    <button key={ty} onClick={() => setNt(p => ({ ...p, type: ty }))} style={{
-                      display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                      background: active ? `${m.color}18` : t.s1, border: `1.5px solid ${active ? m.color : t.bd}`, color: active ? m.color : t.mu,
-                    }}><m.Icon size={12} /> {ty}</button>
-                  );
-                })}
-              </div>
-              {nt.type === "أخرى" && (
-                <input autoFocus placeholder="اكتب نوعاً مخصصاً (مثال: عرض تقديمي)" value={nt.customType} onChange={e => setNt(p => ({ ...p, customType: e.target.value }))}
-                  style={{ marginTop: 8, width: "100%", border: `1.5px solid ${P.green}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+              <div style={labelStyle}>النوع</div>
+              {TASK_GROUPS.map(g => (
+                <div key={g.id} style={{ marginBottom: 7 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: g.color, marginBottom: 5 }}>
+                    <g.Icon size={11} /> {g.label}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {g.types.map(ty => {
+                      const m = typeMeta(ty); const active = nt.type === ty;
+                      return (
+                        <button key={ty} onClick={() => patch({
+                          type: ty,
+                          // Exams are the thing you cannot miss; start them there.
+                          importance: isExamType(ty) ? "مهم جداً" : "عادي",
+                        })} style={{
+                          display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                          background: active ? `${m.color}18` : t.s1, border: `1.5px solid ${active ? m.color : t.bd}`, color: active ? m.color : t.mu,
+                        }}><m.Icon size={12} /> {ty}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => patch({ type: CUSTOM_TYPE })} style={{
+                display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                background: nt.type === CUSTOM_TYPE ? `${P.green}18` : t.s1, border: `1.5px solid ${nt.type === CUSTOM_TYPE ? P.green : t.bd}`, color: nt.type === CUSTOM_TYPE ? P.green : t.mu,
+              }}><PenLine size={12} /> نوع آخر (يدوي)</button>
+              {nt.type === CUSTOM_TYPE && (
+                <input autoFocus placeholder="اكتب النوع (مثال: تقرير معمل)" value={nt.customType} onChange={e => patch({ customType: e.target.value })}
+                  style={{ ...fieldStyle, marginTop: 8, border: `1.5px solid ${P.green}`, direction: "rtl" }} />
               )}
             </div>
 
-            {/* Track selector */}
+            {/* Title — pick a usual one or write your own */}
             <div>
-              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>المجال (اختياري)</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {TASK_TRACKS.map(tr => {
-                  const active = !nt.customTrackOn && nt.track === tr;
-                  return (
-                    <button key={tr} onClick={() => setNt(p => ({ ...p, track: active ? "" : tr, customTrackOn: false }))} style={{
-                      padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                      background: active ? `${P.purple}18` : t.s1, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
-                    }}>{tr}</button>
-                  );
-                })}
-                <button onClick={() => setNt(p => ({ ...p, customTrackOn: !p.customTrackOn, track: "" }))} style={{
-                  display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                  background: nt.customTrackOn ? `${P.purple}18` : t.s1, border: `1.5px solid ${nt.customTrackOn ? P.purple : t.bd}`, color: nt.customTrackOn ? P.purple : t.mu,
-                }}><Plus size={12} /> مخصص</button>
-              </div>
-              {nt.customTrackOn && (
-                <input autoFocus placeholder="اكتب مجالاً مخصصاً (مثال: ماجستير إدارة)" value={nt.track} onChange={e => setNt(p => ({ ...p, track: e.target.value }))}
-                  style={{ marginTop: 8, width: "100%", border: `1.5px solid ${P.purple}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+              <div style={labelStyle}>العنوان</div>
+              {suggestions.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
+                  {suggestions.map(s => {
+                    const active = nt.title === s;
+                    return (
+                      <button key={s} onClick={() => patch({ title: active ? "" : s })} style={{
+                        padding: "5px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                        background: active ? `${P.blue2}18` : t.s1, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
+                      }}>{s}</button>
+                    );
+                  })}
+                </div>
+              )}
+              <input placeholder="أو اكتب عنواناً" value={nt.title} onChange={e => patch({ title: e.target.value })}
+                style={{ ...fieldStyle, direction: "rtl" }} />
+            </div>
+
+            {/* Track — filled in from the profile, editable if this one differs */}
+            <div>
+              <div style={labelStyle}>المسار</div>
+              {nt.trackManual ? (
+                <input autoFocus placeholder="اكتب المسار" value={nt.track} onChange={e => patch({ track: e.target.value })}
+                  style={{ ...fieldStyle, border: `1.5px solid ${P.purple}`, direction: "rtl" }} />
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px" }}>
+                  <GradCap size={13} color={P.purple} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: nt.track ? t.tx : t.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {nt.track || "لم تختر مسارك بعد"}
+                  </span>
+                  <button onClick={() => patch({ trackManual: true, track: "" })} style={{ background: "none", border: "none", cursor: "pointer", color: P.purple, fontFamily: "inherit", fontSize: 11.5, fontWeight: 800, flexShrink: 0 }}>تغيير</button>
+                </div>
+              )}
+              {nt.trackManual && (
+                <button onClick={() => patch({ trackManual: false, track: trackLabel(profile) || "" })} style={{ marginTop: 6, background: "none", border: "none", cursor: "pointer", color: t.mu, fontFamily: "inherit", fontSize: 11.5, fontWeight: 700, padding: 0 }}>
+                  ← استخدم مساري من ملفي
+                </button>
               )}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={labelStyle}>المادة (اختياري)</div>
               <select value={nt.subjectCustomOn ? "__custom__" : nt.subject} onChange={e => {
                 const v = e.target.value;
-                if (v === "__custom__") setNt(p => ({ ...p, subjectCustomOn: true, subject: "" }));
-                else setNt(p => ({ ...p, subjectCustomOn: false, subject: v }));
-              }}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }}>
-                <option value="">المادة (اختياري)</option>
+                if (v === "__custom__") patch({ subjectCustomOn: true, subject: "" });
+                else patch({ subjectCustomOn: false, subject: v });
+              }} style={{ ...fieldStyle, direction: "rtl" }}>
+                <option value="">— بلا مادة —</option>
                 {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
                 <option value="__custom__">➕ مادة مخصصة…</option>
               </select>
-              <input type="date" value={nt.dueDate} onChange={e => setNt(p => ({ ...p, dueDate: e.target.value }))}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+              {nt.subjectCustomOn && (
+                <input autoFocus placeholder="اكتب اسم المادة" value={nt.subject} onChange={e => patch({ subject: e.target.value })}
+                  style={{ ...fieldStyle, marginTop: 7, border: `1.5px solid ${P.blue2}`, direction: "rtl" }} />
+              )}
             </div>
-            {nt.subjectCustomOn && (
-              <input autoFocus placeholder="اكتب اسم المادة" value={nt.subject} onChange={e => setNt(p => ({ ...p, subject: e.target.value }))}
-                style={{ width: "100%", border: `1.5px solid ${P.blue2}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+
+            {/* The window: when it opens, when it closes */}
+            <div>
+              <div style={labelStyle}>يفتح (اختياري)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 8 }}>
+                <input type="date" value={nt.openDate} onChange={e => patch({ openDate: e.target.value })} style={fieldStyle} />
+                <input type="time" value={nt.openTime} onChange={e => patch({ openTime: e.target.value })} style={fieldStyle} />
+              </div>
+            </div>
+            <div>
+              <div style={labelStyle}>يُغلق</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 8 }}>
+                <input type="date" value={nt.dueDate} onChange={e => patch({ dueDate: e.target.value })} style={fieldStyle} />
+                <input type="time" value={nt.dueTime} onChange={e => patch({ dueTime: e.target.value })} style={fieldStyle} />
+              </div>
+              {nt.dueDate && !nt.dueTime && (
+                <div style={{ fontSize: 11, color: t.dim, marginTop: 5 }}>بلا وقت = نهاية اليوم (١١:٥٩ م)</div>
+              )}
+            </div>
+
+            {/* Reminder */}
+            {nt.dueDate && (
+              <div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.tx, cursor: "pointer", marginBottom: nt.remind !== false ? 7 : 0 }}>
+                  <input type="checkbox" checked={nt.remind !== false} onChange={e => patch({ remind: e.target.checked })} style={{ accentColor: P.gold, width: 16, height: 16 }} />
+                  <Bell size={14} color={P.gold} /> ذكّرني قبل الإغلاق
+                </label>
+                {nt.remind !== false && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {TASK_LEAD_CHOICES.map(({ mins, label }) => {
+                      const active = Number(nt.leadMins) === mins;
+                      return (
+                        <button key={mins} onClick={() => patch({ leadMins: mins })} style={{
+                          padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                          background: active ? `${P.gold}20` : t.s1, border: `1.5px solid ${active ? P.gold : t.bd}`, color: active ? P.gold : t.mu,
+                        }}>{label}</button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
 
-            <div style={{ display: "flex", gap: 6 }}>
-              {["عالي", "متوسط", "منخفض"].map(p => (
-                <button key={p} onClick={() => setNt(x => ({ ...x, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${nt.priority === p ? prioColor[p] : t.bd}`, background: nt.priority === p ? `${prioColor[p]}15` : t.s1, color: nt.priority === p ? prioColor[p] : t.mu, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
-                  {p}
-                </button>
-              ))}
+            {/* Importance — labelled by what it does */}
+            <div>
+              <div style={labelStyle}>الأهمية <span style={{ fontWeight: 600, color: t.dim }}>— تُرتِّب مهامك داخل كل مجموعة</span></div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {IMPORTANCE.map(({ id, color, desc }) => {
+                  const active = nt.importance === id;
+                  return (
+                    <button key={id} onClick={() => patch({ importance: id })} style={{
+                      flex: 1, padding: "7px 4px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                      border: `1.5px solid ${active ? color : t.bd}`, background: active ? `${color}15` : t.s1,
+                      color: active ? color : t.mu,
+                    }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800 }}>{id}</div>
+                      <div style={{ fontSize: 9.5, fontWeight: 600, marginTop: 2, opacity: 0.9 }}>{desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
             <div style={{ display: "flex", gap: 8 }}>
-              <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => { setNt(blank()); setShowAdd(false); }} style={{ flex: 1 }}>إلغاء</Btn>
               <Btn variant="primary" size="sm" onClick={add} style={{ flex: 2 }} disabled={!nt.title.trim()}>
                 <Plus size={14} /> إضافة
               </Btn>
@@ -1878,22 +2457,13 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
       {sorted.length === 0 ? (
         <div style={{ textAlign: "center", padding: "18px 0", color: t.dim, fontSize: 13 }}>
           <CheckCircle size={26} color={t.dim} style={{ opacity: 0.5, marginBottom: 6 }} />
-          <div>{filter === "اختبارات" ? "لا اختبارات قادمة" : "لا مهام بعد، أضف مهمتك الأولى"}</div>
+          <div>{filter === "الكل" ? "لا مهام بعد، أضف مهمتك الأولى" : `لا شيء في «${filter}»`}</div>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
           {(() => {
-            // Group headers appear as the list crosses into a new bucket.
-            const bucketOf = (tk) => {
-              if (tk.done) return "منجزة";
-              if (!tk.dueDate) return "بلا موعد";
-              if (tk.dueDate < today) return "متأخرة";
-              if (tk.dueDate === today) return "اليوم";
-              return "قادمة";
-            };
-            const bucketCol = { "متأخرة": P.red, "اليوم": P.orange, "قادمة": P.blue2, "بلا موعد": t.mu, "منجزة": P.green };
             let last = null;
-            return sorted.slice(0, 12).map(task => {
+            return sorted.slice(0, 20).map(task => {
               const b = bucketOf(task);
               const header = b !== last ? b : null;
               last = b;
@@ -1999,10 +2569,272 @@ const fmtCountdown = (mins) => {
   const d = Math.floor(mins / 1440); return `خلال ${d} يوم`;
 };
 
+/* ── Timetable geometry ───────────────────────────────────────
+   The weekly grid puts time on the vertical axis, so a lecture's position
+   and height have to come from real minutes. Everything below turns the
+   stored "HH:MM" + duration into pixels.                                  */
+
+const DURATION_CHOICES = [30, 50, 60, 90, 120, 180];
+// Lectures saved before durations existed were all treated as a single slot.
+const LECTURE_DEFAULT_MIN = 50;
+const lectureMinutes = (lec) => {
+  const d = Number(lec?.duration);
+  return Number.isFinite(d) && d > 0 ? d : LECTURE_DEFAULT_MIN;
+};
+/** "HH:MM" → minutes past midnight, or null when unparseable. */
+const timeToMin = (s) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((s || "").trim());
+  if (!m) return null;
+  const h = +m[1], mi = +m[2];
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+};
+const minToTime = (n) => `${String(Math.floor(n / 60) % 24).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+const fmtDuration = (min) => {
+  if (min < 60) return `${min} د`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h} س ${m} د` : `${h} ساعة`;
+};
+
+/**
+ * The hour window the grid should draw.
+ *
+ * Fitting it to the lectures that exist keeps the timetable dense: a student
+ * whose day runs 08:00–14:00 shouldn't scroll past an empty midnight. Falls
+ * back to a normal teaching day when nothing is scheduled yet.
+ */
+function gridWindow(schedule) {
+  let lo = Infinity, hi = -Infinity;
+  (schedule || []).forEach(lec => {
+    const start = timeToMin(lec.time);
+    if (start == null) return;
+    lo = Math.min(lo, start);
+    hi = Math.max(hi, start + lectureMinutes(lec));
+  });
+  if (!Number.isFinite(lo)) return { from: 8 * 60, to: 16 * 60 };
+  // Snap outward to whole hours so the labels line up with the rules.
+  return { from: Math.floor(lo / 60) * 60, to: Math.max(Math.ceil(hi / 60) * 60, Math.floor(lo / 60) * 60 + 120) };
+}
+
+/**
+ * Lay one day's lectures out, splitting the column between any that overlap.
+ *
+ * Two lectures at the same hour would otherwise draw on top of each other and
+ * one would be invisible. Overlapping runs are grouped, and each member takes
+ * an equal share of the width — the standard calendar treatment.
+ */
+function layoutDay(lecs) {
+  const items = (lecs || [])
+    .map(lec => {
+      const start = timeToMin(lec.time);
+      return start == null ? null : { lec, start, end: start + lectureMinutes(lec) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const out = [];
+  let group = [], groupEnd = -Infinity;
+  const flush = () => {
+    group.forEach((it, i) => out.push({ ...it, cols: group.length, col: i }));
+    group = []; groupEnd = -Infinity;
+  };
+  items.forEach(it => {
+    if (group.length && it.start >= groupEnd) flush();
+    group.push(it);
+    groupEnd = Math.max(groupEnd, it.end);
+  });
+  flush();
+  return out;
+}
+
+/**
+ * The weekly timetable — time on the vertical axis, days across.
+ *
+ * The old "grid" was a column of cards per day, so an 08:00 lecture and a
+ * 14:00 one sat in the same place and a three-hour gap looked identical to a
+ * ten-minute one. Here every lecture is positioned and sized by real minutes,
+ * which is the whole point of looking at a week at once: you see your gaps,
+ * your long days, and where two things collide.
+ */
+function WeekGrid({ schedule, DAYS, DAY_COLORS, todayAr, nowTick, t }) {
+  const PX_PER_MIN = 1.05;            // ~63px an hour: a 50-min lecture stays readable
+  const HEAD = 42;                    // day-header height
+  const { from, to } = useMemo(() => gridWindow(schedule), [schedule]);
+  const height = (to - from) * PX_PER_MIN;
+  const hours = [];
+  for (let m = from; m <= to; m += 60) hours.push(m);
+
+  const byDay = useMemo(() => {
+    const map = {};
+    DAYS.forEach(d => { map[d] = layoutDay((schedule || []).filter(l => l.day === d)); });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule, DAYS]);
+
+  // The "now" line, drawn only when the current time is inside the window and
+  // today is a column. nowTick re-runs this every 30s with the countdown.
+  const nowMin = useMemo(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowTick]);
+  const showNow = DAYS.includes(todayAr) && nowMin >= from && nowMin <= to;
+
+  // Only two or three columns fit on a phone, so today can start off-screen.
+  // Bring it into view once, without the vertical jump scrollIntoView causes.
+  //
+  // Measured with getBoundingClientRect and moved with scrollBy on purpose:
+  // scrollLeft in an RTL scroller runs from a negative minimum up to 0 in this
+  // engine and 0..max in others, so any arithmetic on offsetLeft/scrollWidth
+  // is convention-dependent and silently clamps to a no-op. Viewport rects and
+  // a relative delta mean the same thing everywhere.
+  const scrollerRef = useRef(null);
+  const todayRef = useRef(null);
+  useEffect(() => {
+    const box = scrollerRef.current, col = todayRef.current;
+    if (!box || !col) return;
+    const b = box.getBoundingClientRect(), c = col.getBoundingClientRect();
+    const delta = (c.left + c.width / 2) - (b.left + b.width / 2);
+    if (Math.abs(delta) > 4) box.scrollBy({ left: delta, behavior: "smooth" });
+  }, [todayAr]);
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div ref={scrollerRef} style={{ overflowX: "auto", paddingBottom: 8, scrollbarWidth: "thin" }}>
+        <div style={{ display: "flex", minWidth: "min-content", position: "relative" }}>
+          {/* Time gutter — first in RTL flow, so it sits on the right. Sticky,
+              because the days now scroll under it and times you can't see
+              turn the whole grid back into guesswork. */}
+          <div style={{
+            width: 46, flexShrink: 0, position: "sticky", right: 0, zIndex: 4,
+            paddingTop: HEAD, background: t.bg,
+          }}>
+            <div style={{ height, position: "relative" }}>
+              {hours.map(m => (
+                <div key={m} style={{
+                  position: "absolute", top: (m - from) * PX_PER_MIN, insetInlineStart: 0, insetInlineEnd: 6,
+                  transform: "translateY(-50%)", fontSize: 10.5, fontWeight: 700,
+                  color: t.dim, textAlign: "left", direction: "ltr", fontVariantNumeric: "tabular-nums",
+                }}>{minToTime(m)}</div>
+              ))}
+            </div>
+          </div>
+
+          {DAYS.map(day => {
+            const isToday = day === todayAr;
+            const dc = DAY_COLORS[day];
+            const laid = byDay[day] || [];
+            return (
+              <div key={day} ref={isToday ? todayRef : undefined} style={{ width: 124, flexShrink: 0, marginInlineStart: 6 }}>
+                <div style={{
+                  height: HEAD, borderRadius: "10px 10px 0 0", display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center",
+                  background: isToday ? dc : `${dc}18`, border: `1px solid ${isToday ? dc : dc + "30"}`, borderBottom: "none",
+                }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 900, color: isToday ? "#fff" : dc }}>{day}</div>
+                  <div style={{ fontSize: 9.5, color: isToday ? "rgba(255,255,255,.85)" : t.mu }}>
+                    {isToday ? "اليوم" : laid.length ? `${laid.length} محاضرة` : "فارغ"}
+                  </div>
+                </div>
+
+                <div style={{
+                  position: "relative", height, background: isToday ? `${dc}0a` : t.s2,
+                  border: `1px solid ${dc}30`, borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden",
+                }}>
+                  {/* Hour rules, so the eye can read a card's height as time */}
+                  {hours.map(m => (
+                    <div key={m} style={{
+                      position: "absolute", top: (m - from) * PX_PER_MIN, left: 0, right: 0,
+                      height: 1, background: t.bd, opacity: 0.55,
+                    }} />
+                  ))}
+
+                  {isToday && showNow && (
+                    <div style={{ position: "absolute", top: (nowMin - from) * PX_PER_MIN, left: 0, right: 0, height: 2, background: P.red, zIndex: 3 }}>
+                      <div style={{ position: "absolute", insetInlineEnd: 0, top: -3, width: 8, height: 8, borderRadius: "50%", background: P.red }} />
+                    </div>
+                  )}
+
+                  {laid.map(({ lec, start, end, cols, col }) => {
+                    const online = lec.mode === "أونلاين";
+                    const mc = online ? P.blue2 : P.green;
+                    const mins = end - start;
+                    const joinable = online && isUrl(lec.room);
+                    // Overlapping lectures share the width instead of hiding
+                    // one another; 2% gutters keep the split legible.
+                    const w = 100 / cols;
+                    // A flex column with the time and place fixed and the
+                    // title free to shrink: on a short card the subject name
+                    // truncates cleanly instead of the room being sliced in
+                    // half at the bottom edge.
+                    const card = (
+                      <>
+                        <div style={{ flexShrink: 0, lineHeight: 1.15, fontSize: 10, fontWeight: 900, color: mc, direction: "ltr", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {lec.time}–{minToTime(end)}
+                        </div>
+                        <div style={{
+                          flex: "1 1 auto", minHeight: 0, margin: "1px 0",
+                          fontSize: 11.5, fontWeight: 800, color: t.tx, lineHeight: 1.28,
+                          overflow: "hidden", display: "-webkit-box", WebkitLineClamp: mins >= 90 ? 3 : 2, WebkitBoxOrient: "vertical",
+                        }}>{lec.course}</div>
+                        <div style={{ flexShrink: 0, lineHeight: 1.15, display: "flex", alignItems: "center", gap: 3, fontSize: 9, fontWeight: 800, color: mc, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                          {online ? <Monitor size={9} /> : <MapPin size={9} />}
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {online ? (joinable ? "دخول" : "أونلاين") : (lec.room && !isUrl(lec.room) ? lec.room : "حضوري")}
+                          </span>
+                        </div>
+                      </>
+                    );
+                    const style = {
+                      position: "absolute",
+                      top: (start - from) * PX_PER_MIN + 1,
+                      height: Math.max(mins * PX_PER_MIN - 2, 44),
+                      insetInlineStart: `${col * w}%`, width: `calc(${w}% - 3px)`,
+                      background: t.s1, border: `1px solid ${mc}40`, borderInlineEnd: `3px solid ${mc}`,
+                      borderRadius: 7, padding: "3px 6px", overflow: "hidden",
+                      textAlign: "right", fontFamily: "inherit", textDecoration: "none",
+                      display: "flex", flexDirection: "column", boxSizing: "border-box", zIndex: 2,
+                    };
+                    return joinable ? (
+                      <a key={lec.id} href={linkHref(lec.room)} target="_blank" rel="noopener noreferrer"
+                        title={`${lec.course} — ${lec.time} (${fmtDuration(mins)}) — دخول المحاضرة`} style={{ ...style, cursor: "pointer" }}>
+                        {card}
+                      </a>
+                    ) : (
+                      <div key={lec.id} title={`${lec.course} — ${lec.time} (${fmtDuration(mins)})`} style={style}>
+                        {card}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 11, color: t.mu, padding: "0 2px" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: P.green }} /> حضوري
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: P.blue2 }} /> أونلاين
+        </span>
+        {showNow && (
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 12, height: 2, background: P.red }} /> الآن
+          </span>
+        )}
+        <span style={{ marginInlineStart: "auto", color: t.dim }}>ارتفاع البطاقة = مدة المحاضرة</span>
+      </div>
+    </div>
+  );
+}
+
 function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const [showAdd, setShowAdd] = useState(false);
   const [view, setView] = useSyncedSetting("scheduleView", "schedule_view", "list"); // list | grid
-  const [newLec, setNewLec] = useState({ course: "", customCourse: false, day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true, remindMin: 5 });
+  const [newLec, setNewLec] = useState({ course: "", customCourse: false, day: "الأحد", time: "08:00", duration: LECTURE_DEFAULT_MIN, room: "", mode: "حضوري", remind: true, remindMin: 5 });
   const [nowTick, setNowTick] = useState(0);
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
@@ -2042,8 +2874,13 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
 
   const addLecture = () => {
     if (!newLec.course.trim()) return;
-    setSchedule(s => [...(s || []), { ...newLec, remindMin: Number(newLec.remindMin ?? 5), id: Date.now() }]);
-    setNewLec({ course: "", customCourse: false, day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true, remindMin: 5 });
+    setSchedule(s => [...(s || []), {
+      ...newLec,
+      remindMin: Number(newLec.remindMin ?? 5),
+      duration: Number(newLec.duration) || LECTURE_DEFAULT_MIN,
+      id: Date.now(),
+    }]);
+    setNewLec({ course: "", customCourse: false, day: "الأحد", time: "08:00", duration: LECTURE_DEFAULT_MIN, room: "", mode: "حضوري", remind: true, remindMin: 5 });
     setShowAdd(false);
     onToast?.("تم إضافة المحاضرة", "success");
   };
@@ -2095,7 +2932,10 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
       )}
 
       {view === "list" && DAYS.map(day => {
-        const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
+        // Sort on parsed minutes: a lecture saved without a time would make
+        // localeCompare throw on undefined.
+        const dayLecs = (schedule || []).filter(l => l.day === day)
+          .sort((a, b) => (timeToMin(a.time) ?? 1e9) - (timeToMin(b.time) ?? 1e9));
         const isToday = day === todayAr;
         const dc = DAY_COLORS[day];
         return (
@@ -2123,7 +2963,11 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
                       <span style={{ fontSize: 10, fontWeight: 800, color: mc, background: `${mc}18`, borderRadius: 5, padding: "1px 6px" }}>{lec.mode || "حضوري"}</span>
                     </div>
                     <div style={{ fontSize: 12, color: t.mu, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {lec.time}{lec.room && !isUrl(lec.room) ? ` • ${lec.room}` : ""}
+                      <span style={{ direction: "ltr", display: "inline-block", fontVariantNumeric: "tabular-nums" }}>
+                        {lec.time}{timeToMin(lec.time) != null && `–${minToTime(timeToMin(lec.time) + lectureMinutes(lec))}`}
+                      </span>
+                      {` • ${fmtDuration(lectureMinutes(lec))}`}
+                      {lec.room && !isUrl(lec.room) ? ` • ${lec.room}` : ""}
                     </div>
                   </div>
                   {online && isUrl(lec.room) && (
@@ -2150,47 +2994,10 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
             لا محاضرات بعد — أضِف محاضراتك لتظهر في الشبكة الأسبوعية.
           </div>
         ) : (
-          <div style={{ overflowX: "auto", paddingBottom: 8, marginBottom: 8, scrollbarWidth: "thin" }}>
-            <div style={{ display: "flex", gap: 8, minWidth: "min-content" }}>
-              {DAYS.map(day => {
-                const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
-                const isToday = day === todayAr;
-                const dc = DAY_COLORS[day];
-                return (
-                  <div key={day} style={{ width: 132, flexShrink: 0, display: "flex", flexDirection: "column" }}>
-                    <div style={{ textAlign: "center", padding: "7px 4px", borderRadius: "10px 10px 0 0", background: isToday ? dc : `${dc}18`, border: `1px solid ${isToday ? dc : dc + "30"}`, borderBottom: "none" }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 900, color: isToday ? "#fff" : dc }}>{day}</div>
-                      <div style={{ fontSize: 10, color: isToday ? "rgba(255,255,255,.85)" : t.mu, marginTop: 1 }}>{isToday ? "اليوم" : `${dayLecs.length} محاضرة`}</div>
-                    </div>
-                    <div style={{ flex: 1, background: t.s2, border: `1px solid ${dc}30`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: 6, display: "flex", flexDirection: "column", gap: 6, minHeight: 90 }}>
-                      {dayLecs.length === 0 ? (
-                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.dim }}>—</div>
-                      ) : dayLecs.map(lec => {
-                        const online = lec.mode === "أونلاين";
-                        const mc = online ? P.blue2 : P.green;
-                        const inner = (
-                          <>
-                            <div style={{ fontSize: 11.5, fontWeight: 900, color: mc, display: "flex", alignItems: "center", gap: 4 }}>
-                              <Clock size={11} /> {lec.time}
-                            </div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, lineHeight: 1.35, margin: "3px 0" }}>{lec.course}</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9.5, fontWeight: 800, color: mc }}>
-                              {online ? <Monitor size={10} /> : <MapPin size={10} />}
-                              {online ? "أونلاين" : (lec.room && !isUrl(lec.room) ? lec.room : "حضوري")}
-                            </div>
-                          </>
-                        );
-                        const cardStyle = { textAlign: "right", display: "block", width: "100%", background: t.s1, border: `1px solid ${mc}30`, borderRight: `3px solid ${mc}`, borderRadius: 8, padding: "7px 8px", textDecoration: "none", fontFamily: "inherit", cursor: online && isUrl(lec.room) ? "pointer" : "default" };
-                        return online && isUrl(lec.room)
-                          ? <a key={lec.id} href={linkHref(lec.room)} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={cardStyle}>{inner}</a>
-                          : <div key={lec.id} style={cardStyle}>{inner}</div>;
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <WeekGrid
+            schedule={schedule} DAYS={DAYS} DAY_COLORS={DAY_COLORS}
+            todayAr={todayAr} nowTick={nowTick} t={t}
+          />
         )
       )}
 
@@ -2238,6 +3045,28 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
               </select>
               <input type="time" value={newLec.time} onChange={e => setNewLec(p => ({ ...p, time: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+            </div>
+            {/* Duration drives the card's height in the weekly grid, so the
+                week reads at a glance instead of every lecture looking equal. */}
+            <div>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>
+                المدة {timeToMin(newLec.time) != null && (
+                  <span style={{ color: t.dim, fontWeight: 600 }}>
+                    — تنتهي {minToTime(timeToMin(newLec.time) + (Number(newLec.duration) || LECTURE_DEFAULT_MIN))}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {DURATION_CHOICES.map(min => {
+                  const active = (Number(newLec.duration) || LECTURE_DEFAULT_MIN) === min;
+                  return (
+                    <button key={min} onClick={() => setNewLec(p => ({ ...p, duration: min }))} style={{
+                      padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                      background: active ? `${P.blue2}18` : t.s2, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
+                    }}>{fmtDuration(min)}</button>
+                  );
+                })}
+              </div>
             </div>
             <input placeholder={newLec.mode === "أونلاين" ? "رابط المحاضرة (Zoom / Teams)" : "القاعة (اختياري)"} value={newLec.room} onChange={e => setNewLec(p => ({ ...p, room: e.target.value }))}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: newLec.mode === "أونلاين" ? "ltr" : "rtl", textAlign: newLec.mode === "أونلاين" ? "left" : "right", outline: "none" }} />
@@ -2603,10 +3432,15 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
       .finally(() => setRealLoading(false));
   }, [subject]);
 
-  const fileData = {
-    collections: FILES.collections(subject), plans: FILES.plans(subject),
-    curriculum: FILES.curriculum(subject), programs: FILES.programs(subject),
-  };
+  // Only the sections that mean something for this course. A prep-year
+  // subject has no admission requirements or fee schedule to show.
+  const sections = SECTIONS.filter(sec => sec.id !== "programs" || isProgramme(subject));
+
+  // Your own cards for this subject, counted for the header badge. Read after
+  // mount, never during render — reading storage while rendering is what made
+  // the whole app die on hydration once already.
+  const [cardCount, setCardCount] = useState(null);
+  useEffect(() => { setCardCount((storage.get(`fc_${subject}`, []) || []).length); }, [subject, open]);
 
   return (
     <div style={{ animation: "fadeUp .35s ease" }}>
@@ -2667,9 +3501,16 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
       <GradeCalc subject={subject} t={t} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {SECTIONS.map((sec) => {
+        {sections.map((sec) => {
           const isOpen = open === sec.id;
           const showBadge = sec.id === "notes" && hasNotes;
+          // How many real files this section holds — so a student can see
+          // what is worth opening instead of tapping through empty drawers.
+          const fileCount = FILE_SECTIONS.includes(sec.id) ? (realFiles[sec.id] || []).length : null;
+          // The personal tools show their state the same way, so you can see
+          // whether you have anything here without opening them.
+          const ownBadge = sec.id === "flashcards" ? (cardCount ? `${cardCount} بطاقة` : null)
+            : sec.id === "notes" ? (hasNotes ? "مكتوبة" : null) : null;
           return (
             <div key={sec.id} style={{
               background: t.s1, borderRadius: 16, border: `1px solid ${isOpen ? sec.color + "50" : t.bd}`,
@@ -2684,8 +3525,22 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                   <sec.Icon size={19} color={sec.color} strokeWidth={2.5} />
                   {showBadge && <div style={{ position: "absolute", top: -3, right: -3, width: 10, height: 10, borderRadius: "50%", background: P.green, border: `2px solid ${t.s1}` }} />}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>{sec.label}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                    {sec.label}
+                    {/* The count is the point: you can see which drawers have
+                        something in them without opening all four. */}
+                    {fileCount != null && !realLoading && (
+                      <span style={{
+                        fontSize: 10.5, fontWeight: 800, borderRadius: 6, padding: "1px 7px",
+                        background: fileCount ? `${sec.color}18` : t.s2,
+                        color: fileCount ? sec.color : t.dim,
+                      }}>{fileCount || "فارغ"}</span>
+                    )}
+                    {ownBadge && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, borderRadius: 6, padding: "1px 7px", background: `${P.green}18`, color: P.green }}>{ownBadge}</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: t.mu, marginTop: 1 }}>{sec.desc}</div>
                 </div>
                 <div style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .3s", color: t.dim }}>
@@ -2722,36 +3577,44 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                       ))}
                     </div>
                   )}
-                  {["collections", "plans", "curriculum", "programs"].includes(sec.id) && (() => {
+                  {FILE_SECTIONS.includes(sec.id) && (() => {
+                    const all = realFiles[sec.id] || [];
                     const fq = (fileFilter[sec.id] || "").toLowerCase();
-                    const filteredReal = (realFiles[sec.id] || []).filter(f => !fq || f.name.toLowerCase().includes(fq));
-                    const filteredMock = fileData[sec.id].filter(f => !fq || f.name.toLowerCase().includes(fq));
+                    const shown = all.filter(f => !fq || f.name.toLowerCase().includes(fq));
+                    if (realLoading) {
+                      return <div style={{ textAlign: "center", padding: "18px 0", color: t.mu, fontSize: 13 }}>جارٍ التحميل…</div>;
+                    }
+                    if (all.length === 0) {
+                      return (
+                        <div style={{ textAlign: "center", padding: "18px 8px", color: t.mu, fontSize: 13, lineHeight: 1.8 }}>
+                          <FileText size={24} color={t.dim} style={{ opacity: 0.5, marginBottom: 8 }} />
+                          <div>لا ملفات في هذا القسم بعد</div>
+                          <div style={{ fontSize: 11.5, color: t.dim, marginTop: 3 }}>تُضاف من لوحة التحكم فور توفّرها</div>
+                        </div>
+                      );
+                    }
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s2, borderRadius: 10, padding: "6px 12px", border: `1px solid ${t.bd}` }}>
-                          <Search size={13} color={t.mu} />
-                          <input
-                            placeholder="ابحث في الملفات..."
-                            value={fileFilter[sec.id] || ""}
-                            onChange={e => setFileFilter(prev => ({ ...prev, [sec.id]: e.target.value }))}
-                            style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 13, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
-                          />
-                          {fileFilter[sec.id] && (
-                            <button onClick={() => setFileFilter(prev => ({ ...prev, [sec.id]: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: t.mu, display: "flex", padding: 2 }}>
-                              <X size={12} />
-                            </button>
-                          )}
-                        </div>
-                        {filteredReal.map((f, i) => (
-                          <RealFileItem key={`real-${i}`} file={f} t={t} onToast={onToast} />
-                        ))}
-                        {(realFiles[sec.id] || []).length === 0 && !realLoading && !fq && (
-                          <div style={{ fontSize: 13, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
-                            لا توجد ملفات حقيقية بعد
+                        {/* The search box only earns its space once there is
+                            enough here to be worth searching. */}
+                        {all.length > 3 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s2, borderRadius: 10, padding: "6px 12px", border: `1px solid ${t.bd}` }}>
+                            <Search size={13} color={t.mu} />
+                            <input
+                              placeholder="ابحث في الملفات..."
+                              value={fileFilter[sec.id] || ""}
+                              onChange={e => setFileFilter(prev => ({ ...prev, [sec.id]: e.target.value }))}
+                              style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 13, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
+                            />
+                            {fileFilter[sec.id] && (
+                              <button onClick={() => setFileFilter(prev => ({ ...prev, [sec.id]: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: t.mu, display: "flex", padding: 2 }}>
+                                <X size={12} />
+                              </button>
+                            )}
                           </div>
                         )}
-                        {filteredMock.map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
-                        {fq && filteredReal.length === 0 && filteredMock.length === 0 && (
+                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} />)}
+                        {shown.length === 0 && (
                           <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
                       </div>
@@ -3234,7 +4097,85 @@ function calChip(days) {
 
 // Full-screen calendar view opened from the home strip — a clean vertical
 // timeline of every academic event (upcoming first, then finished).
-function CalendarModal({ t, events, onClose }) {
+/**
+ * Read the admin-managed academic calendar into renderable rows.
+ *
+ * Shared by the home strip and the calendar tab so there is one source and
+ * one set of guards: an admin row can arrive with a missing or blank date, or
+ * a label that is an object, and either would take the whole app down if it
+ * reached React as a child.
+ */
+function useCalendarEvents() {
+  const { data: content } = useSiteContent("calendar");
+  return useMemo(() => {
+    const now = new Date();
+    return (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
+      .filter(e => e && typeof e === "object")
+      .map(e => {
+        const date = typeof e.date === "string" ? e.date : "";
+        const ms = date ? new Date(date + "T00:00:00").getTime() : NaN;
+        return { ...e, label: safeText(e.label, "حدث"), date, days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000) };
+      })
+      .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
+  }, [content]);
+}
+
+/**
+ * The calendar as a full page — its own tab in the bottom nav.
+ *
+ * Everything is shown to everyone by default: an event tagged for another
+ * plan is still a date this student may need to know, and hiding it was the
+ * behaviour that got reverted earlier. What the plan buys you is a filter you
+ * choose — "يخصّني" narrows to your track — and never a silent omission.
+ */
+function CalendarPage({ t, profile }) {
+  const events = useCalendarEvents();
+  const [mineOnly, setMineOnly] = useState(false);
+  const mineCount = useMemo(
+    () => events.filter(e => e.audience && e.audience !== "all" && audienceMatches(e.audience, profile)).length,
+    [events, profile]);
+  const shown = mineOnly ? events.filter(e => audienceMatches(e.audience, profile)) : events;
+
+  return (
+    <div style={{ animation: "fadeUp .4s ease" }}>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+        <Calendar size={20} color={P.blue2} /> التقويم الأكاديمي
+      </h2>
+      <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>
+        مواعيد الفصل: التسجيل، الحذف والإضافة، الاختبارات، والإجازات.
+      </div>
+
+      {/* Only offered when the student has a track and some event is tagged
+          for it — otherwise the toggle would filter nothing. */}
+      {profile?.track && mineCount > 0 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          {[{ id: false, label: `الكل (${events.length})` }, { id: true, label: `يخصّني (${shownCountFor(events, profile)})` }].map(({ id, label }) => {
+            const active = mineOnly === id;
+            return (
+              <button key={String(id)} onClick={() => setMineOnly(id)} style={{
+                padding: "6px 14px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
+                background: active ? P.blue2 : t.s2, border: `1px solid ${active ? P.blue2 : t.bd}`,
+                color: active ? "#fff" : t.mu,
+              }}>{label}</button>
+            );
+          })}
+        </div>
+      )}
+
+      {shown.length === 0
+        ? <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>
+            {events.length === 0 ? "لا أحداث في التقويم بعد" : "لا أحداث تخصّ مسارك"}
+          </div>
+        : <CalendarList t={t} events={shown} profile={profile} />}
+    </div>
+  );
+}
+/** How many events a student would see under the "يخصّني" filter. */
+const shownCountFor = (events, profile) => events.filter(e => audienceMatches(e.audience, profile)).length;
+
+/** The upcoming/past split, shared by the calendar page and the modal. */
+function CalendarList({ t, events, profile }) {
   const upcoming = events.filter(e => e.days >= 0);
   const past = events.filter(e => e.days < 0);
   const Row = (e, i) => {
@@ -3249,68 +4190,54 @@ function CalendarModal({ t, events, onClose }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, lineHeight: 1.5 }}>{e.label}</div>
           <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>{calDate(e.date)}</div>
-          {audienceLabel(e.audience) && (
-            <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, color: col, background: `${col}14`, borderRadius: 7, padding: "2px 8px", marginTop: 6 }}>خاص بـ {audienceLabel(e.audience)}</div>
-          )}
+          {audienceLabel(e.audience) && (() => {
+            // An event aimed at this student's own track is worth spotting in
+            // a long list, so it says "مسارك" instead of repeating the label.
+            const mine = audienceMatches(e.audience, profile);
+            return (
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 700,
+                color: mine ? P.green : col, background: `${mine ? P.green : col}14`,
+                border: mine ? `1px solid ${P.green}45` : "none",
+                borderRadius: 7, padding: "2px 8px", marginTop: 6,
+              }}>
+                {mine && <Check size={10} />}
+                {mine ? "مسارك" : `خاص بـ ${audienceLabel(e.audience)}`}
+              </div>
+            );
+          })()}
         </div>
         <div style={{ background: chip.bg, color: chip.col, borderRadius: 9, padding: "4px 10px", fontSize: 11.5, fontWeight: 800, alignSelf: "flex-start", flexShrink: 0 }}>{chip.text}</div>
       </div>
     );
   };
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
-      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
-          <ArrowLeft size={15} /> رجوع
-        </button>
-        <div style={{ fontSize: 17, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-          <Calendar size={18} color={P.gold} /> التقويم الأكاديمي
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px", maxWidth: 620, margin: "0 auto", width: "100%" }}>
-        {upcoming.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, marginBottom: 10 }}>القادمة</div>}
-        {upcoming.map(Row)}
-        {past.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, margin: "18px 0 10px" }}>المنتهية</div>}
-        {past.map(Row)}
-        {events.length === 0 && <div style={{ textAlign: "center", color: t.mu, padding: "40px 0", fontSize: 13 }}>لا أحداث في التقويم بعد</div>}
-      </div>
-    </div>
+    <>
+      {upcoming.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, marginBottom: 10 }}>القادمة</div>}
+      {upcoming.map(Row)}
+      {past.length > 0 && <div style={{ fontSize: 13, fontWeight: 800, color: t.mu, margin: "18px 0 10px" }}>المنتهية</div>}
+      {past.map(Row)}
+    </>
   );
 }
 
-function AcademicCalendar({ t, profile }) {
-  const { data: content } = useSiteContent("calendar");
-  const [open, setOpen] = useState(false);
-  const now = new Date();
-  // Public site: everyone sees every event. The audience tag stays only as an
-  // informational badge ("خاص بـ خطة أ") — it never hides anything.
-  // Admin-entered events may be missing or have a blank date; never let one
-  // bad row throw (an exception here would blank the entire app).
-  const events = (Array.isArray(content?.events) && content.events.length ? content.events : DEFAULT_CALENDAR.events)
-    .filter(e => e && typeof e === "object")
-    .map(e => {
-      const date = typeof e.date === "string" ? e.date : "";
-      const ms = date ? new Date(date + "T00:00:00").getTime() : NaN;
-      // label is rendered as a child — never let an object through (React
-      // throws "Objects are not valid as a React child" and the app dies).
-      return {
-        ...e,
-        label: safeText(e.label, "حدث"),
-        date,
-        days: Number.isNaN(ms) ? 0 : Math.ceil((ms - now) / 86400000),
-      };
-    })
-    .sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999"));
-
+/**
+ * The next few dates, as a strip on the home page.
+ *
+ * Public site: everyone sees every event. The audience tag stays only as an
+ * informational badge ("خاص بـ خطة أ") — it never hides anything. "عرض الكل"
+ * now goes to the calendar tab rather than a modal, so there is one full view.
+ */
+function AcademicCalendar({ t, onOpenAll }) {
+  const events = useCalendarEvents();
   if (!events.length) return null;
   const upcoming = events.filter(e => e.days >= 0);
   const strip = (upcoming.length ? upcoming : events).slice(0, 8);
 
   return (
     <>
-      {open && <CalendarModal t={t} events={events} onClose={() => setOpen(false)} />}
       <div style={{ background: t.s1, borderRadius: 18, padding: 16, border: `1px solid ${t.bd}`, marginBottom: 16, boxShadow: t.shSm }}>
-        <button onClick={() => setOpen(true)} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: 0 }}>
+        <button onClick={onOpenAll} style={{ width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
             <Calendar size={14} color={P.blue2} /> التقويم الأكاديمي
           </span>
@@ -3322,7 +4249,7 @@ function AcademicCalendar({ t, profile }) {
             const col = e.color || P.blue2;
             const chip = calChip(e.days);
             return (
-              <button key={i} onClick={() => setOpen(true)} style={{
+              <button key={i} onClick={onOpenAll} style={{
                 flexShrink: 0, width: 158, background: t.s2, borderRadius: 14, textAlign: "right", cursor: "pointer", fontFamily: "inherit",
                 border: `1px solid ${col}25`, padding: 12, display: "flex", flexDirection: "column", gap: 8,
               }}>
@@ -3365,13 +4292,24 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
   const { greeting, todayStr } = clock;
   // Starts at 0 for a stable first render; the hour-based tip is picked after
   // mount (see the interval effect below) to stay hydration-safe.
-  const [tipIdx, setTipIdx] = useState(0);
+  // Tips are drawn without repeating: the card starts as an invitation rather
+  // than a fact nobody asked for, and every tip in the deck is shown once
+  // before any comes round again. The deck is remembered across visits, so
+  // "أعطني نصيحة" keeps giving you something new, not the same three.
+  const [tipSeen, setTipSeen] = useStored("tipsSeen", []);
+  const [tipIdx, setTipIdx] = useState(null);
+  const drawTip = useCallback(() => {
+    const pool = TIPS.map((_, i) => i).filter(i => !(tipSeen || []).includes(i) && i !== tipIdx);
+    // Deck exhausted — reshuffle, but never hand back the one on screen.
+    const from = pool.length ? pool : TIPS.map((_, i) => i).filter(i => i !== tipIdx);
+    const pick = from[Math.floor(Math.random() * from.length)];
+    setTipIdx(pick);
+    setTipSeen(pool.length ? [...(tipSeen || []), pick] : [pick]);
+  }, [tipSeen, tipIdx, setTipSeen]);
   const [pwaPrompt, setPwaPrompt] = useState(null);
-  useEffect(() => {
-    setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length);
-    const iv = setInterval(() => setTipIdx(Math.floor(Date.now() / 3600000) % TIPS.length), 60000);
-    return () => clearInterval(iv);
-  }, []);
+  // (A timer here used to force a tip on screen and swap it on the hour,
+  //  which is exactly the "it just repeats at me" behaviour being fixed —
+  //  the card is asked, not pushed, so the timer is gone.)
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setPwaPrompt(e); };
     window.addEventListener("beforeinstallprompt", handler);
@@ -3382,7 +4320,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
     pwaPrompt.prompt();
     pwaPrompt.userChoice.then(() => setPwaPrompt(null));
   };
-  const tip = TIPS[tipIdx];
+  const tip = tipIdx == null ? null : TIPS[tipIdx];
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
@@ -3415,14 +4353,17 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
             const ghost = { ...base, background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.16)", color: "rgba(255,255,255,.9)" };
             return (
               <>
+                {/* The primary pill said "اختر مسارك" even to someone whose
+                    track was already picked and printed just above it. It now
+                    says what it will actually do for you. */}
                 <button onClick={() => setActiveTab("explore")} style={{ ...base, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", color: "#3a2e05", fontWeight: 800, boxShadow: `0 6px 18px ${P.gold}44` }}>
-                  <GradCap size={14} /> اختر مسارك
+                  <GradCap size={14} /> {profile?.track ? "تصفّح موادي" : "اختر مسارك"}
                 </button>
-                <button onClick={onOpenAI} style={ghost}>
-                  <Sparkles size={13} color={P.gold} /> المساعد الذكي
+                <button onClick={() => onOpenAI?.()} style={ghost}>
+                  <Sparkles size={13} color={P.gold} /> اسأل المساعد
                 </button>
                 <button onClick={() => setActiveTab("gpa")} style={ghost}>
-                  <Calculator size={13} /> احسب معدلك
+                  <Calculator size={13} /> احسب معدلي
                 </button>
                 {pwaPrompt && (
                   <button onClick={installPwa} style={{ ...base, background: `${P.green}22`, border: `1px solid ${P.green}55`, color: "#8ff0c0" }}>
@@ -3466,7 +4407,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       </div>
 
       {/* Unified tasks + exams hub */}
-      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} guest={guest} />
+      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} profile={profile} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
@@ -3503,59 +4444,87 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         </div>
       )}
 
+      {/* Study tip — an invitation, not a fact nobody asked for */}
       <div style={{
         background: `linear-gradient(135deg, ${P.gold}14, ${P.gold}05)`, borderRadius: 18,
         padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
         boxShadow: `0 4px 20px ${P.gold}12`, position: "relative", overflow: "hidden",
       }}>
         <div style={{ position: "absolute", top: -24, left: -14, width: 90, height: 90, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40` }}>
-              <Lightbulb size={17} color="#3a2e05" />
-            </div>
-            <div>
-              <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
-              <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>{tipIdx + 1} من {TIPS.length}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: tip ? 12 : 12, position: "relative" }}>
+          <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40`, flexShrink: 0 }}>
+            <Lightbulb size={17} color="#3a2e05" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
+            <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>
+              {tip ? `${Math.min((tipSeen || []).length, TIPS.length)} من ${TIPS.length}` : `${TIPS.length} نصيحة بانتظارك`}
             </div>
           </div>
-          <button
-            onClick={() => setTipIdx(i => (i + 1) % TIPS.length)}
-            style={{ background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none", borderRadius: 20, padding: "6px 13px", cursor: "pointer", fontSize: 12, color: "#3a2e05", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, fontWeight: 800 }}>
-            <RotateCcw size={12} /> التالية
-          </button>
         </div>
-        <p style={{ margin: 0, fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative" }}>{tip}</p>
+
+        {tip && (
+          <p style={{ margin: "0 0 12px", fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative", animation: "fadeUp .3s ease" }}>{tip}</p>
+        )}
+
+        <div style={{ display: "flex", gap: 8, position: "relative" }}>
+          <button onClick={drawTip} style={{
+            flex: tip ? 1 : "1 1 100%", background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none",
+            borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#3a2e05",
+            fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
+          }}>
+            {tip ? <><RotateCcw size={13} /> نصيحة أخرى</> : <><Lightbulb size={14} /> أعطني نصيحة</>}
+          </button>
+          {tip && (
+            /* The tip is a starting point, not the end of it — one tap hands
+               it to the assistant so you can actually ask about it. */
+            <button onClick={() => onOpenAI?.(`اشرح لي هذه النصيحة الدراسية وكيف أطبّقها عملياً على موادي:\n«${tip}»`)} style={{
+              flex: 1, background: t.s1, border: `1.5px solid ${P.blue2}45`, borderRadius: 12, padding: "10px 14px",
+              cursor: "pointer", fontSize: 13, color: P.blue2, fontFamily: "inherit",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
+            }}>
+              <Sparkles size={13} /> اسأل المساعد عنها
+            </button>
+          )}
+        </div>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 12 }}>وصول سريع</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-          {[
-            { Icon: BookOpen, label: "تجميعات وملخصات", tab: "explore", color: P.blue2 },
-            { Icon: FileText, label: "خطط دراسية", tab: "explore", color: P.purple },
-            { Icon: GraduationCap, label: "المقررات", tab: "explore", color: "#be123c" },
-            { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold },
-            { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.green },
-            { Icon: Link2, label: "روابط الجامعة", tab: "links", color: P.cyan },
-          ].map(({ Icon, label, tab, color }, i) => (
-            <button key={i} onClick={() => setActiveTab(tab)} style={{
-              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14, padding: "14px 10px",
-              cursor: "pointer", textAlign: "center", transition: "all .22s", boxShadow: t.shSm, fontFamily: "inherit",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                <Icon size={18} color={color} strokeWidth={2} />
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{label}</div>
-            </button>
-          ))}
+      {/* Pick up where you left off — the most likely next tap, and the one
+          thing here the bottom nav cannot already do in one press. The old
+          "وصول سريع" grid sent three of its six tiles to the same tab and the
+          rest to tabs already sitting in the nav, so it was decoration. */}
+      {recent.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <History size={15} color={P.blue2} /> تابع من حيث توقفت
+          </div>
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
+            {recent.slice(0, 6).map((sname) => {
+              const SIcon = getIcon(sname);
+              return (
+                <button key={sname} onClick={() => openCourse(sname)} style={{
+                  flexShrink: 0, width: 140, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14,
+                  padding: 12, cursor: "pointer", textAlign: "right", fontFamily: "inherit", boxShadow: t.shSm,
+                  display: "flex", flexDirection: "column", gap: 8, transition: "all .2s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <SIcon size={16} color={P.blue2} />
+                  </div>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, lineHeight: 1.45, minHeight: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{sname}</div>
+                  <div style={{ fontSize: 11, color: P.blue2, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>
+                    متابعة <ChevronLeft size={11} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Academic calendar strip — bottom */}
-      <AcademicCalendar t={t} profile={profile} />
+      <AcademicCalendar t={t} onOpenAll={() => setActiveTab("calendar")} />
 
       {/* Focus mode — bottom */}
       <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit", marginBottom: 8 }}>
@@ -3671,16 +4640,25 @@ function ExplorePage({ onCourse, t, profile }) {
   const [path, setPath] = useState(null);
   const [sub, setSub] = useState(null);
 
-  // Personalise: jump straight to the student's track (and plan) on first open.
+  // Open on the student's own subjects, not on a picker they already answered.
+  //
+  // This is also the landing spot when you back out of a course, so it has to
+  // be the deepest place their profile actually determines: the term's
+  // subjects for تحضيري, and their college's programmes for تخصص — not the
+  // list of five colleges they'd have to re-navigate every single time.
   useEffect(() => {
     const key = TRACK_TO_TREE[profile?.track];
     if (!key) return;
     setPath(key);
     if (key === "preparatory" && PLAN_TO_SUB[profile?.plan]) {
       setSub(PLAN_TO_SUB[profile.plan]); setStep("level3");
-    } else {
-      setStep("level2");
+      return;
     }
+    if (key === "bachelor" && profile?.college) {
+      const col = TREE.bachelor.colleges.find(c => c.label === profile.college);
+      if (col) { setSub(col.id); setStep("level3"); return; }
+    }
+    setStep("level2");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3909,19 +4887,134 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
   );
 }
 
+/**
+ * Track → (college) → plan/programme, in one place.
+ *
+ * Shared by the profile editor and the first-run screen so both always offer
+ * the same options; `draft` is the working profile and `set` patches it.
+ */
+function TrackPicker({ draft, set, t, disabled }) {
+  const plans = planOptionsFor(draft.track, draft.college);
+  const chip = (label, active, onClick, color) => (
+    <button key={label} type="button" disabled={disabled} onClick={onClick} style={{
+      padding: "8px 13px", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer",
+      fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, textAlign: "right",
+      background: active ? `${color}18` : t.s2, border: `1.5px solid ${active ? color : t.bd}`,
+      color: active ? color : t.mu, opacity: disabled ? 0.6 : 1,
+    }}>{label}</button>
+  );
+
+  return (
+    <>
+      <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        {AUTH_TRACKS.map(({ id }) =>
+          chip(id, draft.track === id, () => set({ track: id, college: "", plan: "" }), P.blue2))}
+      </div>
+
+      {trackNeedsCollege(draft.track) && (
+        <>
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>القسم / الكلية</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {TRACK_COLLEGES.map(c =>
+              chip(c.label, draft.college === c.label, () => set({ college: c.label, plan: "" }), P.purple))}
+          </div>
+        </>
+      )}
+
+      {plans.length > 0 && (
+        <>
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>
+            {draft.track === "تحضيري" ? "الخطة" : "البرنامج"}
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {plans.map(pl => chip(pl, draft.plan === pl, () => set({ plan: pl }), P.green))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onLogout, notes, openCourse, openSettings }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
-  const [draft, setDraft] = useState({ name: profile?.name || "", track: profile?.track || "تحضيري", plan: profile?.plan || "" });
-  const draftPlans = AUTH_PLANS[draft.track] || null;
+  const [draft, setDraft] = useState({
+    name: profile?.name || "",
+    studentId: profile?.studentId || "",
+    track: profile?.track || "تحضيري",
+    college: profile?.college || "",
+    plan: profile?.plan || "",
+  });
+  const patch = (p) => setDraft(d => ({ ...d, ...p }));
+  const [requesting, setRequesting] = useState(false);
+  // The hold follows the stamp, which survives a sign-out and a data reset —
+  // so re-creating the profile can't be used to escape it.
+  const heldTrack = lockStampOf(profile) || trackLock;
+  const lockDaysLeft = trackLockRemaining(heldTrack);
+
+  // While the track is locked, a change goes to the admin as a request the
+  // student explains, rather than silently editing the profile.
+  const requestTrackChange = async () => {
+    const reason = window.prompt("سبب تغيير المسار؟ (سيصل للإدارة مع اسمك ورقمك الجامعي)");
+    if (reason == null) return;
+    if (!reason.trim()) { onToast?.("اكتب سبب التغيير", "warn"); return; }
+    setRequesting(true);
+    try {
+      const res = await fetch("/api/track-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile?.name || draft.name.trim(),
+          studentId: profile?.studentId || draft.studentId.trim(),
+          currentTrack: trackLabel(heldTrack), reason: reason.trim(),
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) onToast?.("وصل طلبك للإدارة — سيتم الرد قريباً ✅", "success");
+      else onToast?.(d.error || "تعذّر إرسال الطلب", "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setRequesting(false);
+  };
+  // The track is fixed for 15 days after it is confirmed; name and ID stay
+  // editable throughout.
+  const trackLocked = lockDaysLeft > 0;
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
-    setProfile({ name: draft.name.trim(), track: draft.track || "تحضيري", plan: draft.plan || "", created: profile?.created || Date.now() });
+    if (!draft.studentId.trim()) { onToast?.("اكتب رقمك الجامعي", "warn"); return; }
+    if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
+
+    // A stamp left over from a sign-out or a reset still holds.
+    if (lockConflicts(heldTrack, draft)) {
+      onToast?.(`مسارك مثبَّت على «${trackLabel(heldTrack)}» — يتبقّى ${lockDaysLeft} يوم`, "warn");
+      return;
+    }
+
+    const trackChanged = !heldTrack ||
+      heldTrack.track !== draft.track || (heldTrack.college || "") !== (draft.college || "") || (heldTrack.plan || "") !== (draft.plan || "");
+    if (trackChanged && !confirm(
+      `تأكيد مسارك: ${trackLabel(draft)}\n\nبعد التأكيد لا يمكنك تغييره إلا بعد ${TRACK_LOCK_DAYS} يوماً، أو بإرسال طلب للإدارة.`
+    )) return;
+
+    const confirmedAt = trackChanged ? Date.now() : (heldTrack?.confirmedAt || Date.now());
+    const next = {
+      ...profile,
+      name: draft.name.trim(),
+      studentId: draft.studentId.trim().toUpperCase(),
+      track: draft.track,
+      college: draft.college || "",
+      plan: draft.plan || "",
+      // Only restart the lock when the track actually changed.
+      confirmedAt,
+      created: profile?.created || Date.now(),
+    };
+    setProfile(next);
+    setTrackLock?.(lockStampOf(next));
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
   };
@@ -3959,12 +5052,13 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{profile.track}{profile.plan ? ` — ${profile.plan}` : ""}</span>}
+              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{trackLabel(profile)}</span>}
+              {profile?.studentId && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.75)", fontFamily: "monospace", direction: "ltr" }}>{profile.studentId}</span>}
               <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", gap: 5 }}><Clock size={12} color={P.gold} /> {totalHours} ساعة دراسة</span>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => { setDraft({ name: profile?.name || "", track: profile?.track || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+            <button onClick={() => { setDraft({ name: profile?.name || "", studentId: profile?.studentId || "", track: profile?.track || "تحضيري", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
               <Edit3 size={16} />
             </button>
             <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
@@ -3978,42 +5072,38 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       {editing && (
         <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, marginBottom: 4 }}>{profile ? "تعديل ملفك الدراسي" : "أنشئ ملفك الدراسي"}</div>
-          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>بدون بريد أو كلمة مرور — فقط اسمك ومسارك، ويُحفظ على جهازك.</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>اسمك ورقمك الجامعي ومسارك — تُحفظ على جهازك، وتُستخدم لتخصيص موادك وتقويمك ومهامك.</div>
+
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
-          <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="اكتب اسمك"
+          <input value={draft.name} onChange={e => patch({ name: e.target.value })} placeholder="اكتب اسمك"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
-          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار / التخصص</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-            {AUTH_TRACKS.map(({ id: tr }) => {
-              const active = draft.track === tr;
-              return (
-                <button key={tr} onClick={() => setDraft(d => ({ ...d, track: tr, plan: "" }))} style={{
-                  padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                  background: active ? `${P.blue2}18` : t.s2, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
-                }}>{tr}</button>
-              );
-            })}
-          </div>
-          {draftPlans && (
-            <>
-              <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>الخطة</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-                {draftPlans.map(pl => {
-                  const active = draft.plan === pl;
-                  return (
-                    <button key={pl} onClick={() => setDraft(d => ({ ...d, plan: pl }))} style={{
-                      padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                      background: active ? `${P.purple}18` : t.s2, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
-                    }}>{pl}</button>
-                  );
-                })}
+
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
+          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="مثال: S220032205"
+            style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+
+          {trackLocked ? (
+            <div style={{ background: `${P.gold}12`, border: `1px solid ${P.gold}40`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, marginBottom: 4 }}>مسارك: {trackLabel(heldTrack)}</div>
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 10 }}>
+                مثبَّت لمدة {TRACK_LOCK_DAYS} يوماً — يتبقّى {lockDaysLeft} يوم. لتغييره قبل ذلك أرسل طلباً للإدارة.
               </div>
-            </>
+              <button onClick={requestTrackChange} disabled={requesting} style={{
+                width: "100%", background: t.s2, border: `1px solid ${P.gold}55`, borderRadius: 10,
+                padding: "10px", cursor: requesting ? "wait" : "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 800, color: P.gold, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                <Send size={13} /> {requesting ? "جارٍ الإرسال…" : "طلب تغيير المسار"}
+              </button>
+            </div>
+          ) : (
+            <TrackPicker draft={draft} set={patch} t={t} />
           )}
+
           <div style={{ display: "flex", gap: 8 }}>
             {profile && <Btn variant="ghost" size="sm" onClick={() => setEditing(false)} style={{ flex: 1 }}>إلغاء</Btn>}
-            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim()}>
-              <CheckCircle size={15} /> {profile ? "حفظ" : "إنشاء الملف"}
+            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim() || !draft.studentId.trim()}>
+              <CheckCircle size={15} /> {profile ? "حفظ" : "تأكيد وإنشاء الملف"}
             </Btn>
           </div>
         </div>
@@ -4037,6 +5127,73 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           ))}
         </div>
       )}
+
+      {/* My plan — the track spelled out, with its subjects and what's due */}
+      {!editing && profile && (() => {
+        const subjects = myTrackSubjects(profile);
+        const openTasks = (tasks || []).filter(tk => !tk.done).length;
+        const lectures = (schedule || []).length;
+        return (
+          <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.gold}35`, boxShadow: t.shSm }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <GradCap size={16} color={P.gold} />
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, flex: 1 }}>خطتي</div>
+              {lockDaysLeft > 0 && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: P.gold, background: `${P.gold}15`, borderRadius: 7, padding: "3px 8px" }}>
+                  <Lock size={10} /> {lockDaysLeft} يوم
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 14 }}>{trackLabel(profile)}</div>
+
+            {subjects.length > 0 && (
+              <>
+                <div style={{ fontSize: 11.5, color: t.dim, fontWeight: 700, marginBottom: 8 }}>
+                  {subjects.length === 1 ? "مادتي" : `موادي (${subjects.length})`}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                  {subjects.map(s => {
+                    const SIcon = getIcon(s);
+                    return (
+                      <button key={s} onClick={() => openCourse(s)} style={{
+                        background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "10px 12px",
+                        cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                        fontFamily: "inherit", textAlign: "right", transition: "all .2s",
+                      }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = P.gold + "60"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                        <div style={{ width: 30, height: 30, borderRadius: 9, background: `${P.gold}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <SIcon size={14} color={P.gold} />
+                        </div>
+                        <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
+                        <ChevronLeft size={14} color={t.dim} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {[
+                { label: "مهام مفتوحة", value: openTasks, tab: "home", color: P.green },
+                { label: "محاضرات", value: lectures, tab: "schedule", color: P.blue2 },
+                { label: "مفضلة", value: favorites.length, tab: "fav", color: P.gold },
+              ].map(({ label, value, tab, color }) => (
+                <button key={label} onClick={() => setActiveTab(tab)} style={{
+                  background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "10px 6px",
+                  cursor: "pointer", fontFamily: "inherit", textAlign: "center", transition: "all .2s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = color}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                  <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
+                  <div style={{ fontSize: 11, color: t.mu, fontWeight: 600, marginTop: 2 }}>{label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Snapshot stats */}
       {!editing && (
@@ -4186,12 +5343,12 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       )}
 
       {!editing && profile && (
-        <button onClick={() => { if (confirm("مسح ملفك الشخصي؟ (اسمك ومسارك المحفوظين على هذا الجهاز فقط)")) onLogout?.(); }} style={{
-          width: "100%", marginTop: 4, background: `${P.red}0d`, border: `1px solid ${P.red}30`, borderRadius: 12,
-          padding: "12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: P.red,
+        <button onClick={() => onSignOut?.()} style={{
+          width: "100%", marginTop: 4, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 12,
+          padding: "12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: t.mu,
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         }}>
-          <Trash2 size={16} /> مسح ملفي الشخصي
+          <LogOut size={16} /> تسجيل الخروج
         </button>
       )}
     </div>
@@ -4359,21 +5516,8 @@ function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
 /* ══════════════════════════════════════════════════════════════
    SETTINGS PANEL
    ══════════════════════════════════════════════════════════════ */
-function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onToast }) {
+function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onResetAll, resetCounts, profile, rememberAccount, setRememberAccount, onSignOut, onToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const router = useRouter();
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    // Go to the home page, not /login — login is optional now, so the
-    // user stays in the (now signed-out) app. If login is ever required
-    // again, middleware redirects "/" to /login on its own.
-    router.push("/");
-    router.refresh();
-  };
   const Row = ({ Icon, label, desc, children, color = P.blue2 }) => (
     <div style={{
       background: t.s2, borderRadius: 14, padding: "14px 16px", marginBottom: 8,
@@ -4461,23 +5605,33 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSo
             <div style={{ background: `${P.blue2}15`, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, color: P.blue2, fontWeight: 700 }}>PRO</div>
           </div>
 
-          <Btn variant="ghost" onClick={handleSignOut} disabled={signingOut} style={{ width: "100%", marginBottom: 8 }}>
-            <LogOut size={14} /> {signingOut ? "جارٍ تسجيل الخروج..." : "تسجيل الخروج"}
-          </Btn>
+          {profile && (
+            <>
+              <Row Icon={Save} label="حفظ حسابي بعد تسجيل الخروج" color={P.gold}
+                desc={rememberAccount
+                  ? "عند العودة تظهر لك شاشة دخول باسمك ورقمك الجامعي"
+                  : "تسجيل الخروج سيحذف ملفك من هذا الجهاز نهائياً"}>
+                <Toggle on={rememberAccount} onChange={setRememberAccount} />
+              </Row>
+
+              <Btn variant="ghost" onClick={() => { onSignOut?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
+                <LogOut size={14} /> تسجيل الخروج
+              </Btn>
+            </>
+          )}
 
           <Btn variant="danger" onClick={() => setShowConfirm(true)} style={{ width: "100%" }}>
-            <Trash2 size={14} /> إعادة تعيين كل البيانات
+            <Trash2 size={14} /> إعادة تعيين البيانات
           </Btn>
         </div>
       </div>
 
-      <ConfirmDialog
+      <ResetDialog
         open={showConfirm}
-        title="إعادة تعيين البيانات"
-        desc="سيتم حذف جميع المفضلات والملاحظات والإحصائيات والإعدادات. هل أنت متأكد؟"
-        onConfirm={() => { onReset(); onClose(); onToast?.("تم إعادة تعيين جميع البيانات", "info"); }}
+        counts={resetCounts}
+        onResetData={() => { onReset(); onClose(); onToast?.("تم مسح بيانات الدراسة — ملفك ومسارك كما هما", "info"); }}
+        onResetAll={() => { onResetAll(); onClose(); onToast?.("تم حذف كل البيانات من هذا الجهاز", "info"); }}
         onClose={() => setShowConfirm(false)}
-        danger
         t={t}
       />
     </>
@@ -4708,7 +5862,7 @@ const DEFAULT_LINKS = {
       { label: "المكتبة الرقمية السعودية (SDL)", desc: "الكتب والمراجع والأبحاث الأكاديمية", url: "https://sdl.edu.sa/SDLPortal/ar/login.aspx", icon: "BookOpen", color: "#be123c" },
       { label: "البريد الإلكتروني الجامعي", desc: "بريد @seu.edu.sa عبر Office 365", url: "https://sso.seu.edu.sa/SEUOffice365SSO/pages/login.jsp", icon: "Mail", color: "#0369a1" },
       { label: "بوابة القبول والتسجيل", desc: "التسجيل وقبول الطلاب الجدد", url: "https://admission.seu.edu.sa", icon: "CheckCircle", color: "#0891b2" },
-      { label: "التقويم الأكاديمي", desc: "مواعيد الفصول والاختبارات والتسجيل", url: "https://www.seu.edu.sa/en/academic-calendar/1448/", icon: "Calendar", color: "#d97706" },
+      // The academic calendar lives in its own tab now, not as a link out.
     ]},
     { group: "الخدمات المالية والإدارية", color: P.green, items: [
       { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://erpgate.seu.edu.sa", icon: "CreditCard", color: "#059669" },
@@ -4902,7 +6056,193 @@ const AUTH_TRACKS = [
   { id: "دبلوم", Icon: Award, desc: "برامج الدبلوم" },
   { id: "دراسات عليا", Icon: Trophy, desc: "ماجستير ودراسات عليا" },
 ];
-const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
+
+/**
+ * The second step of "choose your track": what a student picks after the
+ * track itself. Derived from TREE so the picker can never drift from the
+ * catalogue the rest of the app browses.
+ *   تحضيري      → خطة أ / خطة ب
+ *   تخصص        → college, then a program inside it
+ *   دبلوم/عليا  → a program directly
+ */
+const TRACK_PLANS = {
+  "تحضيري": ["خطة أ", "خطة ب"],
+  "دبلوم": TREE.diploma.programs,
+  "دراسات عليا": TREE.graduate.programs,
+};
+const TRACK_COLLEGES = TREE.bachelor.colleges.map(c => ({ label: c.label, programs: c.programs }));
+const collegePrograms = (label) => TRACK_COLLEGES.find(c => c.label === label)?.programs || [];
+// A track needs a college chosen first only for تخصص.
+const trackNeedsCollege = (track) => track === "تخصص";
+const planOptionsFor = (track, college) =>
+  trackNeedsCollege(track) ? collegePrograms(college) : (TRACK_PLANS[track] || []);
+/** Is this profile complete enough to be saved/confirmed? */
+const profileComplete = (p) => {
+  if (!p?.name?.trim() || !p?.studentId?.trim() || !p?.track) return false;
+  if (trackNeedsCollege(p.track) && !p.college) return false;
+  // Only require a plan/programme when the chosen track actually offers one.
+  return planOptionsFor(p.track, p.college).length === 0 || !!p.plan;
+};
+/** Human label for a chosen track, e.g. "تحضيري — خطة أ". */
+const trackLabel = (p) => {
+  if (!p?.track) return "";
+  const parts = [p.track];
+  if (p.college) parts.push(p.college);
+  if (p.plan) parts.push(p.plan);
+  return parts.join(" — ");
+};
+
+// A confirmed track is locked for this long; changing sooner needs a request.
+const TRACK_LOCK_DAYS = 15;
+const trackLockRemaining = (p) => {
+  if (!p?.confirmedAt) return 0;
+  const elapsed = Date.now() - Number(p.confirmedAt);
+  const left = TRACK_LOCK_DAYS * 86400000 - elapsed;
+  return left > 0 ? Math.ceil(left / 86400000) : 0;
+};
+
+/**
+ * The subjects a student's own plan puts in front of them.
+ *
+ * تحضيري is the only track the catalogue breaks into subjects — خطة أ and
+ * خطة ب are its two terms. Everywhere else the programme itself is the leaf
+ * the rest of the app treats as a course, so that is what comes back.
+ */
+const myTrackSubjects = (p) => {
+  if (!p?.track) return [];
+  if (p.track === "تحضيري") {
+    const idx = TRACK_PLANS["تحضيري"].indexOf(p.plan);
+    const term = Object.values(TREE.preparatory.plans)[idx];
+    return term?.subjects || [];
+  }
+  return p.plan ? [p.plan] : [];
+};
+
+/** The track+date stamp that outlives a sign-out or a data reset. */
+const lockStampOf = (p) =>
+  p?.confirmedAt ? { track: p.track, college: p.college || "", plan: p.plan || "", confirmedAt: p.confirmedAt } : null;
+
+/**
+ * Does `stamp` still hold this profile to a track?
+ *
+ * The stamp is kept separately from the profile on purpose: signing out or
+ * resetting the data would otherwise be a one-tap way around the 15-day lock,
+ * which is exactly what the lock exists to prevent.
+ */
+const lockConflicts = (stamp, draft) =>
+  !!stamp && trackLockRemaining(stamp) > 0 &&
+  (stamp.track !== draft.track || (stamp.college || "") !== (draft.college || "") || (stamp.plan || "") !== (draft.plan || ""));
+
+// Kept for older code paths that referenced the flat plan map.
+const AUTH_PLANS = TRACK_PLANS;
+
+/* ══════════════════════════════════════════════════════════════
+   RETURN VISIT — the screen a signed-out student comes back to
+   ══════════════════════════════════════════════════════════════ */
+/**
+ * Shown only when an account was saved at sign-out ("حفظ حسابي"). The site
+ * itself stays public — this is a local identity check, not authentication:
+ * the data never left the device, so the ID match is a guard against the
+ * wrong person on a shared phone, nothing more.
+ */
+function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
+  const [name, setName] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [err, setErr] = useState("");
+
+  const submit = () => {
+    if (!name.trim() || !studentId.trim()) { setErr("اكتب اسمك ورقمك الجامعي"); return; }
+    if (studentId.trim().toUpperCase() !== String(saved.studentId || "").toUpperCase()) {
+      setErr("الرقم الجامعي لا يطابق الحساب المحفوظ على هذا الجهاز");
+      return;
+    }
+    onEnter({ ...saved, name: name.trim() });
+  };
+
+  const field = {
+    width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "12px 14px",
+    fontSize: 15, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 800, background: t.bg, overflowY: "auto",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}>
+      <div style={{ width: "100%", maxWidth: 380, animation: "fadeUp .4s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: 24, margin: "0 auto 14px",
+            background: `linear-gradient(135deg,${P.gold},#e8bf5c)`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 10px 28px ${P.gold}55`, fontSize: 32, fontWeight: 900, color: "#3a2e05",
+          }}>
+            {(saved.name || "ط").trim()[0] || "ط"}
+          </div>
+          <div style={{ fontSize: 21, fontWeight: 900, color: t.tx }}>أهلاً بعودتك</div>
+          <div style={{ fontSize: 13, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
+            أدخل اسمك والرقم الجامعي للمتابعة في ملفك
+          </div>
+        </div>
+
+        {/* One tap for the saved account — no typing needed */}
+        <button onClick={() => onEnter(saved)} style={{
+          width: "100%", background: t.s1, border: `1.5px solid ${P.gold}55`, borderRadius: 16,
+          padding: "14px 16px", cursor: "pointer", fontFamily: "inherit", marginBottom: 14,
+          display: "flex", alignItems: "center", gap: 12, textAlign: "right", boxShadow: t.shSm,
+        }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <User size={18} color={P.gold} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{saved.name}</div>
+            <div style={{ fontSize: 11.5, color: t.mu, fontFamily: "monospace", direction: "ltr", textAlign: "right" }}>{saved.studentId}</div>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: P.gold, flexShrink: 0 }}>متابعة</span>
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
+          <div style={{ flex: 1, height: 1, background: t.bd }} />
+          <span style={{ fontSize: 11.5, color: t.dim, fontWeight: 700 }}>أو أدخل بياناتك</span>
+          <div style={{ flex: 1, height: 1, background: t.bd }} />
+        </div>
+
+        <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
+        <input value={name} onChange={e => { setName(e.target.value); setErr(""); }} placeholder="اكتب اسمك"
+          style={{ ...field, direction: "rtl", marginBottom: 14 }} />
+
+        <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
+        <input value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }} placeholder="مثال: S220032205"
+          onKeyDown={e => e.key === "Enter" && submit()}
+          style={{ ...field, direction: "ltr", textAlign: "left" }} />
+
+        {err && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 10, padding: "10px 12px", marginTop: 12 }}>
+            <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.6 }}>{err}</span>
+          </div>
+        )}
+
+        <Btn variant="primary" onClick={submit} style={{ width: "100%", marginTop: 16 }}>
+          <LogIn size={15} /> دخول
+        </Btn>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <Btn variant="ghost" size="sm" onClick={onSkip} style={{ flex: 1 }}>
+            تصفّح بدون حساب
+          </Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { if (confirm(`حذف حساب «${saved.name}» المحفوظ على هذا الجهاز؟`)) onForget(); }} style={{ flex: 1, color: P.red }}>
+            <Trash2 size={13} /> ليس أنا
+          </Btn>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: t.dim, textAlign: "center", marginTop: 16, lineHeight: 1.7 }}>
+          الموقع مفتوح للجميع بلا تسجيل — هذه الشاشة لملفك المحفوظ على هذا الجهاز فقط.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // How early a lecture reminder fires. 0 means "when it starts", like an alarm.
 const REMIND_CHOICES = [
@@ -4960,6 +6300,52 @@ function useLectureReminders(schedule, notifSoundOn, push) {
   }, [schedule, notifSoundOn, push]);
 }
 
+/**
+ * Fire a task's reminder once, at its chosen lead time before the deadline.
+ *
+ * Mirrors useLectureReminders, but a task's deadline is an instant rather than
+ * a weekly slot, so the fired key is the task id alone: a deadline passes once.
+ */
+function useTaskReminders(tasks, notifSoundOn, push) {
+  const firedRef = useRef(null);
+  if (firedRef.current === null) firedRef.current = new Set();
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now();
+      // Several tasks can come due together — especially on the first tick
+      // after opening the app. One chime for the batch, not one per task.
+      let chimed = false;
+      (tasks || []).forEach(tk => {
+        if (tk.done || tk.remind === false) return;
+        const due = taskDueAt(tk);
+        if (!due) return;
+        const lead = taskLead(tk);
+        const minsLeft = Math.round((due.getTime() - now) / 60000);
+        // Inside the lead window and not yet past the deadline.
+        if (minsLeft > lead || minsLeft < 0) return;
+        const key = String(tk.id);
+        if (firedRef.current.has(key)) return;
+        firedRef.current.add(key);
+        const when = minsLeft <= 0 ? "ينتهي الآن"
+          : minsLeft < 60 ? `يُغلق خلال ${minsLeft} دقيقة`
+          : minsLeft < 1440 ? `يُغلق خلال ${Math.round(minsLeft / 60)} ساعة`
+          : `يُغلق خلال ${Math.round(minsLeft / 1440)} يوم`;
+        const body = `${tk.type ? tk.type + ": " : ""}${tk.title} — ${when}`;
+        push?.(`🔔 ${body}`, "warn");
+        if (notifSoundOn && !chimed) { playChime(); chimed = true; }
+        try {
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            new Notification("تذكير مهمة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
+          }
+        } catch {}
+      });
+    };
+    tick();
+    const iv = setInterval(tick, 60000);
+    return () => clearInterval(iv);
+  }, [tasks, notifSoundOn, push]);
+}
+
 export default function App() {
   // Settings sync to the user's profile when logged in (cross-device);
   // localStorage stays the instant source of truth for everyone.
@@ -4984,6 +6370,13 @@ export default function App() {
   // preference (name + track + plan) that only personalises the greeting and
   // the plan-scoped calendar; everything works with or without it.
   const [profile, setProfile] = useStored("student_profile", null);
+  // Signing out keeps the account here (unless "حفظ حسابي" is off) so the
+  // return visit can offer it back behind a name + ID screen.
+  const [savedAccount, setSavedAccount] = useStored("saved_account", null);
+  const [rememberAccount, setRememberAccount] = useStored("remember_account", true);
+  const [signedOut, setSignedOut] = useStored("signed_out", false);
+  // The track stamp lives outside the profile on purpose — see lockConflicts.
+  const [trackLock, setTrackLock] = useStored("track_lock", null);
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -5003,6 +6396,11 @@ export default function App() {
   const [showFocus, setShowFocus] = useState(false);
   const [showMonthlyReport, setShowMonthlyReport] = useState(false);
   const [aiSubject, setAiSubject] = useState("عام");
+  // The assistant's subject list, with the student's own plan lifted to the top.
+  const aiSubjectGroups = useMemo(() => {
+    const mine = myTrackSubjects(profile).filter(s => ALL_COURSES.includes(s));
+    return { mine, rest: ALL_COURSES.filter(c => !mine.includes(c)) };
+  }, [profile]);
   const [aiGlobalTab, setAiGlobalTab] = useState("chat");
   const [aiClearKey, setAiClearKey] = useState(0);
   const clearGlobalAI = () => {
@@ -5019,6 +6417,7 @@ export default function App() {
   const t = T(dark, brandPreset);
   const toasts = useToasts();
   useLectureReminders(schedule, notifSoundOn, toasts.push);
+  useTaskReminders(tasks, notifSoundOn, toasts.push);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
@@ -5119,7 +6518,13 @@ export default function App() {
   };
 
   // Public site: every feature is open to everyone, no account required.
-  const requestAI = () => setShowAI(true);
+  // A caller may hand the assistant an opening question (the study tip does).
+  const [aiSeed, setAiSeed] = useState("");
+  // The subscription sheet, opened from the assistant when the free
+  // allowance runs out (or from the "اشتراك" chip at any time).
+  const [subOpen, setSubOpen] = useState(null); // null | gate object
+  const [aiEmail, setAiEmail] = useStored("ai_email", "");
+  const requestAI = (seed) => { setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true); };
 
   const toggleFav = (s) => {
     const exists = favorites.includes(s);
@@ -5127,14 +6532,64 @@ export default function App() {
     setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
   };
 
-  const resetAll = () => {
-    storage.clear();
-    setDark(true); setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
+  /**
+   * Wipe the study data but keep who the student is.
+   *
+   * This is the "start the semester fresh" reset. It deliberately leaves the
+   * profile, the saved account, and the settings alone — losing your track to
+   * clear a to-do list would be a surprise, and it would also hand everyone a
+   * one-tap way past the 15-day track lock.
+   */
+  const resetStudyData = () => {
+    setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
     setTotalSessions(0); setSessionLog([]); setGpaCalcs(0); setAiChats(0); setSemesters([]);
-    setSoundOn(true); setWeeklyGoal(15); setSeen(false);
     setTasks([]); setSchedule([]); setExams([]); setXp(0);
     setTab("home"); setCourse(null);
   };
+
+  /** Everything above, plus the identity — the track lock stamp still stands. */
+  const resetAll = () => {
+    const stamp = lockStampOf(profile) || trackLock;
+    storage.clear();
+    resetStudyData();
+    setDark(false); setSoundOn(true); setNotifSoundOn(true); setWeeklyGoal(15);
+    setProfile(null); setSavedAccount(null); setSignedOut(false); setRememberAccount(true);
+    // Re-write the stamp after storage.clear() so the hold survives the wipe.
+    // A fresh object matters: passing the same reference back wouldn't count as
+    // a change, so nothing would be written and the cleared key would stay gone.
+    setTrackLock(stamp ? { ...stamp } : null);
+    setSeen(false); // a full wipe returns the device to its first-run state
+  };
+
+  /**
+   * Sign out of the local profile. With "حفظ حسابي" on, the account is parked
+   * in `saved_account` and the next visit opens on the name + ID screen; with
+   * it off, the profile is gone from this device for good.
+   */
+  const signOut = () => {
+    setTrackLock(lockStampOf(profile) || trackLock);
+    if (rememberAccount && profile) {
+      setSavedAccount(profile);
+      setSignedOut(true);
+      toasts.push("تم تسجيل الخروج — حسابك محفوظ على هذا الجهاز", "info");
+    } else {
+      setSavedAccount(null);
+      setSignedOut(false);
+      toasts.push("تم تسجيل الخروج وحُذف ملفك من هذا الجهاز", "info");
+    }
+    setProfile(null);
+    setTab("home"); setCourse(null);
+  };
+
+  const resetCounts = useMemo(() => ({
+    favorites: (favorites || []).length,
+    notes: Object.keys(notes || {}).length,
+    tasks: (tasks || []).length,
+    schedule: (schedule || []).length,
+    exams: (exams || []).length,
+    sessions: (sessionLog || []).length,
+    profile: profile ? 1 : 0,
+  }), [favorites, notes, tasks, schedule, exams, sessionLog, profile]);
 
   // After the welcome, land straight on the (public) site — no gate.
   const finishOnboard = () => { setSeen(true); setShowOnboard(false); };
@@ -5143,10 +6598,18 @@ export default function App() {
 
   const TABS = [
     { id: "home", Icon: Home, label: "الرئيسية" },
-    { id: "explore", Icon: Compass, label: "المسارات" },
+    // Once a track is confirmed the explorer is scoped to it, so the label
+    // "المسارات" (plural, all of them) stops being true.
+    { id: "explore", Icon: Compass, label: profile?.track ? "مساري" : "المسارات" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
+    // The academic calendar earns its own tab: it was buried as a link on the
+    // links page and a strip at the bottom of home, and it is the thing
+    // students check most often after their own schedule.
+    { id: "calendar", Icon: Calendar, label: "التقويم" },
     { id: "fav", Icon: Star, label: "المفضلة" },
-    { id: "links", Icon: Link2, label: "روابط SEU" },
+    // "روابط SEU" → "روابط": with seven tabs the extra word was enough to
+    // push حسابي off the edge of a phone screen.
+    { id: "links", Icon: Link2, label: "روابط" },
     { id: "profile", Icon: CircleUser, label: "حسابي" },
   ];
 
@@ -5253,6 +6716,8 @@ export default function App() {
 
         {tab === "links" && <SEULinksPage t={t} content={linksContent} />}
 
+        {tab === "calendar" && <CalendarPage t={t} profile={profile} />}
+
         {tab === "gpa" && (
           <div style={{ animation: "fadeUp .4s ease" }}>
             <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
@@ -5270,7 +6735,8 @@ export default function App() {
           favorites={favorites} totalSessions={totalSessions}
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
-          onLogout={() => { setProfile(null); toasts.push("تم مسح ملفك الشخصي", "info"); }}
+          onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
+          tasks={tasks} schedule={schedule}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
@@ -5306,11 +6772,11 @@ export default function App() {
             <button key={id} onClick={() => { setTab(id); setCourse(null); }}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                background: "none", border: "none", cursor: "pointer", padding: "5px 10px",
+                background: "none", border: "none", cursor: "pointer", padding: "5px 4px",
                 transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
               }}>
               <div style={{
-                width: 40, height: 32, borderRadius: 12, position: "relative",
+                width: 38, height: 31, borderRadius: 12, position: "relative",
                 background: active ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "all .25s",
@@ -5319,7 +6785,7 @@ export default function App() {
                 <Icon size={17} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
                 {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
               </div>
-              <span style={{ fontSize: 11.5, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 10.5, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
@@ -5332,11 +6798,34 @@ export default function App() {
         dark={dark} setDark={setDark} soundOn={soundOn} setSoundOn={setSoundOn}
         notifSoundOn={notifSoundOn} setNotifSoundOn={setNotifSoundOn}
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
-        onReset={resetAll} onToast={toasts.push} />}
+        onReset={resetStudyData} onResetAll={resetAll} resetCounts={resetCounts}
+        profile={profile} rememberAccount={rememberAccount} setRememberAccount={setRememberAccount}
+        onSignOut={signOut} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
+      {subOpen && <SubscribeSheet t={t} onClose={() => setSubOpen(null)} profile={profile}
+        email={aiEmail} gate={subOpen} onToast={toasts.push} />}
+
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
+
+      {/* Came back after signing out with an account saved on this device */}
+      {signedOut && savedAccount && !showOnboard && (
+        <WelcomeBack
+          saved={savedAccount} t={t}
+          onEnter={(p) => {
+            setProfile(p);
+            setSavedAccount(p);
+            setSignedOut(false);
+            toasts.push(`أهلاً بعودتك ${p.name} 👋`, "success");
+          }}
+          onForget={() => {
+            setSavedAccount(null); setSignedOut(false);
+            toasts.push("حُذف الحساب المحفوظ من هذا الجهاز", "info");
+          }}
+          onSkip={() => setSignedOut(false)}
+        />
+      )}
 
       {showAI && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: t.bg }}>
@@ -5377,7 +6866,21 @@ export default function App() {
                     direction: "rtl",
                   }}>
                   <option value="عام" style={{ background: "#0a3d29", color: "#fff" }}>🌐 عام — مساعد SEU</option>
-                  {ALL_COURSES.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                  {/* Your own subjects first, then everything else. Scrolling
+                      a 20-programme list to reach your one course was the
+                      slowest thing about switching subject. */}
+                  {aiSubjectGroups.mine.length > 0 && (
+                    <optgroup label="موادي" style={{ background: "#0a3d29", color: "#fff" }}>
+                      {aiSubjectGroups.mine.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                    </optgroup>
+                  )}
+                  {aiSubjectGroups.mine.length > 0 ? (
+                    <optgroup label="كل المواد" style={{ background: "#0a3d29", color: "#fff" }}>
+                      {aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                    </optgroup>
+                  ) : (
+                    aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)
+                  )}
                 </select>
                 <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               </div>
@@ -5402,7 +6905,9 @@ export default function App() {
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {aiGlobalTab === "chat"
-              ? <AIChat key={`${aiSubject}-${aiClearKey}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} />
+              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed}
+                  profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
+                  email={aiEmail} onSaveEmail={setAiEmail} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} /></div>
             }
           </div>
