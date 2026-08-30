@@ -1,6 +1,7 @@
 import { del } from '@vercel/blob'
 import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
+import { courseMatches, canonicalCourse } from '@/lib/courses'
 
 export const runtime = 'nodejs'
 
@@ -22,7 +23,9 @@ export async function GET(request) {
   }
 
   let files = all
-  if (course) files = files.filter(f => f.courseName === course)
+  // Match through the catalogue, so files stored under an old admin-panel
+  // name ("حاسب", "رياضيات"…) still show up under the real course.
+  if (course) files = files.filter(f => courseMatches(f.courseName, course))
   if (category) files = files.filter(f => f.category === category)
 
   return Response.json({ files, blobEnabled: true })
@@ -62,7 +65,7 @@ export async function POST(request) {
   const record = {
     id: crypto.randomUUID(),
     name: String(name || 'ملف').slice(0, 200),
-    courseName: String(courseName).slice(0, 200),
+    courseName: canonicalCourse(String(courseName).slice(0, 200)),
     category,
     size: bytes,
     sizeLabel: formatSize(bytes),

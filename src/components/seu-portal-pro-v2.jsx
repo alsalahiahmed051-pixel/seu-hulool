@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { CATALOGUE } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
@@ -22,7 +23,7 @@ import {
   AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
   Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut,
   Instagram, Youtube, Twitter, Ghost, LogIn,
-  List, LayoutGrid, MapPin,
+  List, LayoutGrid, MapPin, Upload,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -188,31 +189,29 @@ const ICON_MAP = {
 };
 const getIcon = (name) => ICON_MAP[name] || BookOpen;
 
+// Names come from the shared catalogue; only the icons and colours are local.
+// Keeping the names in one module is what stops the admin panel and the site
+// from drifting apart again — see src/lib/courses.js.
 const TREE = {
   preparatory: {
-    label: "السنة الأولى المشتركة (CFY)", icon: GraduationCap, color: P.blue2,
-    plans: {
-      a: { label: "الفصل الأول", subjects: ["مهارات اللغة الإنجليزية 1", "مهارات الحاسب", "مهارات أكاديمية"] },
-      b: { label: "الفصل الثاني", subjects: ["مهارات اللغة الإنجليزية 2", "الرياضيات", "مهارات الاتصال والتواصل"] },
-    },
+    label: CATALOGUE.preparatory.label, icon: GraduationCap, color: P.blue2,
+    plans: CATALOGUE.preparatory.plans,
   },
   bachelor: {
-    label: "بكالوريوس", icon: Award, color: P.purple,
-    colleges: [
-      { id: "admin", label: "العلوم الإدارية والمالية", icon: Briefcase, color: "#1d4ed8", programs: ["إدارة أعمال", "محاسبة", "تمويل", "تجارة إلكترونية"] },
-      { id: "theory", label: "العلوم والدراسات النظرية", icon: BookOpen, color: "#0369a1", programs: ["إعلام رقمي", "قانون", "لغة إنجليزية وترجمة"] },
-      { id: "health", label: "العلوم الصحية", icon: Heart, color: "#be123c", programs: ["معلوماتية صحية", "صحة عامة"] },
-      { id: "cs", label: "الحوسبة والمعلوماتية", icon: Code, color: "#065f46", programs: ["تقنية معلومات", "علوم حاسب", "علوم البيانات"] },
-      { id: "applied", label: "الكلية التطبيقية", icon: Layers, color: "#92400e", programs: ["برامج الكلية التطبيقية"] },
-    ],
+    label: CATALOGUE.bachelor.label, icon: Award, color: P.purple,
+    colleges: CATALOGUE.bachelor.colleges.map(c => ({
+      ...c,
+      icon: { admin: Briefcase, theory: BookOpen, health: Heart, cs: Code, applied: Layers }[c.id] || BookOpen,
+      color: { admin: "#1d4ed8", theory: "#0369a1", health: "#be123c", cs: "#065f46", applied: "#92400e" }[c.id] || P.blue2,
+    })),
   },
   diploma: {
-    label: "دبلوم", icon: FileText, color: P.green,
-    programs: ["دبلوم إدارة الأعمال", "دبلوم المحاسبة", "دبلوم تقنية المعلومات", "دبلوم اللغة الإنجليزية للأعمال"],
+    label: CATALOGUE.diploma.label, icon: FileText, color: P.green,
+    programs: CATALOGUE.diploma.programs,
   },
   graduate: {
-    label: "دراسات عليا", icon: Trophy, color: P.gold,
-    programs: ["ماجستير إدارة الأعمال (MBA)", "ماجستير المحاسبة المهنية", "ماجستير القانون", "ماجستير تقنية المعلومات", "ماجستير علوم الحاسب", "ماجستير المعلوماتية الصحية", "ماجستير الصحة العامة", "ماجستير الإعلام الرقمي"],
+    label: CATALOGUE.graduate.label, icon: Trophy, color: P.gold,
+    programs: CATALOGUE.graduate.programs,
   },
 };
 
@@ -671,7 +670,10 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
   const { data: content } = useSiteContent("payment");
   const pay = { ...DEFAULT_PAYMENT, ...(content && typeof content === "object" ? content : {}) };
   const [note, setNote] = useState("");
-  const [receipt, setReceipt] = useState("");
+  const [receipt, setReceipt] = useState("");     // the stored blob URL
+  const [receiptName, setReceiptName] = useState("");
+  const [uploading, setUploading] = useState(0);  // 0 = idle, else percent
+  const fileRef = useRef(null);
   const [sending, setSending] = useState(false);
   const [mine, setMine] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -683,6 +685,27 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
+
+  /** Send the picture straight to storage, then keep only its URL. */
+  const pickReceipt = async (file) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { onToast?.("الحجم أكبر من ٥ ميجابايت", "warn"); return; }
+    setUploading(1);
+    try {
+      const { upload } = await import("@vercel/blob/client");
+      const blob = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/receipt-upload",
+        onUploadProgress: (p) => setUploading(Math.max(1, Math.round(p.percentage))),
+      });
+      setReceipt(blob.url);
+      setReceiptName(file.name);
+      onToast?.("تم إرفاق الإيصال ✅", "success");
+    } catch (e) {
+      onToast?.("تعذّر رفع الإيصال: " + (e?.message || ""), "error");
+    }
+    setUploading(0);
+  };
 
   const submit = async () => {
     setSending(true);
@@ -792,9 +815,30 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
               </div>
             )}
 
-            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>رابط صورة الإيصال</div>
-            <input value={receipt} onChange={e => setReceipt(e.target.value)} placeholder="ألصق رابط الصورة"
-              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 12 }} />
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>صورة الإيصال</div>
+            <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{ display: "none" }}
+              onChange={e => { pickReceipt(e.target.files?.[0]); e.target.value = ""; }} />
+            {receipt ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 9, background: `${P.green}0d`, border: `1px solid ${P.green}40`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                <Check size={15} color={P.green} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 12.5, color: t.tx, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{receiptName || "الإيصال مرفق"}</span>
+                <button onClick={() => { setReceipt(""); setReceiptName(""); }} style={{ background: "none", border: "none", cursor: "pointer", color: P.red, display: "flex", padding: 2, flexShrink: 0 }}>
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()} disabled={uploading > 0} style={{
+                width: "100%", background: t.s2, border: `1.5px dashed ${uploading ? P.blue2 : t.bd}`, borderRadius: 10,
+                padding: "16px 12px", cursor: uploading ? "wait" : "pointer", fontFamily: "inherit", marginBottom: 12,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+              }}>
+                <Upload size={19} color={uploading ? P.blue2 : t.mu} />
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: uploading ? P.blue2 : t.tx }}>
+                  {uploading ? `جارٍ الرفع… ${uploading}%` : "اختر صورة الإيصال"}
+                </span>
+                <span style={{ fontSize: 11, color: t.dim }}>صورة أو PDF · حتى ٥ ميجابايت</span>
+              </button>
+            )}
 
             <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>ملاحظة (اختياري)</div>
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="أي تفاصيل تساعد في المراجعة"
@@ -4939,7 +4983,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "" }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
@@ -5017,6 +5061,26 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
     setTrackLock?.(lockStampOf(next));
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
+
+    // Record it server-side too, keyed on the signed device cookie. This is
+    // what makes the track hold real: clearing the browser no longer hands
+    // you a fresh profile. Best-effort — the profile is already saved
+    // locally, so a server hiccup must not look like a failure to the student.
+    fetch("/api/student/identity", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: next.name, studentId: next.studentId, email: aiEmail || "",
+        track: next.track, college: next.college, plan: next.plan,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d?.trackLocked && d.daysLeft) {
+          onToast?.(`مسارك مثبَّت على «${trackLabel(d)}» — يتبقّى ${d.daysLeft} يوم`, "warn");
+          setProfile(p => ({ ...p, track: d.track, college: d.college || "", plan: d.plan || "" }));
+        }
+      })
+      .catch(() => {});
   };
 
   const days = last7Days();
@@ -5113,16 +5177,19 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       {!editing && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
           {quickActions.map(({ Icon, label, tab, color }) => (
+            // Centred as a column and given more room: the icon was small and
+            // sat off-centre above a label that was wider than it.
             <button key={label} onClick={() => setActiveTab(tab)} style={{
-              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "14px 6px",
-              cursor: "pointer", textAlign: "center", fontFamily: "inherit", boxShadow: t.shSm, transition: "all .2s",
+              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "16px 6px",
+              cursor: "pointer", fontFamily: "inherit", boxShadow: t.shSm, transition: "all .2s",
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 9,
             }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 7px" }}>
-                <Icon size={19} color={color} strokeWidth={2} />
+              <div style={{ width: 50, height: 50, borderRadius: 15, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon size={24} color={color} strokeWidth={2} />
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx }}>{label}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, textAlign: "center", lineHeight: 1.3 }}>{label}</div>
             </button>
           ))}
         </div>
@@ -6150,13 +6217,22 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
   const [studentId, setStudentId] = useState("");
   const [err, setErr] = useState("");
 
+  const [tries, setTries] = useState(0);
+
   const submit = () => {
     if (!name.trim() || !studentId.trim()) { setErr("اكتب اسمك ورقمك الجامعي"); return; }
-    if (studentId.trim().toUpperCase() !== String(saved.studentId || "").toUpperCase()) {
+    const typed = studentId.trim().toUpperCase();
+    const kept = String(saved.studentId || "").trim().toUpperCase();
+    // The name is an alternative key on purpose: a student who mistyped their
+    // ID when creating the profile would otherwise be locked out of their own
+    // data for good, with no password and no email to recover through.
+    if (typed !== kept && name.trim() !== String(saved.name || "").trim()) {
+      setTries(n => n + 1);
       setErr("الرقم الجامعي لا يطابق الحساب المحفوظ على هذا الجهاز");
       return;
     }
-    onEnter({ ...saved, name: name.trim() });
+    // Entering with the name lets a wrong stored ID be corrected in place.
+    onEnter({ ...saved, name: name.trim(), studentId: typed });
   };
 
   const field = {
@@ -6217,9 +6293,16 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
           style={{ ...field, direction: "ltr", textAlign: "left" }} />
 
         {err && (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 10, padding: "10px 12px", marginTop: 12 }}>
-            <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.6 }}>{err}</span>
+          <div style={{ background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 10, padding: "10px 12px", marginTop: 12 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.6 }}>{err}</span>
+            </div>
+            {tries > 0 && (
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${P.red}22` }}>
+                نسيت الرقم؟ اكتب <strong style={{ color: t.tx }}>اسمك كما حفظته</strong> («{saved.name}») وادخل — ثم صحّح رقمك من «حسابي».
+              </div>
+            )}
           </div>
         )}
 
@@ -6736,7 +6819,7 @@ export default function App() {
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
           onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
-          tasks={tasks} schedule={schedule}
+          tasks={tasks} schedule={schedule} aiEmail={aiEmail}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 

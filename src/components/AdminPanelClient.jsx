@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { COURSE_GROUPS } from '@/lib/courses'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
@@ -51,14 +52,10 @@ const TRACKS = [
   { id: 'graduate', label: 'دراسات عليا' },
 ]
 
-const FILE_COURSES = [
-  { group: 'السنة التحضيرية - خطة أ', items: ['حاسب', 'مهارات أكاديمية', 'إنجليزي'] },
-  { group: 'السنة التحضيرية - خطة ب', items: ['رياضيات', 'مهارات اتصال', 'إنجليزي'] },
-  { group: 'إدارة أعمال ومالية', items: ['إدارة أعمال', 'محاسبة', 'مالية', 'تجارة إلكترونية'] },
-  { group: 'علوم نظرية', items: ['إعلام إلكتروني', 'قانون', 'لغة إنجليزية وترجمة', 'علوم إنسانية', 'علوم أساسية'] },
-  { group: 'علوم صحية', items: ['معلوماتية صحية', 'صحة عامة', 'إدارة رعاية صحية'] },
-  { group: 'حوسبة ومعلوماتية', items: ['تقنية معلومات', 'علوم حاسب'] },
-]
+// The upload dropdown reads the shared catalogue, so its names are exactly
+// the ones the site looks for. They used to be a separate hand-written list
+// and had drifted apart, which is why uploads never appeared.
+const FILE_COURSES = COURSE_GROUPS
 
 const CATEGORIES = [
   { id: 'collections', label: 'تجميعات وملخصات' },
@@ -1157,6 +1154,24 @@ function TrackRequestsTab({ flash }) {
  * straight by the student's subscription sheet — nothing is hard-coded in the
  * app, so bank, name, IBAN, price and terms are all changed from here.
  */
+/**
+ * Defined at module level on purpose.
+ *
+ * It used to be declared inside SubscriptionsTab, which made it a brand-new
+ * component type on every render: React then unmounted the old input and
+ * mounted a fresh one for each keystroke, so the field lost focus after every
+ * single character. Hoisting it keeps the element identity stable.
+ */
+function PayField({ label, k, value, onChange, placeholder, ltr, mono }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11.5, color: 'var(--mu)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
+      <input value={value || ''} onChange={e => onChange(k, e.target.value)} placeholder={placeholder}
+        style={{ ...S.input, direction: ltr ? 'ltr' : 'rtl', textAlign: ltr ? 'left' : 'right', fontFamily: mono ? 'monospace' : 'inherit' }} />
+    </div>
+  )
+}
+
 function SubscriptionsTab({ flash }) {
   const [pay, setPay] = useState({ title: '', price: '', bank: '', accountName: '', iban: '', terms: '', verifyNote: '' })
   const [savingPay, setSavingPay] = useState(false)
@@ -1222,13 +1237,7 @@ function SubscriptionsTab({ flash }) {
     rejected: { label: 'مرفوض', color: P.red },
   }
   const pending = items.filter(r => r.status === 'pending').length
-  const Field = ({ label, k, placeholder, ltr }) => (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11.5, color: 'var(--mu)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
-      <input value={pay[k] || ''} onChange={e => setPay(p => ({ ...p, [k]: e.target.value }))} placeholder={placeholder}
-        style={{ ...S.input, direction: ltr ? 'ltr' : 'rtl', textAlign: ltr ? 'left' : 'right', fontFamily: k === 'iban' ? 'monospace' : 'inherit' }} />
-    </div>
-  )
+  const setField = (k, v) => setPay(p => ({ ...p, [k]: v }))
 
   return (
     <div>
@@ -1246,18 +1255,18 @@ function SubscriptionsTab({ flash }) {
         <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginBottom: 12 }}>
           يراها الطالب في صفحة الاشتراك. اتركها فارغة ولن تظهر بيانات مختلقة — ستظهر رسالة بأنها لم تُضبط بعد.
         </div>
-        <Field label="العنوان" k="title" placeholder="اشتراك المساعد الذكي" />
-        <Field label="المبلغ" k="price" placeholder="مثال: ٢٠ ريال / شهر" />
-        <Field label="البنك" k="bank" placeholder="اسم البنك" />
-        <Field label="اسم الحساب" k="accountName" placeholder="الاسم كما يظهر في الحساب" />
-        <Field label="الآيبان" k="iban" placeholder="SA00 0000 0000 0000 0000 0000" ltr />
+        <PayField label="العنوان" k="title" value={pay.title} onChange={setField} placeholder="اشتراك المساعد الذكي" />
+        <PayField label="المبلغ" k="price" value={pay.price} onChange={setField} placeholder="مثال: ٢٠ ريال / شهر" />
+        <PayField label="البنك" k="bank" value={pay.bank} onChange={setField} placeholder="اسم البنك" />
+        <PayField label="اسم الحساب" k="accountName" value={pay.accountName} onChange={setField} placeholder="الاسم كما يظهر في الحساب" />
+        <PayField label="الآيبان" k="iban" value={pay.iban} onChange={setField} placeholder="SA00 0000 0000 0000 0000 0000" ltr mono />
         <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11.5, color: 'var(--mu)', fontWeight: 700, marginBottom: 4 }}>الشروط</div>
           <textarea value={pay.terms || ''} onChange={e => setPay(p => ({ ...p, terms: e.target.value }))} rows={3}
             placeholder="بعد التحويل أرفق صورة الإيصال…"
             style={{ ...S.input, resize: 'vertical', lineHeight: 1.8 }} />
         </div>
-        <Field label="مدة المراجعة المعلنة" k="verifyNote" placeholder="المراجعة يدوية — عادةً خلال ١٠ دقائق" />
+        <PayField label="مدة المراجعة المعلنة" k="verifyNote" value={pay.verifyNote} onChange={setField} placeholder="المراجعة يدوية — عادةً خلال ١٠ دقائق" />
         <button onClick={savePayment} disabled={savingPay} style={{ ...S.btn(P.blue2), width: '100%' }}>
           <CheckCircle size={14} /> {savingPay ? 'جارٍ الحفظ…' : 'حفظ بيانات الدفع'}
         </button>
@@ -1319,51 +1328,90 @@ function SubscriptionsTab({ flash }) {
 /* ══════════════ STUDENTS (sign-ups) ══════════════ */
 function StudentsTab({ flash }) {
   const [students, setStudents] = useState([])
+  const [tableReady, setTableReady] = useState(true)
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
     const { ok, data } = await apiJSON('/api/admin/students')
-    if (ok) setStudents(data.students || [])
+    if (ok) { setStudents(data.students || []); setTableReady(data.tableReady !== false) }
     else flash(data.error || 'تعذّر التحميل', 'error')
     setLoading(false)
   }, [flash])
   useEffect(() => { load() }, [load])
 
   async function remove(s) {
-    if (!confirm(`حذف الطالب "${s.full_name}"؟`)) return
-    const { ok, data } = await apiJSON('/api/admin/students', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: s.id }) })
-    if (ok) { flash('تم الحذف'); setStudents(xs => xs.filter(x => x.id !== s.id)) }
+    if (!confirm(`حذف سجلّ "${s.full_name || 'بلا اسم'}"؟ سيتمكّن من اختيار مسار جديد.`)) return
+    const { ok, data } = await apiJSON('/api/admin/students', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: s.device_id }),
+    })
+    if (ok) { flash('تم الحذف'); setStudents(xs => xs.filter(x => x.device_id !== s.device_id)) }
     else flash(data.error || 'فشل الحذف', 'error')
   }
 
   const filtered = students.filter(s => {
     if (!q.trim()) return true
-    const v = q.toLowerCase()
-    return (s.full_name || '').toLowerCase().includes(v) || (s.track || '').toLowerCase().includes(v)
+    const v = q.trim().toLowerCase()
+    return [s.full_name, s.student_id, s.email, s.track, s.plan]
+      .some(f => (f || '').toLowerCase().includes(v))
   })
+  const withEmail = students.filter(s => s.email).length
 
   return (
     <div>
-      <SectionHeader title={`الطلاب المسجّلون (${students.length})`} onRefresh={load} />
-      <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
-        <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
-        <div>هؤلاء الطلاب الذين أنشأوا حساباً في التطبيق (الاسم + المسار + الخطة). يتطلّب تشغيل migration <strong>009_students.sql</strong> في Supabase.</div>
-      </div>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث بالاسم أو المسار..." style={{ ...S.input, marginBottom: 12 }} />
-      {loading ? <Loader /> : filtered.length === 0 ? <Empty text="لا طلاب مسجّلون بعد" /> : filtered.map(s => (
-        <div key={s.id} style={rowStyle}>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${P.blue2}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15, fontWeight: 800, color: P.blue2 }}>{(s.full_name || '؟')[0]}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={ellipsis}>{s.full_name}</div>
-            <div style={{ fontSize: 11, color: 'var(--mu)' }}>
-              {s.track || '—'}{s.plan ? ` • ${s.plan}` : ''} • {fmtDate(s.created_at)}
-            </div>
-          </div>
-          <button onClick={() => remove(s)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+      <SectionHeader title={`الطلاب (${students.length})`} onRefresh={load} />
+
+      {!tableReady && (
+        <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
+          <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>لعرض الطلاب شغّل migration <strong>014_student_identities.sql</strong> في Supabase.</div>
         </div>
-      ))}
+      )}
+
+      {tableReady && (
+        <div style={{ ...S.card, fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
+          يُسجَّل الطالب هنا تلقائياً عند حفظ ملفه — مرتبطاً بجهازه، لا بحساب.
+          {withEmail > 0 && ` ${withEmail} منهم أدخلوا بريدهم عبر المساعد.`}
+          {' '}الحذف يلغي تثبيت مساره ويسمح له باختيار مسار جديد فوراً.
+        </div>
+      )}
+
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث بالاسم أو الرقم الجامعي أو البريد..." style={{ ...S.input, marginBottom: 12 }} />
+
+      {loading ? <Loader /> : filtered.length === 0 ? (
+        <Empty text={students.length === 0 ? 'لا طلاب بعد — سيظهرون فور حفظ أول ملف شخصي' : 'لا نتائج للبحث'} />
+      ) : filtered.map(s => {
+        const days = s.confirmed_at
+          ? Math.ceil((new Date(s.confirmed_at).getTime() + 15 * 86400000 - Date.now()) / 86400000) : 0
+        return (
+          <div key={s.device_id} style={{ ...S.card, display: 'flex', gap: 11, alignItems: 'flex-start' }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: `${P.blue2}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15, fontWeight: 800, color: P.blue2 }}>
+              {(s.full_name || '؟')[0]}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--tx)' }}>{s.full_name || '— بلا اسم —'}</span>
+                {s.student_id && <span style={{ fontSize: 11.5, color: 'var(--mu)', fontFamily: 'monospace', direction: 'ltr' }}>{s.student_id}</span>}
+                {days > 0 && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: P.gold, background: `${P.gold}18`, borderRadius: 6, padding: '2px 7px' }}>
+                    مسار مثبَّت {days} يوم
+                  </span>
+                )}
+              </div>
+              {s.email && <div style={{ fontSize: 11.5, color: P.blue2, direction: 'ltr', textAlign: 'right', marginTop: 3 }}>{s.email}</div>}
+              <div style={{ fontSize: 11, color: 'var(--mu)', marginTop: 3 }}>
+                {[s.track, s.college, s.plan].filter(Boolean).join(' — ') || 'بلا مسار'}
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--mu)', marginTop: 2 }}>
+                آخر ظهور {fmtDate(s.last_seen)} · أول مرة {fmtDate(s.first_seen)}
+              </div>
+            </div>
+            <button onClick={() => remove(s)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+          </div>
+        )
+      })}
     </div>
   )
 }
