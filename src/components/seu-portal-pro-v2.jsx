@@ -1719,26 +1719,139 @@ function GradeCalc({ subject, t }) {
    TASK TRACKER
    ══════════════════════════════════════════════════════════════ */
 // Unified task/exam model. Every item lives in `tasks` with a `type`.
-const TASK_TYPES = ["واجب", "اسايمنت", "مشروع", "مناقشة", "كويز", "ميدترم", "فاينل", "أخرى"];
-const EXAM_TYPES = ["كويز", "ميدترم", "فاينل"];
-const TASK_TRACKS = ["تحضيري", "تخصص", "دبلوم", "دراسات عليا"];
+//
+// The types are grouped, because "كويز" and "واجب" are not the same kind of
+// thing to a student: one is graded on a date you cannot move, the other is a
+// deliverable with a window. The groups drive the picker, the filter chips,
+// and the default importance.
+const TASK_GROUPS = [
+  { id: "اختبارات", label: "اختبارات", Icon: FileQuestion, color: P.red,   types: ["كويز", "ميدترم", "فاينل"] },
+  { id: "واجبات",  label: "واجبات",  Icon: FileText,     color: P.blue2, types: ["واجب", "اسايمنت", "مشروع", "بروجكت", "مناقشة", "عرض"] },
+];
+const CUSTOM_TYPE = "يدوي";
+const TASK_TYPES = [...TASK_GROUPS.flatMap(g => g.types), CUSTOM_TYPE];
+const EXAM_TYPES = TASK_GROUPS[0].types;
+const groupOf = (ty) => TASK_GROUPS.find(g => g.types.includes(ty))?.id || "واجبات";
+const isExamType = (ty) => EXAM_TYPES.includes(ty);
+
 const TASK_TYPE_META = {
-  "واجب": { color: P.blue2, Icon: FileText },
-  "اسايمنت": { color: P.purple, Icon: FileText },
-  "مشروع": { color: P.orange, Icon: Briefcase },
-  "مناقشة": { color: P.cyan, Icon: MessageCircle },
   "كويز": { color: P.gold, Icon: Zap },
   "ميدترم": { color: P.red, Icon: Calendar },
   "فاينل": { color: "#b91c1c", Icon: Award },
-  "أخرى": { color: P.green, Icon: CheckCircle },
+  "واجب": { color: P.blue2, Icon: FileText },
+  "اسايمنت": { color: P.purple, Icon: FileText },
+  "مشروع": { color: P.orange, Icon: Briefcase },
+  "بروجكت": { color: P.orange, Icon: Briefcase },
+  "مناقشة": { color: P.cyan, Icon: MessageCircle },
+  "عرض": { color: P.purple, Icon: Monitor },
+  [CUSTOM_TYPE]: { color: P.green, Icon: PenLine },
 };
-const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META["أخرى"];
+const typeMeta = (ty) => TASK_TYPE_META[ty] || TASK_TYPE_META[CUSTOM_TYPE];
 
-function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }) {
+/**
+ * Titles worth offering for a type, so the common case is one tap.
+ *
+ * Students name these things the same way every term — "الكويز الأول",
+ * "الواجب الثاني" — and typing that on a phone keyboard in Arabic is the
+ * slowest part of adding a task. The field stays free text underneath.
+ */
+const TITLE_SUGGESTIONS = {
+  "كويز": ["الكويز الأول", "الكويز الثاني", "الكويز الثالث"],
+  "ميدترم": ["اختبار منتصف الفصل"],
+  "فاينل": ["الاختبار النهائي"],
+  "واجب": ["الواجب الأول", "الواجب الثاني", "الواجب الثالث"],
+  "اسايمنت": ["Assignment 1", "Assignment 2"],
+  "مشروع": ["مشروع الفصل", "المرحلة الأولى", "التسليم النهائي"],
+  "بروجكت": ["Project Phase 1", "Final Project"],
+  "مناقشة": ["مناقشة الأسبوع", "الردّ على الزملاء"],
+  "عرض": ["العرض التقديمي"],
+};
+
+/**
+ * Importance, stated as what it actually does.
+ *
+ * "عالي / متوسط / منخفض" told nobody anything — it was a coloured dot with no
+ * visible effect. These three sort within each due-date bucket and say so in
+ * the form, so the choice has a consequence you can see.
+ */
+const IMPORTANCE = [
+  { id: "مهم جداً", rank: 0, color: P.red,    desc: "يظهر أولاً" },
+  { id: "عادي",     rank: 1, color: P.blue2,  desc: "الترتيب الافتراضي" },
+  { id: "لاحقاً",   rank: 2, color: P.green,  desc: "ينزل لآخر القائمة" },
+];
+const impMeta = (id) => IMPORTANCE.find(i => i.id === id) || IMPORTANCE[1];
+// Older tasks used the abstract scale; map it rather than lose the choice.
+const LEGACY_IMPORTANCE = { "عالي": "مهم جداً", "متوسط": "عادي", "منخفض": "لاحقاً" };
+const normImportance = (tk) => LEGACY_IMPORTANCE[tk?.importance || tk?.priority] || tk?.importance || "عادي";
+
+/** How far ahead a task reminder fires. */
+const TASK_LEAD_CHOICES = [
+  { mins: 60, label: "قبل ساعة" },
+  { mins: 180, label: "قبل ٣ ساعات" },
+  { mins: 1440, label: "قبل يوم" },
+  { mins: 2880, label: "قبل يومين" },
+  { mins: 10080, label: "قبل أسبوع" },
+];
+const taskLead = (tk) => (tk?.leadMins == null ? 1440 : Number(tk.leadMins));
+const leadLabel = (m) => TASK_LEAD_CHOICES.find(c => c.mins === Number(m))?.label || `قبل ${m} دقيقة`;
+
+/**
+ * A task's deadline as a real instant.
+ *
+ * Tasks carry a date and, optionally, a closing time — an assignment that
+ * shuts at 23:59 is a different thing from one due "that day". With no time
+ * given, end-of-day is the honest reading.
+ */
+const taskDueAt = (tk) => {
+  if (!tk?.dueDate) return null;
+  const mins = timeToMin(tk.dueTime);
+  const d = new Date(`${tk.dueDate}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setMinutes(mins == null ? 23 * 60 + 59 : mins);
+  return d;
+};
+const taskOpenAt = (tk) => {
+  if (!tk?.openDate) return null;
+  const mins = timeToMin(tk.openTime);
+  const d = new Date(`${tk.openDate}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setMinutes(mins == null ? 0 : mins);
+  return d;
+};
+/** Has this task's window not opened yet? */
+const taskNotOpenYet = (tk) => {
+  const o = taskOpenAt(tk);
+  return !!o && o.getTime() > Date.now();
+};
+/** "٥ سبتمبر" or "٥ سبتمبر ١١:٥٩ م" — the clock only when one was set. */
+const fmtTaskWhen = (d) => {
+  if (!d) return "";
+  const date = d.toLocaleDateString("ar-SA-u-ca-gregory", { month: "short", day: "numeric" });
+  const atEndOfDay = d.getHours() === 23 && d.getMinutes() === 59;
+  if (atEndOfDay) return date;
+  return `${date} ${d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
+function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, profile }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [filter, setFilter] = useState("الكل"); // الكل | اختبارات | مهام
-  const [nt, setNt] = useState({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
+  const [filter, setFilter] = useState("الكل");
+  const blank = () => ({
+    title: "", type: "واجب", customType: "",
+    subject: "", subjectCustomOn: false,
+    // The track comes from the profile — a student's tasks belong to the
+    // track they are enrolled in, and re-picking it on every task was busywork.
+    track: trackLabel(profile) || "", trackManual: false,
+    openDate: "", openTime: "", dueDate: "", dueTime: "",
+    importance: "عادي", remind: true, leadMins: 1440,
+  });
+  const [nt, setNt] = useState(blank);
+  const patch = (p) => setNt(x => ({ ...x, ...p }));
   const today = todayKey();
+
+  // Keep the auto-filled track in step with the profile until it's overridden.
+  useEffect(() => {
+    setNt(x => (x.trackManual ? x : { ...x, track: trackLabel(profile) || "" }));
+  }, [profile]);
 
   // One-time migration: fold legacy exams into the unified tasks list.
   useEffect(() => {
@@ -1748,8 +1861,8 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
       const mapped = exams.map(e => ({
         id: e.id || (Date.now() + Math.floor(Math.random() * 1000)),
         title: e.subject || "اختبار",
-        type: e.type === "نهائي" ? "فاينل" : e.type === "ميدترم" ? "ميدترم" : e.type === "مشروع" ? "مشروع" : (EXAM_TYPES.includes(e.type) ? e.type : "أخرى"),
-        track: "", subject: e.subject || "", dueDate: e.date || "", priority: "عالي", done: false,
+        type: e.type === "نهائي" ? "فاينل" : isExamType(e.type) ? e.type : e.type === "مشروع" ? "مشروع" : CUSTOM_TYPE,
+        track: "", subject: e.subject || "", dueDate: e.date || "", importance: "مهم جداً", done: false,
       })).filter(m => !ids.has(m.id));
       return [...(ts || []), ...mapped];
     });
@@ -1757,47 +1870,110 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const prioColor = { "عالي": P.red, "متوسط": P.orange, "منخفض": P.green };
   const add = () => {
     if (!nt.title.trim()) return;
-    const finalType = nt.type === "أخرى" && nt.customType.trim() ? nt.customType.trim() : nt.type;
-    setTasks(ts => [...(ts || []), { title: nt.title, type: finalType, track: nt.track, subject: nt.subject, dueDate: nt.dueDate, priority: nt.priority, id: Date.now(), done: false }]);
-    setNt({ title: "", type: "واجب", customType: "", track: "", customTrackOn: false, subject: "", subjectCustomOn: false, dueDate: "", priority: "متوسط" });
+    const finalType = nt.type === CUSTOM_TYPE && nt.customType.trim() ? nt.customType.trim() : nt.type;
+    setTasks(ts => [...(ts || []), {
+      id: Date.now(), done: false,
+      title: nt.title.trim(), type: finalType,
+      track: nt.track, subject: nt.subject,
+      openDate: nt.openDate, openTime: nt.openTime,
+      dueDate: nt.dueDate, dueTime: nt.dueTime,
+      importance: nt.importance,
+      remind: nt.remind !== false, leadMins: Number(nt.leadMins ?? 1440),
+    }]);
+    setNt(blank());
     setShowAdd(false);
     const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
     onToast?.("تمت الإضافة +15 XP", "success");
   };
   const toggle = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
   const remove = (id) => setTasks(ts => (ts || []).filter(tk => tk.id !== id));
+  const toggleRemind = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, remind: tk.remind === false } : tk));
 
-  const all = (tasks || []).map(tk => ({ ...tk, type: tk.type || "واجب" }));
-  const filtered = all.filter(tk => filter === "الكل" ? true : filter === "اختبارات" ? EXAM_TYPES.includes(tk.type) : !EXAM_TYPES.includes(tk.type));
+  const all = useMemo(() => (tasks || []).map(tk => ({
+    ...tk, type: tk.type || "واجب", importance: normImportance(tk),
+  })), [tasks]);
+
+  const bucketOf = (tk) => {
+    if (tk.done) return "منجزة";
+    if (!tk.dueDate) return "بلا موعد";
+    if (tk.dueDate < today) return "متأخرة";
+    if (tk.dueDate === today) return "اليوم";
+    return "قادمة";
+  };
+  const BUCKET_ORDER = ["متأخرة", "اليوم", "قادمة", "بلا موعد", "منجزة"];
+  const bucketCol = { "متأخرة": P.red, "اليوم": P.orange, "قادمة": P.blue2, "بلا موعد": t.mu, "منجزة": P.green };
+
+  const counts = useMemo(() => {
+    const c = { الكل: all.length, اختبارات: 0, واجبات: 0, متأخرة: 0, اليوم: 0, منجزة: 0 };
+    all.forEach(tk => {
+      if (tk.done) { c.منجزة++; return; }
+      c[isExamType(tk.type) ? "اختبارات" : "واجبات"]++;
+      const b = bucketOf(tk);
+      if (b === "متأخرة") c.متأخرة++;
+      if (b === "اليوم") c.اليوم++;
+    });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, today]);
+
+  // Chips grow with the list: only "الكل" is always there, and a filter
+  // appears once there is something to filter. An empty board shows one chip,
+  // not six that all lead nowhere.
+  const chips = useMemo(() => {
+    const out = [{ id: "الكل", n: counts.الكل, color: P.blue2 }];
+    if (counts.متأخرة) out.push({ id: "متأخرة", n: counts.متأخرة, color: P.red });
+    if (counts.اليوم) out.push({ id: "اليوم", n: counts.اليوم, color: P.orange });
+    if (counts.اختبارات) out.push({ id: "اختبارات", n: counts.اختبارات, color: P.red });
+    if (counts.واجبات) out.push({ id: "واجبات", n: counts.واجبات, color: P.blue2 });
+    if (counts.منجزة) out.push({ id: "منجزة", n: counts.منجزة, color: P.green });
+    return out;
+  }, [counts]);
+
+  // A filter that no longer has anything behind it shouldn't strand the view.
+  useEffect(() => {
+    if (!chips.some(c => c.id === filter)) setFilter("الكل");
+  }, [chips, filter]);
+
+  const filtered = all.filter(tk => {
+    switch (filter) {
+      case "اختبارات": return !tk.done && isExamType(tk.type);
+      case "واجبات": return !tk.done && !isExamType(tk.type);
+      case "متأخرة": return bucketOf(tk) === "متأخرة";
+      case "اليوم": return bucketOf(tk) === "اليوم";
+      case "منجزة": return tk.done;
+      default: return true;
+    }
+  });
+
+  // Bucket first, then importance — so "مهم جداً" visibly earns its label —
+  // then the actual deadline instant.
   const sorted = [...filtered].sort((a, b) => {
-    if (a.done !== b.done) return a.done ? 1 : -1;
-    return (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+    const ba = BUCKET_ORDER.indexOf(bucketOf(a)), bb = BUCKET_ORDER.indexOf(bucketOf(b));
+    if (ba !== bb) return ba - bb;
+    const ia = impMeta(a.importance).rank, ib = impMeta(b.importance).rank;
+    if (ia !== ib) return ia - ib;
+    return (taskDueAt(a)?.getTime() ?? 8.64e15) - (taskDueAt(b)?.getTime() ?? 8.64e15);
   });
   const pending = all.filter(tk => !tk.done).length;
-  const examCount = all.filter(tk => EXAM_TYPES.includes(tk.type) && !tk.done).length;
 
-  const chip = (label, active, onClick, count) => (
-    <button onClick={onClick} style={{
-      padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
-      fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
-      background: active ? `linear-gradient(135deg,${P.blue},${P.blue2})` : t.s2,
-      border: `1px solid ${active ? P.blue2 : t.bd}`, color: active ? "#fff" : t.mu,
-    }}>{label}{count != null ? ` (${count})` : ""}</button>
-  );
-
-  // One task row — used by the grouped list below.
   const renderTask = (task) => {
     const m = typeMeta(task.type);
-    const isOverdue = !task.done && task.dueDate && task.dueDate < today;
-    const days = task.dueDate ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
-    const overdueDays = isOverdue ? Math.abs(days) : 0;
+    const due = taskDueAt(task);
+    const isOverdue = !task.done && due && due.getTime() < Date.now();
+    const days = task.dueDate
+      ? Math.ceil((new Date(task.dueDate + "T12:00:00") - new Date(today + "T00:00:00")) / 86400000) : null;
     const cc = days == null ? t.mu : days <= 1 ? P.red : days <= 4 ? P.orange : P.green;
-    const pc = prioColor[task.priority] || P.orange;
+    const imp = impMeta(task.importance);
+    const notOpen = taskNotOpenYet(task);
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px", background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11, border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1, borderRight: `3px solid ${task.done ? P.green : m.color}` }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 9, padding: "10px 11px",
+        background: isOverdue ? `${P.red}08` : t.s2, borderRadius: 11,
+        border: `1px solid ${isOverdue ? P.red + "40" : t.bd}`, opacity: task.done ? 0.5 : 1,
+        borderRight: `3px solid ${task.done ? P.green : m.color}`,
+      }}>
         <button onClick={() => toggle(task.id)} title={task.done ? "إلغاء الإنجاز" : "تحديد كمنجزة"} style={{ background: task.done ? `${P.green}20` : t.s1, border: `1.5px solid ${task.done ? P.green : t.bd}`, borderRadius: 6, width: 22, height: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           {task.done && <Check size={12} color={P.green} />}
         </button>
@@ -1805,13 +1981,16 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
           <m.Icon size={14} color={m.color} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.title}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textDecoration: task.done ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
+            {!task.done && task.importance === "مهم جداً" && <Flag size={11} color={P.red} style={{ flexShrink: 0 }} />}
+            {task.title}
+          </div>
           <div style={{ fontSize: 11, color: t.mu, display: "flex", gap: 6, marginTop: 2, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ color: m.color, fontWeight: 800 }}>{task.type}</span>
-            {task.track && <span style={{ background: `${P.purple}15`, color: P.purple, borderRadius: 5, padding: "0 6px", fontWeight: 700 }}>{task.track}</span>}
             {task.subject && <span>{task.subject}</span>}
-            {task.dueDate && <span>{new Date(task.dueDate + "T12:00:00").toLocaleDateString("ar-SA-u-ca-gregory", { month: "short", day: "numeric" })}</span>}
-            {isOverdue && <span style={{ color: P.red, fontWeight: 700 }}>متأخر {overdueDays} يوم</span>}
+            {notOpen && <span style={{ color: P.cyan, fontWeight: 700 }}>يفتح {fmtTaskWhen(taskOpenAt(task))}</span>}
+            {due && <span style={{ direction: "ltr", fontVariantNumeric: "tabular-nums" }}>{fmtTaskWhen(due)}</span>}
+            {isOverdue && !task.done && <span style={{ color: P.red, fontWeight: 700 }}>أُغلق</span>}
           </div>
         </div>
         {!task.done && days != null && !isOverdue && (
@@ -1819,13 +1998,24 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
             {days === 0 ? "اليوم" : days === 1 ? "غداً" : `${days} يوم`}
           </div>
         )}
-        <div style={{ width: 7, height: 7, borderRadius: "50%", background: pc, flexShrink: 0 }} title={`أولوية ${task.priority}`} />
+        {!task.done && task.dueDate && (
+          <button onClick={() => toggleRemind(task.id)}
+            title={task.remind === false ? "تفعيل التذكير" : `التذكير ${leadLabel(taskLead(task))}`}
+            style={{ background: task.remind === false ? `${t.mu}15` : `${P.gold}18`, border: "none", borderRadius: 7, padding: 5, cursor: "pointer", color: task.remind === false ? t.mu : P.gold, display: "flex", flexShrink: 0 }}>
+            <Bell size={12} />
+          </button>
+        )}
+        <span title={`${imp.id} — ${imp.desc}`} style={{ width: 7, height: 7, borderRadius: "50%", background: imp.color, flexShrink: 0 }} />
         <button onClick={() => remove(task.id)} title="حذف" style={{ background: "none", border: "none", cursor: "pointer", color: t.dim, display: "flex", padding: 2 }}>
           <X size={12} />
         </button>
       </div>
     );
   };
+
+  const fieldStyle = { border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" };
+  const labelStyle = { fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 };
+  const suggestions = TITLE_SUGGESTIONS[nt.type] || [];
 
   return (
     <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
@@ -1842,12 +2032,9 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
         </button>
       </div>
 
-      {/* Progress summary — completion bar + at-a-glance counters */}
       {all.length > 0 && (() => {
         const doneCount = all.filter(tk => tk.done).length;
         const pct = Math.round((doneCount / all.length) * 100);
-        const overdueCount = all.filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
-        const todayCount = all.filter(tk => !tk.done && tk.dueDate === today).length;
         const barCol = pct === 100 ? P.green : pct >= 50 ? P.blue2 : P.orange;
         return (
           <div style={{ background: t.s2, borderRadius: 13, padding: "11px 13px", marginBottom: 12, border: `1px solid ${t.bd}` }}>
@@ -1855,104 +2042,191 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
               <span style={{ fontSize: 12, color: t.mu, fontWeight: 700 }}>أنجزت {doneCount} من {all.length}</span>
               <span style={{ fontSize: 13, fontWeight: 900, color: barCol }}>{pct}%</span>
             </div>
-            <div style={{ height: 7, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 9 }}>
+            <div style={{ height: 7, background: t.s3, borderRadius: 4, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barCol},${barCol}bb)`, borderRadius: 4, transition: "width .6s ease" }} />
             </div>
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-              {overdueCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.red, background: `${P.red}15`, borderRadius: 7, padding: "3px 9px" }}>⚠ متأخرة {overdueCount}</span>}
-              {todayCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.orange, background: `${P.orange}15`, borderRadius: 7, padding: "3px 9px" }}>اليوم {todayCount}</span>}
-              {examCount > 0 && <span style={{ fontSize: 11, fontWeight: 800, color: P.purple, background: `${P.purple}15`, borderRadius: 7, padding: "3px 9px" }}>اختبارات {examCount}</span>}
-              {pct === 100 && <span style={{ fontSize: 11, fontWeight: 800, color: P.green, background: `${P.green}15`, borderRadius: 7, padding: "3px 9px" }}>🎉 أنجزت كل مهامك</span>}
-            </div>
+            {pct === 100 && <div style={{ fontSize: 11, fontWeight: 800, color: P.green, marginTop: 8 }}>🎉 أنجزت كل مهامك</div>}
           </div>
         );
       })()}
 
-      {/* Filter chips */}
+      {/* Filter chips — grow with the list */}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 2 }}>
-        {chip("الكل", filter === "الكل", () => setFilter("الكل"), all.length)}
-        {chip("اختبارات", filter === "اختبارات", () => setFilter("اختبارات"), examCount)}
-        {chip("مهام", filter === "مهام", () => setFilter("مهام"))}
+        {chips.map(c => {
+          const active = filter === c.id;
+          return (
+            <button key={c.id} onClick={() => setFilter(c.id)} style={{
+              padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontFamily: "inherit",
+              fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap",
+              background: active ? c.color : t.s2,
+              border: `1px solid ${active ? c.color : t.bd}`, color: active ? "#fff" : t.mu,
+            }}>{c.id} ({c.n})</button>
+          );
+        })}
       </div>
 
       {showAdd && (
         <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 12, animation: "fadeUp .3s ease" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input placeholder="العنوان (مطلوب)" value={nt.title} onChange={e => setNt(p => ({ ...p, title: e.target.value }))}
-              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "9px 11px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
 
-            {/* Type selector */}
+            {/* Type — grouped, because an exam and an assignment behave differently */}
             <div>
-              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>النوع</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {TASK_TYPES.map(ty => {
-                  const m = typeMeta(ty); const active = nt.type === ty;
-                  return (
-                    <button key={ty} onClick={() => setNt(p => ({ ...p, type: ty }))} style={{
-                      display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                      background: active ? `${m.color}18` : t.s1, border: `1.5px solid ${active ? m.color : t.bd}`, color: active ? m.color : t.mu,
-                    }}><m.Icon size={12} /> {ty}</button>
-                  );
-                })}
-              </div>
-              {nt.type === "أخرى" && (
-                <input autoFocus placeholder="اكتب نوعاً مخصصاً (مثال: عرض تقديمي)" value={nt.customType} onChange={e => setNt(p => ({ ...p, customType: e.target.value }))}
-                  style={{ marginTop: 8, width: "100%", border: `1.5px solid ${P.green}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+              <div style={labelStyle}>النوع</div>
+              {TASK_GROUPS.map(g => (
+                <div key={g.id} style={{ marginBottom: 7 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: g.color, marginBottom: 5 }}>
+                    <g.Icon size={11} /> {g.label}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {g.types.map(ty => {
+                      const m = typeMeta(ty); const active = nt.type === ty;
+                      return (
+                        <button key={ty} onClick={() => patch({
+                          type: ty,
+                          // Exams are the thing you cannot miss; start them there.
+                          importance: isExamType(ty) ? "مهم جداً" : "عادي",
+                        })} style={{
+                          display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                          background: active ? `${m.color}18` : t.s1, border: `1.5px solid ${active ? m.color : t.bd}`, color: active ? m.color : t.mu,
+                        }}><m.Icon size={12} /> {ty}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => patch({ type: CUSTOM_TYPE })} style={{
+                display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                background: nt.type === CUSTOM_TYPE ? `${P.green}18` : t.s1, border: `1.5px solid ${nt.type === CUSTOM_TYPE ? P.green : t.bd}`, color: nt.type === CUSTOM_TYPE ? P.green : t.mu,
+              }}><PenLine size={12} /> نوع آخر (يدوي)</button>
+              {nt.type === CUSTOM_TYPE && (
+                <input autoFocus placeholder="اكتب النوع (مثال: تقرير معمل)" value={nt.customType} onChange={e => patch({ customType: e.target.value })}
+                  style={{ ...fieldStyle, marginTop: 8, border: `1.5px solid ${P.green}`, direction: "rtl" }} />
               )}
             </div>
 
-            {/* Track selector */}
+            {/* Title — pick a usual one or write your own */}
             <div>
-              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>المجال (اختياري)</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {TASK_TRACKS.map(tr => {
-                  const active = !nt.customTrackOn && nt.track === tr;
-                  return (
-                    <button key={tr} onClick={() => setNt(p => ({ ...p, track: active ? "" : tr, customTrackOn: false }))} style={{
-                      padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                      background: active ? `${P.purple}18` : t.s1, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
-                    }}>{tr}</button>
-                  );
-                })}
-                <button onClick={() => setNt(p => ({ ...p, customTrackOn: !p.customTrackOn, track: "" }))} style={{
-                  display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                  background: nt.customTrackOn ? `${P.purple}18` : t.s1, border: `1.5px solid ${nt.customTrackOn ? P.purple : t.bd}`, color: nt.customTrackOn ? P.purple : t.mu,
-                }}><Plus size={12} /> مخصص</button>
-              </div>
-              {nt.customTrackOn && (
-                <input autoFocus placeholder="اكتب مجالاً مخصصاً (مثال: ماجستير إدارة)" value={nt.track} onChange={e => setNt(p => ({ ...p, track: e.target.value }))}
-                  style={{ marginTop: 8, width: "100%", border: `1.5px solid ${P.purple}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+              <div style={labelStyle}>العنوان</div>
+              {suggestions.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 7 }}>
+                  {suggestions.map(s => {
+                    const active = nt.title === s;
+                    return (
+                      <button key={s} onClick={() => patch({ title: active ? "" : s })} style={{
+                        padding: "5px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                        background: active ? `${P.blue2}18` : t.s1, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
+                      }}>{s}</button>
+                    );
+                  })}
+                </div>
+              )}
+              <input placeholder="أو اكتب عنواناً" value={nt.title} onChange={e => patch({ title: e.target.value })}
+                style={{ ...fieldStyle, direction: "rtl" }} />
+            </div>
+
+            {/* Track — filled in from the profile, editable if this one differs */}
+            <div>
+              <div style={labelStyle}>المسار</div>
+              {nt.trackManual ? (
+                <input autoFocus placeholder="اكتب المسار" value={nt.track} onChange={e => patch({ track: e.target.value })}
+                  style={{ ...fieldStyle, border: `1.5px solid ${P.purple}`, direction: "rtl" }} />
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px" }}>
+                  <GradCap size={13} color={P.purple} style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: nt.track ? t.tx : t.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {nt.track || "لم تختر مسارك بعد"}
+                  </span>
+                  <button onClick={() => patch({ trackManual: true, track: "" })} style={{ background: "none", border: "none", cursor: "pointer", color: P.purple, fontFamily: "inherit", fontSize: 11.5, fontWeight: 800, flexShrink: 0 }}>تغيير</button>
+                </div>
+              )}
+              {nt.trackManual && (
+                <button onClick={() => patch({ trackManual: false, track: trackLabel(profile) || "" })} style={{ marginTop: 6, background: "none", border: "none", cursor: "pointer", color: t.mu, fontFamily: "inherit", fontSize: 11.5, fontWeight: 700, padding: 0 }}>
+                  ← استخدم مساري من ملفي
+                </button>
               )}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={labelStyle}>المادة (اختياري)</div>
               <select value={nt.subjectCustomOn ? "__custom__" : nt.subject} onChange={e => {
                 const v = e.target.value;
-                if (v === "__custom__") setNt(p => ({ ...p, subjectCustomOn: true, subject: "" }));
-                else setNt(p => ({ ...p, subjectCustomOn: false, subject: v }));
-              }}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }}>
-                <option value="">المادة (اختياري)</option>
+                if (v === "__custom__") patch({ subjectCustomOn: true, subject: "" });
+                else patch({ subjectCustomOn: false, subject: v });
+              }} style={{ ...fieldStyle, direction: "rtl" }}>
+                <option value="">— بلا مادة —</option>
                 {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
                 <option value="__custom__">➕ مادة مخصصة…</option>
               </select>
-              <input type="date" value={nt.dueDate} onChange={e => setNt(p => ({ ...p, dueDate: e.target.value }))}
-                style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+              {nt.subjectCustomOn && (
+                <input autoFocus placeholder="اكتب اسم المادة" value={nt.subject} onChange={e => patch({ subject: e.target.value })}
+                  style={{ ...fieldStyle, marginTop: 7, border: `1.5px solid ${P.blue2}`, direction: "rtl" }} />
+              )}
             </div>
-            {nt.subjectCustomOn && (
-              <input autoFocus placeholder="اكتب اسم المادة" value={nt.subject} onChange={e => setNt(p => ({ ...p, subject: e.target.value }))}
-                style={{ width: "100%", border: `1.5px solid ${P.blue2}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s1, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box" }} />
+
+            {/* The window: when it opens, when it closes */}
+            <div>
+              <div style={labelStyle}>يفتح (اختياري)</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 8 }}>
+                <input type="date" value={nt.openDate} onChange={e => patch({ openDate: e.target.value })} style={fieldStyle} />
+                <input type="time" value={nt.openTime} onChange={e => patch({ openTime: e.target.value })} style={fieldStyle} />
+              </div>
+            </div>
+            <div>
+              <div style={labelStyle}>يُغلق</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 8 }}>
+                <input type="date" value={nt.dueDate} onChange={e => patch({ dueDate: e.target.value })} style={fieldStyle} />
+                <input type="time" value={nt.dueTime} onChange={e => patch({ dueTime: e.target.value })} style={fieldStyle} />
+              </div>
+              {nt.dueDate && !nt.dueTime && (
+                <div style={{ fontSize: 11, color: t.dim, marginTop: 5 }}>بلا وقت = نهاية اليوم (١١:٥٩ م)</div>
+              )}
+            </div>
+
+            {/* Reminder */}
+            {nt.dueDate && (
+              <div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.tx, cursor: "pointer", marginBottom: nt.remind !== false ? 7 : 0 }}>
+                  <input type="checkbox" checked={nt.remind !== false} onChange={e => patch({ remind: e.target.checked })} style={{ accentColor: P.gold, width: 16, height: 16 }} />
+                  <Bell size={14} color={P.gold} /> ذكّرني قبل الإغلاق
+                </label>
+                {nt.remind !== false && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {TASK_LEAD_CHOICES.map(({ mins, label }) => {
+                      const active = Number(nt.leadMins) === mins;
+                      return (
+                        <button key={mins} onClick={() => patch({ leadMins: mins })} style={{
+                          padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                          background: active ? `${P.gold}20` : t.s1, border: `1.5px solid ${active ? P.gold : t.bd}`, color: active ? P.gold : t.mu,
+                        }}>{label}</button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
 
-            <div style={{ display: "flex", gap: 6 }}>
-              {["عالي", "متوسط", "منخفض"].map(p => (
-                <button key={p} onClick={() => setNt(x => ({ ...x, priority: p }))} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${nt.priority === p ? prioColor[p] : t.bd}`, background: nt.priority === p ? `${prioColor[p]}15` : t.s1, color: nt.priority === p ? prioColor[p] : t.mu, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>
-                  {p}
-                </button>
-              ))}
+            {/* Importance — labelled by what it does */}
+            <div>
+              <div style={labelStyle}>الأهمية <span style={{ fontWeight: 600, color: t.dim }}>— تُرتِّب مهامك داخل كل مجموعة</span></div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {IMPORTANCE.map(({ id, color, desc }) => {
+                  const active = nt.importance === id;
+                  return (
+                    <button key={id} onClick={() => patch({ importance: id })} style={{
+                      flex: 1, padding: "7px 4px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit",
+                      border: `1.5px solid ${active ? color : t.bd}`, background: active ? `${color}15` : t.s1,
+                      color: active ? color : t.mu,
+                    }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800 }}>{id}</div>
+                      <div style={{ fontSize: 9.5, fontWeight: 600, marginTop: 2, opacity: 0.9 }}>{desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
             <div style={{ display: "flex", gap: 8 }}>
-              <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
+              <Btn variant="ghost" size="sm" onClick={() => { setNt(blank()); setShowAdd(false); }} style={{ flex: 1 }}>إلغاء</Btn>
               <Btn variant="primary" size="sm" onClick={add} style={{ flex: 2 }} disabled={!nt.title.trim()}>
                 <Plus size={14} /> إضافة
               </Btn>
@@ -1964,22 +2238,13 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, guest }
       {sorted.length === 0 ? (
         <div style={{ textAlign: "center", padding: "18px 0", color: t.dim, fontSize: 13 }}>
           <CheckCircle size={26} color={t.dim} style={{ opacity: 0.5, marginBottom: 6 }} />
-          <div>{filter === "اختبارات" ? "لا اختبارات قادمة" : "لا مهام بعد، أضف مهمتك الأولى"}</div>
+          <div>{filter === "الكل" ? "لا مهام بعد، أضف مهمتك الأولى" : `لا شيء في «${filter}»`}</div>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 340, overflowY: "auto" }}>
           {(() => {
-            // Group headers appear as the list crosses into a new bucket.
-            const bucketOf = (tk) => {
-              if (tk.done) return "منجزة";
-              if (!tk.dueDate) return "بلا موعد";
-              if (tk.dueDate < today) return "متأخرة";
-              if (tk.dueDate === today) return "اليوم";
-              return "قادمة";
-            };
-            const bucketCol = { "متأخرة": P.red, "اليوم": P.orange, "قادمة": P.blue2, "بلا موعد": t.mu, "منجزة": P.green };
             let last = null;
-            return sorted.slice(0, 12).map(task => {
+            return sorted.slice(0, 20).map(task => {
               const b = bucketOf(task);
               const header = b !== last ? b : null;
               last = b;
@@ -3811,7 +4076,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       </div>
 
       {/* Unified tasks + exams hub */}
-      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} guest={guest} />
+      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} profile={profile} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
@@ -5667,6 +5932,52 @@ function useLectureReminders(schedule, notifSoundOn, push) {
   }, [schedule, notifSoundOn, push]);
 }
 
+/**
+ * Fire a task's reminder once, at its chosen lead time before the deadline.
+ *
+ * Mirrors useLectureReminders, but a task's deadline is an instant rather than
+ * a weekly slot, so the fired key is the task id alone: a deadline passes once.
+ */
+function useTaskReminders(tasks, notifSoundOn, push) {
+  const firedRef = useRef(null);
+  if (firedRef.current === null) firedRef.current = new Set();
+  useEffect(() => {
+    const tick = () => {
+      const now = Date.now();
+      // Several tasks can come due together — especially on the first tick
+      // after opening the app. One chime for the batch, not one per task.
+      let chimed = false;
+      (tasks || []).forEach(tk => {
+        if (tk.done || tk.remind === false) return;
+        const due = taskDueAt(tk);
+        if (!due) return;
+        const lead = taskLead(tk);
+        const minsLeft = Math.round((due.getTime() - now) / 60000);
+        // Inside the lead window and not yet past the deadline.
+        if (minsLeft > lead || minsLeft < 0) return;
+        const key = String(tk.id);
+        if (firedRef.current.has(key)) return;
+        firedRef.current.add(key);
+        const when = minsLeft <= 0 ? "ينتهي الآن"
+          : minsLeft < 60 ? `يُغلق خلال ${minsLeft} دقيقة`
+          : minsLeft < 1440 ? `يُغلق خلال ${Math.round(minsLeft / 60)} ساعة`
+          : `يُغلق خلال ${Math.round(minsLeft / 1440)} يوم`;
+        const body = `${tk.type ? tk.type + ": " : ""}${tk.title} — ${when}`;
+        push?.(`🔔 ${body}`, "warn");
+        if (notifSoundOn && !chimed) { playChime(); chimed = true; }
+        try {
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            new Notification("تذكير مهمة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
+          }
+        } catch {}
+      });
+    };
+    tick();
+    const iv = setInterval(tick, 60000);
+    return () => clearInterval(iv);
+  }, [tasks, notifSoundOn, push]);
+}
+
 export default function App() {
   // Settings sync to the user's profile when logged in (cross-device);
   // localStorage stays the instant source of truth for everyone.
@@ -5733,6 +6044,7 @@ export default function App() {
   const t = T(dark, brandPreset);
   const toasts = useToasts();
   useLectureReminders(schedule, notifSoundOn, toasts.push);
+  useTaskReminders(tasks, notifSoundOn, toasts.push);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
