@@ -364,7 +364,9 @@ function FilesTab({ flash }) {
       // function now only signs the upload.
       const { upload: blobUpload } = await import('@vercel/blob/client')
       const blob = await blobUpload(selected.name, selected, {
-        access: 'public',
+        // Private, matching how every existing file is stored: PDFs are served
+        // through /api/download rather than being reachable at a raw URL.
+        access: 'private',
         handleUploadUrl: '/api/upload',
         contentType: 'application/pdf',
         onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
