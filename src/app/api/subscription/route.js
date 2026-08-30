@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
-import { trackRequestLimit, callerKey } from '@/lib/rate-limit'
+import { subscriptionRequestLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity } from '@/lib/ai-quota'
 import { looksLikeEmail } from '@/lib/ai-usage'
 
@@ -15,9 +15,12 @@ export const runtime = 'nodejs'
  * are read by an admin.
  */
 export async function POST(request) {
-  const rl = await trackRequestLimit.limit(callerKey(request))
+  const rl = await subscriptionRequestLimit.limit(callerKey(request))
   if (!rl.success) {
-    return Response.json({ error: 'أرسلت طلباً للتو — انتظر قليلاً' }, { status: 429 })
+    // Say how long, not just "wait": a refusal with no end in sight reads as
+    // a broken button, which is exactly how it was reported.
+    const mins = Math.max(1, Math.ceil((rl.reset - Date.now()) / 60000))
+    return Response.json({ error: `أرسلت عدة طلبات — يمكنك المحاولة بعد ${mins} دقيقة` }, { status: 429 })
   }
 
   const { deviceId, setCookie } = deviceIdentity(request)

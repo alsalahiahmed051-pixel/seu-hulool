@@ -425,7 +425,12 @@ function useToasts() {
 function ToastStack({ list }) {
   return (
     <div style={{
-      position: "fixed", bottom: 90, left: 0, right: 0, zIndex: 300,
+      // Above every full-screen sheet. At 300 these were painted *behind*
+      // the settings panel (400), the assistant (500), the subscription sheet
+      // (600), the support sheet (620) and the sign-in screen (800) — so every
+      // confirmation and every error raised from inside one was invisible.
+      // A failed subscription request looked like nothing happened at all.
+      position: "fixed", bottom: 90, left: 0, right: 0, zIndex: 1000,
       display: "flex", flexDirection: "column", alignItems: "center", gap: 8, pointerEvents: "none"
     }}>
       {list.map(t => {
@@ -808,6 +813,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
   const [uploading, setUploading] = useState(0);  // 0 = idle, else percent
   const fileRef = useRef(null);
   const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState("");
   const [justSent, setJustSent] = useState(false);
   const [mine, setMine] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -853,6 +859,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
 
   const submit = async () => {
     setSending(true);
+    setSendErr("");
     try {
       // Save a newly typed email so the assistant and any later request use
       // the same one — the student should type it once, not every time.
@@ -873,8 +880,18 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
         setJustSent(true);
         setMine({ status: "pending" });
       }
-      else onToast?.(safeText(d.error, "تعذّر إرسال الطلب"), "error");
-    } catch { onToast?.("تعذّر الاتصال", "error"); }
+      else {
+        // Kept on screen, not only as a toast: a toast is gone in three
+        // seconds, and the reason a request was refused is the one thing the
+        // student needs to read twice.
+        const why = safeText(d.error, `تعذّر إرسال الطلب (${res.status})`);
+        setSendErr(why);
+        onToast?.(why, "error");
+      }
+    } catch {
+      setSendErr("تعذّر الاتصال بالخادم — تحقّق من اتصالك وأعد المحاولة");
+      onToast?.("تعذّر الاتصال", "error");
+    }
     setSending(false);
   };
 
@@ -1029,6 +1046,13 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "8px 0 12px" }}>
               يُرسَل مع الطلب: {profile?.name || "اسمك"} · {profile?.studentId || "رقمك الجامعي"} · {savedEmail || "بريدك"}.
             </div>
+
+            {sendErr && (
+              <div style={{ background: `${P.red}0d`, border: `1px solid ${P.red}40`, borderRadius: 10, padding: "10px 12px", marginBottom: 10, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span style={{ fontSize: 12.5, color: t.tx, lineHeight: 1.7 }}>{sendErr}</span>
+              </div>
+            )}
 
             <Btn variant="primary" onClick={submit} style={{ width: "100%" }}
               disabled={sending || !profileComplete(profile) || !savedEmail || (!receipt.trim() && !note.trim())}>
