@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/server'
-import { trackRequestLimit, callerKey } from '@/lib/rate-limit'
+import { supportMessageLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity } from '@/lib/ai-quota'
 
 export const runtime = 'nodejs'
@@ -14,9 +14,10 @@ const TOPICS = ['سؤال', 'مشكلة', 'اقتراح', 'ملف ناقص']
  * length-capped: these rows are read by an admin.
  */
 export async function POST(request) {
-  const rl = await trackRequestLimit.limit(callerKey(request))
+  const rl = await supportMessageLimit.limit(callerKey(request))
   if (!rl.success) {
-    return Response.json({ error: 'أرسلت رسالة للتو — انتظر قليلاً' }, { status: 429 })
+    const mins = Math.max(1, Math.ceil((rl.reset - Date.now()) / 60000))
+    return Response.json({ error: `أرسلت عدة رسائل — يمكنك المحاولة بعد ${mins} دقيقة` }, { status: 429 })
   }
 
   const { deviceId, setCookie } = deviceIdentity(request)

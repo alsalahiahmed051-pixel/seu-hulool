@@ -148,6 +148,29 @@ export const trackRequestLimit = hasUpstash
     })
   : memoryLimiter(Number(process.env.TRACK_REQUEST_HOURLY_LIMIT || 3), 3_600_000, 'trackreq')
 
+// Subscription requests and support messages each get their own budget too.
+// All three used to share the track-change limiter — three per hour per IP
+// between them — so pressing "send" a few times, or sending one support
+// message, spent a budget meant for something else and the next action was
+// refused for an hour. Subscriptions have a real guard already (the route
+// allows one open request per device), and support rows are length-capped, so
+// the IP limit only needs to stop a flood.
+export const subscriptionRequestLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(Number(process.env.SUBSCRIPTION_HOURLY_LIMIT || 8), '1 h'),
+      prefix: 'rl:subreq',
+    })
+  : memoryLimiter(Number(process.env.SUBSCRIPTION_HOURLY_LIMIT || 8), 3_600_000, 'subreq')
+
+export const supportMessageLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(Number(process.env.SUPPORT_HOURLY_LIMIT || 8), '1 h'),
+      prefix: 'rl:support',
+    })
+  : memoryLimiter(Number(process.env.SUPPORT_HOURLY_LIMIT || 8), 3_600_000, 'support')
+
 // Receipt uploads get their own budget rather than sharing the track-change
 // one. Three per hour, shared with track requests and support messages across
 // everyone behind a campus or carrier NAT, meant a student could be refused a
