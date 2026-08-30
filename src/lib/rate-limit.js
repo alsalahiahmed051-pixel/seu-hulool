@@ -116,6 +116,16 @@ export const aiDailyLimit = hasUpstash
     })
   : memoryLimiter(Number(process.env.AI_DAILY_LIMIT || 80), 86_400_000, 'ai:day')
 
+// Track-change requests write rows an admin reads; a few per hour is plenty
+// and stops one client filling the queue.
+export const trackRequestLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(Number(process.env.TRACK_REQUEST_HOURLY_LIMIT || 3), '1 h'),
+      prefix: 'rl:trackreq',
+    })
+  : memoryLimiter(Number(process.env.TRACK_REQUEST_HOURLY_LIMIT || 3), 3_600_000, 'trackreq')
+
 // File downloads are open to every visitor (no accounts), so cap how fast one
 // client can pull PDFs through the proxy.
 export const downloadPerMinuteLimit = hasUpstash

@@ -3909,6 +3909,55 @@ function FavoritesPage({ favorites, onCourse, toggleFav, t }) {
   );
 }
 
+/**
+ * Track → (college) → plan/programme, in one place.
+ *
+ * Shared by the profile editor and the first-run screen so both always offer
+ * the same options; `draft` is the working profile and `set` patches it.
+ */
+function TrackPicker({ draft, set, t, disabled }) {
+  const plans = planOptionsFor(draft.track, draft.college);
+  const chip = (label, active, onClick, color) => (
+    <button key={label} type="button" disabled={disabled} onClick={onClick} style={{
+      padding: "8px 13px", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer",
+      fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, textAlign: "right",
+      background: active ? `${color}18` : t.s2, border: `1.5px solid ${active ? color : t.bd}`,
+      color: active ? color : t.mu, opacity: disabled ? 0.6 : 1,
+    }}>{label}</button>
+  );
+
+  return (
+    <>
+      <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار</label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        {AUTH_TRACKS.map(({ id }) =>
+          chip(id, draft.track === id, () => set({ track: id, college: "", plan: "" }), P.blue2))}
+      </div>
+
+      {trackNeedsCollege(draft.track) && (
+        <>
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>القسم / الكلية</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {TRACK_COLLEGES.map(c =>
+              chip(c.label, draft.college === c.label, () => set({ college: c.label, plan: "" }), P.purple))}
+          </div>
+        </>
+      )}
+
+      {plans.length > 0 && (
+        <>
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>
+            {draft.track === "تحضيري" ? "الخطة" : "البرنامج"}
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {plans.map(pl => chip(pl, draft.plan === pl, () => set({ plan: pl }), P.green))}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
@@ -3916,12 +3965,65 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
-  const [draft, setDraft] = useState({ name: profile?.name || "", track: profile?.track || "تحضيري", plan: profile?.plan || "" });
-  const draftPlans = AUTH_PLANS[draft.track] || null;
+  const [draft, setDraft] = useState({
+    name: profile?.name || "",
+    studentId: profile?.studentId || "",
+    track: profile?.track || "تحضيري",
+    college: profile?.college || "",
+    plan: profile?.plan || "",
+  });
+  const patch = (p) => setDraft(d => ({ ...d, ...p }));
+  const [requesting, setRequesting] = useState(false);
+  const lockDaysLeft = trackLockRemaining(profile);
+
+  // While the track is locked, a change goes to the admin as a request the
+  // student explains, rather than silently editing the profile.
+  const requestTrackChange = async () => {
+    const reason = window.prompt("سبب تغيير المسار؟ (سيصل للإدارة مع اسمك ورقمك الجامعي)");
+    if (reason == null) return;
+    if (!reason.trim()) { onToast?.("اكتب سبب التغيير", "warn"); return; }
+    setRequesting(true);
+    try {
+      const res = await fetch("/api/track-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profile?.name, studentId: profile?.studentId,
+          currentTrack: trackLabel(profile), reason: reason.trim(),
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) onToast?.("وصل طلبك للإدارة — سيتم الرد قريباً ✅", "success");
+      else onToast?.(d.error || "تعذّر إرسال الطلب", "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setRequesting(false);
+  };
+  // The track is fixed for 15 days after it is confirmed; name and ID stay
+  // editable throughout.
+  const trackLocked = lockDaysLeft > 0;
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
-    setProfile({ name: draft.name.trim(), track: draft.track || "تحضيري", plan: draft.plan || "", created: profile?.created || Date.now() });
+    if (!draft.studentId.trim()) { onToast?.("اكتب رقمك الجامعي", "warn"); return; }
+    if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
+
+    const trackChanged = !profile ||
+      profile.track !== draft.track || profile.college !== draft.college || profile.plan !== draft.plan;
+    if (trackChanged && !confirm(
+      `تأكيد مسارك: ${trackLabel(draft)}\n\nبعد التأكيد لا يمكنك تغييره إلا بعد ${TRACK_LOCK_DAYS} يوماً، أو بإرسال طلب للإدارة.`
+    )) return;
+
+    setProfile({
+      ...profile,
+      name: draft.name.trim(),
+      studentId: draft.studentId.trim().toUpperCase(),
+      track: draft.track,
+      college: draft.college || "",
+      plan: draft.plan || "",
+      // Only restart the lock when the track actually changed.
+      confirmedAt: trackChanged ? Date.now() : (profile?.confirmedAt || Date.now()),
+      created: profile?.created || Date.now(),
+    });
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
   };
@@ -3959,12 +4061,13 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{profile.track}{profile.plan ? ` — ${profile.plan}` : ""}</span>}
+              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{trackLabel(profile)}</span>}
+              {profile?.studentId && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.75)", fontFamily: "monospace", direction: "ltr" }}>{profile.studentId}</span>}
               <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", gap: 5 }}><Clock size={12} color={P.gold} /> {totalHours} ساعة دراسة</span>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => { setDraft({ name: profile?.name || "", track: profile?.track || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+            <button onClick={() => { setDraft({ name: profile?.name || "", studentId: profile?.studentId || "", track: profile?.track || "تحضيري", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
               <Edit3 size={16} />
             </button>
             <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
@@ -3978,42 +4081,38 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       {editing && (
         <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, marginBottom: 4 }}>{profile ? "تعديل ملفك الدراسي" : "أنشئ ملفك الدراسي"}</div>
-          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>بدون بريد أو كلمة مرور — فقط اسمك ومسارك، ويُحفظ على جهازك.</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>اسمك ورقمك الجامعي ومسارك — تُحفظ على جهازك، وتُستخدم لتخصيص موادك وتقويمك ومهامك.</div>
+
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
-          <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="اكتب اسمك"
+          <input value={draft.name} onChange={e => patch({ name: e.target.value })} placeholder="اكتب اسمك"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
-          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>المسار / التخصص</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-            {AUTH_TRACKS.map(({ id: tr }) => {
-              const active = draft.track === tr;
-              return (
-                <button key={tr} onClick={() => setDraft(d => ({ ...d, track: tr, plan: "" }))} style={{
-                  padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                  background: active ? `${P.blue2}18` : t.s2, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
-                }}>{tr}</button>
-              );
-            })}
-          </div>
-          {draftPlans && (
-            <>
-              <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>الخطة</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-                {draftPlans.map(pl => {
-                  const active = draft.plan === pl;
-                  return (
-                    <button key={pl} onClick={() => setDraft(d => ({ ...d, plan: pl }))} style={{
-                      padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                      background: active ? `${P.purple}18` : t.s2, border: `1.5px solid ${active ? P.purple : t.bd}`, color: active ? P.purple : t.mu,
-                    }}>{pl}</button>
-                  );
-                })}
+
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
+          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="مثال: S220032205"
+            style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+
+          {trackLocked ? (
+            <div style={{ background: `${P.gold}12`, border: `1px solid ${P.gold}40`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, marginBottom: 4 }}>مسارك: {trackLabel(profile)}</div>
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 10 }}>
+                مثبَّت لمدة {TRACK_LOCK_DAYS} يوماً — يتبقّى {lockDaysLeft} يوم. لتغييره قبل ذلك أرسل طلباً للإدارة.
               </div>
-            </>
+              <button onClick={requestTrackChange} disabled={requesting} style={{
+                width: "100%", background: t.s2, border: `1px solid ${P.gold}55`, borderRadius: 10,
+                padding: "10px", cursor: requesting ? "wait" : "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 800, color: P.gold, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              }}>
+                <Send size={13} /> {requesting ? "جارٍ الإرسال…" : "طلب تغيير المسار"}
+              </button>
+            </div>
+          ) : (
+            <TrackPicker draft={draft} set={patch} t={t} />
           )}
+
           <div style={{ display: "flex", gap: 8 }}>
             {profile && <Btn variant="ghost" size="sm" onClick={() => setEditing(false)} style={{ flex: 1 }}>إلغاء</Btn>}
-            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim()}>
-              <CheckCircle size={15} /> {profile ? "حفظ" : "إنشاء الملف"}
+            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim() || !draft.studentId.trim()}>
+              <CheckCircle size={15} /> {profile ? "حفظ" : "تأكيد وإنشاء الملف"}
             </Btn>
           </div>
         </div>
@@ -4902,7 +5001,53 @@ const AUTH_TRACKS = [
   { id: "دبلوم", Icon: Award, desc: "برامج الدبلوم" },
   { id: "دراسات عليا", Icon: Trophy, desc: "ماجستير ودراسات عليا" },
 ];
-const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
+
+/**
+ * The second step of "choose your track": what a student picks after the
+ * track itself. Derived from TREE so the picker can never drift from the
+ * catalogue the rest of the app browses.
+ *   تحضيري      → خطة أ / خطة ب
+ *   تخصص        → college, then a program inside it
+ *   دبلوم/عليا  → a program directly
+ */
+const TRACK_PLANS = {
+  "تحضيري": ["خطة أ", "خطة ب"],
+  "دبلوم": TREE.diploma.programs,
+  "دراسات عليا": TREE.graduate.programs,
+};
+const TRACK_COLLEGES = TREE.bachelor.colleges.map(c => ({ label: c.label, programs: c.programs }));
+const collegePrograms = (label) => TRACK_COLLEGES.find(c => c.label === label)?.programs || [];
+// A track needs a college chosen first only for تخصص.
+const trackNeedsCollege = (track) => track === "تخصص";
+const planOptionsFor = (track, college) =>
+  trackNeedsCollege(track) ? collegePrograms(college) : (TRACK_PLANS[track] || []);
+/** Is this profile complete enough to be saved/confirmed? */
+const profileComplete = (p) => {
+  if (!p?.name?.trim() || !p?.studentId?.trim() || !p?.track) return false;
+  if (trackNeedsCollege(p.track) && !p.college) return false;
+  // Only require a plan/programme when the chosen track actually offers one.
+  return planOptionsFor(p.track, p.college).length === 0 || !!p.plan;
+};
+/** Human label for a chosen track, e.g. "تحضيري — خطة أ". */
+const trackLabel = (p) => {
+  if (!p?.track) return "";
+  const parts = [p.track];
+  if (p.college) parts.push(p.college);
+  if (p.plan) parts.push(p.plan);
+  return parts.join(" — ");
+};
+
+// A confirmed track is locked for this long; changing sooner needs a request.
+const TRACK_LOCK_DAYS = 15;
+const trackLockRemaining = (p) => {
+  if (!p?.confirmedAt) return 0;
+  const elapsed = Date.now() - Number(p.confirmedAt);
+  const left = TRACK_LOCK_DAYS * 86400000 - elapsed;
+  return left > 0 ? Math.ceil(left / 86400000) : 0;
+};
+
+// Kept for older code paths that referenced the flat plan map.
+const AUTH_PLANS = TRACK_PLANS;
 
 // How early a lecture reminder fires. 0 means "when it starts", like an alarm.
 const REMIND_CHOICES = [

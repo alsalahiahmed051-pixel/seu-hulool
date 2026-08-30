@@ -101,6 +101,7 @@ const TABS = [
   { id: 'calendar', label: 'التقويم', Icon: CalendarDays },
   { id: 'theme', label: 'الثيم', Icon: Palette },
   { id: 'students', label: 'الطلاب', Icon: GraduationCap },
+  { id: 'requests', label: 'طلبات المسار', Icon: Send },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
@@ -271,6 +272,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'calendar' && <CalendarTab flash={flash} />}
         {tab === 'theme' && <ThemeTab flash={flash} />}
         {tab === 'students' && <StudentsTab flash={flash} />}
+        {tab === 'requests' && <TrackRequestsTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -1042,6 +1044,104 @@ function CalendarTab({ flash }) {
         </div>
       ))}
       <button onClick={addEv} style={{ ...S.btn(P.blue2), width: '100%', marginBottom: 16 }}><Plus size={14} /> إضافة حدث</button>
+    </div>
+  )
+}
+
+/* ══════════════ TRACK CHANGE REQUESTS ══════════════ */
+function TrackRequestsTab({ flash }) {
+  const [items, setItems] = useState([])
+  const [tableReady, setTableReady] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await apiJSON('/api/admin/track-requests')
+    setItems(data.requests || [])
+    setTableReady(data.tableReady !== false)
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function answer(req, status) {
+    const verb = status === 'approved' ? 'الموافقة على' : 'رفض'
+    const reply = window.prompt(`ردّك على الطالب (${verb} الطلب) — اختياري:`)
+    if (reply === null) return
+    setBusy(req.id)
+    const { ok, data } = await apiJSON('/api/admin/track-requests', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: req.id, status, reply }),
+    })
+    setBusy(null)
+    if (ok) { flash(status === 'approved' ? 'تمت الموافقة' : 'تم الرفض'); load() }
+    else flash(data.error || 'تعذّر الحفظ', 'error')
+  }
+
+  async function remove(req) {
+    if (!confirm('حذف هذا الطلب؟')) return
+    await apiJSON('/api/admin/track-requests', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: req.id }),
+    })
+    flash('تم الحذف'); load()
+  }
+
+  const statusMeta = {
+    pending: { label: 'بانتظار الرد', color: P.gold },
+    approved: { label: 'موافق عليه', color: P.green },
+    rejected: { label: 'مرفوض', color: P.red },
+  }
+  const pending = items.filter(r => r.status === 'pending').length
+
+  return (
+    <div>
+      <SectionHeader title={`طلبات تغيير المسار${pending ? ` (${pending} بانتظارك)` : ''}`} onRefresh={load} />
+
+      {!tableReady && (
+        <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
+          <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>لعرض الطلبات شغّل migration <strong>012_track_requests.sql</strong> في Supabase.</div>
+        </div>
+      )}
+
+      {loading ? <Loader /> : items.length === 0 ? <Empty text="لا توجد طلبات" /> : items.map(r => {
+        const meta = statusMeta[r.status] || statusMeta.pending
+        return (
+          <div key={r.id} style={{ ...S.card, borderRight: `3px solid ${meta.color}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--tx)' }}>{r.student_name}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--mu)', fontFamily: 'monospace', direction: 'ltr' }}>{r.student_id}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: '2px 8px' }}>{meta.label}</span>
+              <span style={{ fontSize: 11, color: 'var(--mu)', marginRight: 'auto' }}>{fmtDate(r.created_at)}</span>
+            </div>
+            {r.current_track && <div style={{ fontSize: 12, color: 'var(--mu2)', marginBottom: 6 }}>المسار الحالي: {r.current_track}</div>}
+            <div style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.8, background: 'var(--bg)', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>{r.reason}</div>
+            {r.admin_reply && (
+              <div style={{ fontSize: 12, color: 'var(--mu2)', lineHeight: 1.7, marginBottom: 10 }}>
+                <strong style={{ color: 'var(--tx)' }}>ردّك:</strong> {r.admin_reply}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {r.status === 'pending' && (
+                <>
+                  <button onClick={() => answer(r, 'approved')} disabled={busy === r.id} style={{ ...S.btn(P.green), flex: 1 }}>
+                    <CheckCircle size={14} /> موافقة
+                  </button>
+                  <button onClick={() => answer(r, 'rejected')} disabled={busy === r.id} style={{ ...S.btn(P.red), flex: 1 }}>
+                    رفض
+                  </button>
+                </>
+              )}
+              <button onClick={() => remove(r)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+            </div>
+          </div>
+        )
+      })}
+
+      <div style={{ ...S.card, fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
+        المسار مثبَّت 15 يوماً بعد تأكيده. الموافقة هنا تسجّل قرارك وردّك؛ الطالب يعيد اختيار مساره من صفحة حسابه.
+      </div>
     </div>
   )
 }
