@@ -290,30 +290,16 @@ const NOTIFS_SEED = [
   { id: 4, title: "ملخص شامل", text: "ملخص وحدات 1-6 لمادة مهارات الاتصال والتواصل", time: "منذ 3 أيام", read: true, iconKey: "star" },
 ];
 
-const FILES = {
-  collections: (s) => [
-    { name: `تجميع نهاية الفصل الثاني 1445 – ${s}`, sz: "2.4 MB", views: 2180, dl: 843, date: "1445/08/12", r: 4.9 },
-    { name: `بنك أسئلة مع الإجابات النموذجية – ${s}`, sz: "3.1 MB", views: 3540, dl: 1421, date: "1445/07/20", r: 5.0 },
-    { name: `تجميع ميدترم الفصل الأول 1444 – ${s}`, sz: "1.8 MB", views: 1205, dl: 490, date: "1444/12/18", r: 4.7 },
-    { name: `ملخص شامل للوحدات 1-6 – ${s}`, sz: "4.0 MB", views: 2870, dl: 1103, date: "1445/06/30", r: 4.8 },
-  ],
-  plans: (s) => [
-    { name: `الخطة الدراسية الكاملة الفصل الثاني 1445 – ${s}`, sz: "0.9 MB", views: 960, dl: 380, date: "1445/06/01", r: 4.6 },
-    { name: `جدول الوحدات والمحاضرات – ${s}`, sz: "0.5 MB", views: 720, dl: 290, date: "1445/06/01", r: 4.5 },
-    { name: `توصيف المقرر الرسمي – ${s}`, sz: "1.2 MB", views: 540, dl: 210, date: "1445/05/15", r: 4.7 },
-  ],
-  curriculum: (s) => [
-    { name: `محتوى المقرر الكامل – ${s}`, sz: "8.5 MB", views: 1830, dl: 720, date: "1445/06/05", r: 4.8 },
-    { name: `وحدة 1 – ${s} (المحاضرات والشرائح)`, sz: "2.1 MB", views: 2410, dl: 960, date: "1445/06/08", r: 4.9 },
-    { name: `وحدة 2 – ${s} (تطبيقات وأنشطة)`, sz: "1.9 MB", views: 1980, dl: 810, date: "1445/06/15", r: 4.7 },
-    { name: `نموذج مشروع نهاية الفصل – ${s}`, sz: "0.7 MB", views: 1120, dl: 540, date: "1445/06/20", r: 4.6 },
-  ],
-  programs: (s) => [
-    { name: `نظرة عامة على برنامج ${s}`, sz: "1.4 MB", views: 880, dl: 260, date: "1445/04/10", r: 4.5 },
-    { name: `دليل شروط القبول والتسجيل – ${s}`, sz: "0.8 MB", views: 1340, dl: 440, date: "1445/04/10", r: 4.6 },
-    { name: `جدول الرسوم الدراسية 1445-1446`, sz: "0.3 MB", views: 2100, dl: 800, date: "1445/05/01", r: 4.4 },
-  ],
-};
+/*
+ * There used to be a FILES table here: four fabricated PDFs per section,
+ * templated from the subject name, complete with invented view counts,
+ * download counts, Hijri dates and 4.9-star ratings. Every course showed the
+ * same twelve, none of them existed, and tapping one did nothing.
+ *
+ * It is gone. The course page shows the files an admin actually uploaded, and
+ * says plainly when a section is still empty. An empty shelf is honest; a
+ * shelf of props is not.
+ */
 
 const SECTIONS = [
   { id: "collections", Icon: Bookmark, label: "تجميعات وملخصات", color: "#1d4ed8", desc: "تجميعات الاختبارات والملخصات الشاملة" },
@@ -324,6 +310,17 @@ const SECTIONS = [
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
 ];
+// Which sections hold uploaded files (the rest are tools or contact info).
+const FILE_SECTIONS = ["collections", "plans", "curriculum", "programs"];
+/**
+ * Is this course a whole programme, or one subject inside the prep year?
+ *
+ * "البرامج والتخصصات" — admission requirements, fees, programme overview —
+ * is meaningless on "مهارات الحاسب", which is a single first-year subject.
+ * The section is dropped there rather than opening onto nothing.
+ */
+const PREP_SUBJECTS = new Set(Object.values(TREE.preparatory.plans).flatMap(p => p.subjects));
+const isProgramme = (subject) => !PREP_SUBJECTS.has(subject);
 
 const GRADE_SCALE = [
   { label: "A+", min: 95, pts: 5.00, color: "#059669" }, { label: "A", min: 90, pts: 4.75, color: "#059669" },
@@ -352,7 +349,6 @@ const ACHIEVEMENTS = [
 /* ══════════════════════════════════════════════════════════════
    UTILITIES
    ══════════════════════════════════════════════════════════════ */
-const fmt = (n) => n >= 1000 ? (n / 1000).toFixed(1) + "K" : n;
 const todayKey = () => new Date().toISOString().slice(0, 10);
 const last7Days = () => {
   const out = [];
@@ -489,60 +485,6 @@ function StatCard({ Icon, value, suffix = "", label, color, t }) {
       </div>
       <div style={{ fontSize: 22, fontWeight: 900, color: color, letterSpacing: -0.5, position: "relative" }}>{v.toLocaleString()}{suffix}</div>
       <div style={{ fontSize: 12, color: t.mu, marginTop: 4, fontWeight: 500, position: "relative" }}>{label}</div>
-    </div>
-  );
-}
-
-function FileItem({ name, sz, views, dl, date, r, t, onToast }) {
-  const [dlAnim, setDlAnim] = useState(false);
-  const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[name] || 0));
-  const [hoverRating, setHoverRating] = useState(0);
-  const rateFile = (star) => {
-    const ratings = storage.get("ratings", {});
-    ratings[name] = star;
-    storage.set("ratings", ratings);
-    setMyRating(star);
-    onToast?.(`قيّمت بـ ${star} نجوم`, "success");
-  };
-  const displayRating = myRating > 0 ? ((r + myRating) / 2) : r;
-  return (
-    <div style={{
-      background: t.s2, borderRadius: 12, padding: "12px 14px", border: `1px solid ${t.bd}`,
-      display: "flex", flexDirection: "column", gap: 8, cursor: "pointer", transition: "all .2s",
-    }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2 + "60"}
-      onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: `${P.blue}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-          <FileText size={16} color={P.blue2} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{name}</div>
-          <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>PDF • {sz} • {date}</div>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: t.mu }}><Eye size={11} /> {fmt(views)}</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: t.mu }}><Download size={11} /> {fmt(dl)}</span>
-        <div style={{ display: "flex", gap: 2, marginRight: "auto", alignItems: "center" }}>
-          {[1, 2, 3, 4, 5].map(i => (
-            <span key={i}
-              onClick={() => rateFile(i)}
-              onMouseEnter={() => setHoverRating(i)}
-              onMouseLeave={() => setHoverRating(0)}
-              style={{ fontSize: 13, color: i <= (hoverRating || Math.round(myRating > 0 ? displayRating : r)) ? P.gold : "#ccc", cursor: "pointer", transition: "color .1s" }}>★</span>
-          ))}
-        </div>
-        <button
-          onClick={() => { setDlAnim(true); onToast?.("بدأ التحميل…", "success"); setTimeout(() => setDlAnim(false), 1500); }}
-          style={{
-            background: dlAnim ? `${P.green}20` : `${P.blue}15`, border: "none", borderRadius: 8,
-            padding: "5px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700,
-            color: dlAnim ? P.green : P.blue2, display: "flex", alignItems: "center", gap: 4, transition: "all .3s",
-          }}>
-          <Download size={11} />{dlAnim ? "✓ تم" : "تحميل"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -3216,10 +3158,15 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
       .finally(() => setRealLoading(false));
   }, [subject]);
 
-  const fileData = {
-    collections: FILES.collections(subject), plans: FILES.plans(subject),
-    curriculum: FILES.curriculum(subject), programs: FILES.programs(subject),
-  };
+  // Only the sections that mean something for this course. A prep-year
+  // subject has no admission requirements or fee schedule to show.
+  const sections = SECTIONS.filter(sec => sec.id !== "programs" || isProgramme(subject));
+
+  // Your own cards for this subject, counted for the header badge. Read after
+  // mount, never during render — reading storage while rendering is what made
+  // the whole app die on hydration once already.
+  const [cardCount, setCardCount] = useState(null);
+  useEffect(() => { setCardCount((storage.get(`fc_${subject}`, []) || []).length); }, [subject, open]);
 
   return (
     <div style={{ animation: "fadeUp .35s ease" }}>
@@ -3280,9 +3227,16 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
       <GradeCalc subject={subject} t={t} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {SECTIONS.map((sec) => {
+        {sections.map((sec) => {
           const isOpen = open === sec.id;
           const showBadge = sec.id === "notes" && hasNotes;
+          // How many real files this section holds — so a student can see
+          // what is worth opening instead of tapping through empty drawers.
+          const fileCount = FILE_SECTIONS.includes(sec.id) ? (realFiles[sec.id] || []).length : null;
+          // The personal tools show their state the same way, so you can see
+          // whether you have anything here without opening them.
+          const ownBadge = sec.id === "flashcards" ? (cardCount ? `${cardCount} بطاقة` : null)
+            : sec.id === "notes" ? (hasNotes ? "مكتوبة" : null) : null;
           return (
             <div key={sec.id} style={{
               background: t.s1, borderRadius: 16, border: `1px solid ${isOpen ? sec.color + "50" : t.bd}`,
@@ -3297,8 +3251,22 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                   <sec.Icon size={19} color={sec.color} strokeWidth={2.5} />
                   {showBadge && <div style={{ position: "absolute", top: -3, right: -3, width: 10, height: 10, borderRadius: "50%", background: P.green, border: `2px solid ${t.s1}` }} />}
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: t.tx }}>{sec.label}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                    {sec.label}
+                    {/* The count is the point: you can see which drawers have
+                        something in them without opening all four. */}
+                    {fileCount != null && !realLoading && (
+                      <span style={{
+                        fontSize: 10.5, fontWeight: 800, borderRadius: 6, padding: "1px 7px",
+                        background: fileCount ? `${sec.color}18` : t.s2,
+                        color: fileCount ? sec.color : t.dim,
+                      }}>{fileCount || "فارغ"}</span>
+                    )}
+                    {ownBadge && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, borderRadius: 6, padding: "1px 7px", background: `${P.green}18`, color: P.green }}>{ownBadge}</span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 12, color: t.mu, marginTop: 1 }}>{sec.desc}</div>
                 </div>
                 <div style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform .3s", color: t.dim }}>
@@ -3335,36 +3303,44 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                       ))}
                     </div>
                   )}
-                  {["collections", "plans", "curriculum", "programs"].includes(sec.id) && (() => {
+                  {FILE_SECTIONS.includes(sec.id) && (() => {
+                    const all = realFiles[sec.id] || [];
                     const fq = (fileFilter[sec.id] || "").toLowerCase();
-                    const filteredReal = (realFiles[sec.id] || []).filter(f => !fq || f.name.toLowerCase().includes(fq));
-                    const filteredMock = fileData[sec.id].filter(f => !fq || f.name.toLowerCase().includes(fq));
+                    const shown = all.filter(f => !fq || f.name.toLowerCase().includes(fq));
+                    if (realLoading) {
+                      return <div style={{ textAlign: "center", padding: "18px 0", color: t.mu, fontSize: 13 }}>جارٍ التحميل…</div>;
+                    }
+                    if (all.length === 0) {
+                      return (
+                        <div style={{ textAlign: "center", padding: "18px 8px", color: t.mu, fontSize: 13, lineHeight: 1.8 }}>
+                          <FileText size={24} color={t.dim} style={{ opacity: 0.5, marginBottom: 8 }} />
+                          <div>لا ملفات في هذا القسم بعد</div>
+                          <div style={{ fontSize: 11.5, color: t.dim, marginTop: 3 }}>تُضاف من لوحة التحكم فور توفّرها</div>
+                        </div>
+                      );
+                    }
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s2, borderRadius: 10, padding: "6px 12px", border: `1px solid ${t.bd}` }}>
-                          <Search size={13} color={t.mu} />
-                          <input
-                            placeholder="ابحث في الملفات..."
-                            value={fileFilter[sec.id] || ""}
-                            onChange={e => setFileFilter(prev => ({ ...prev, [sec.id]: e.target.value }))}
-                            style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 13, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
-                          />
-                          {fileFilter[sec.id] && (
-                            <button onClick={() => setFileFilter(prev => ({ ...prev, [sec.id]: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: t.mu, display: "flex", padding: 2 }}>
-                              <X size={12} />
-                            </button>
-                          )}
-                        </div>
-                        {filteredReal.map((f, i) => (
-                          <RealFileItem key={`real-${i}`} file={f} t={t} onToast={onToast} />
-                        ))}
-                        {(realFiles[sec.id] || []).length === 0 && !realLoading && !fq && (
-                          <div style={{ fontSize: 13, color: t.mu, textAlign: "center", padding: "6px 0 10px", borderBottom: `1px dashed ${t.bd}`, marginBottom: 8 }}>
-                            لا توجد ملفات حقيقية بعد
+                        {/* The search box only earns its space once there is
+                            enough here to be worth searching. */}
+                        {all.length > 3 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, background: t.s2, borderRadius: 10, padding: "6px 12px", border: `1px solid ${t.bd}` }}>
+                            <Search size={13} color={t.mu} />
+                            <input
+                              placeholder="ابحث في الملفات..."
+                              value={fileFilter[sec.id] || ""}
+                              onChange={e => setFileFilter(prev => ({ ...prev, [sec.id]: e.target.value }))}
+                              style={{ flex: 1, border: "none", background: "transparent", outline: "none", fontSize: 13, color: t.tx, fontFamily: "inherit", direction: "rtl" }}
+                            />
+                            {fileFilter[sec.id] && (
+                              <button onClick={() => setFileFilter(prev => ({ ...prev, [sec.id]: "" }))} style={{ background: "none", border: "none", cursor: "pointer", color: t.mu, display: "flex", padding: 2 }}>
+                                <X size={12} />
+                              </button>
+                            )}
                           </div>
                         )}
-                        {filteredMock.map((f, i) => <FileItem key={i} {...f} t={t} onToast={onToast} />)}
-                        {fq && filteredReal.length === 0 && filteredMock.length === 0 && (
+                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} />)}
+                        {shown.length === 0 && (
                           <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
                       </div>
