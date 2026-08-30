@@ -1,7 +1,5 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
@@ -560,8 +558,58 @@ function EmptyState({ Icon, title, desc, action, t }) {
   );
 }
 
-function ConfirmDialog({ open, title, desc, onConfirm, onClose, danger, t }) {
+/* ══════════════════════════════════════════════════════════════
+   RESET — say exactly what disappears, and offer the smaller option
+   ══════════════════════════════════════════════════════════════ */
+/**
+ * "إعادة تعيين كل البيانات" used to be one red button behind a vague warning,
+ * so nobody could tell what it actually did. It now lists what is on the
+ * device with live counts and splits into two honest choices:
+ *
+ *   • study data only — favourites, notes, tasks, schedule, exams, statistics.
+ *     The profile and the chosen track survive, which is what most people
+ *     actually want when they say "start the semester fresh".
+ *   • everything — the above plus the profile and the saved account.
+ *
+ * Neither clears the track lock stamp: a reset must not become a way around
+ * the 15-day hold on changing tracks.
+ */
+function ResetDialog({ open, counts, onClose, onResetData, onResetAll, t }) {
+  const [mode, setMode] = useState("data"); // data | all
   if (!open) return null;
+
+  const rows = [
+    { label: "المفضلة", n: counts.favorites, keep: false },
+    { label: "الملاحظات", n: counts.notes, keep: false },
+    { label: "المهام", n: counts.tasks, keep: false },
+    { label: "المحاضرات في جدولك", n: counts.schedule, keep: false },
+    { label: "الاختبارات", n: counts.exams, keep: false },
+    { label: "جلسات التركيز والإحصائيات", n: counts.sessions, keep: false },
+    { label: "ملفك الشخصي ومسارك", n: counts.profile, keep: mode === "data" },
+  ];
+
+  const Choice = ({ id, title, desc, color }) => (
+    <button onClick={() => setMode(id)} style={{
+      width: "100%", textAlign: "right", background: mode === id ? `${color}12` : t.s2,
+      border: `1.5px solid ${mode === id ? color : t.bd}`, borderRadius: 14,
+      padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
+      display: "flex", gap: 10, alignItems: "flex-start",
+    }}>
+      <div style={{
+        width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+        border: `2px solid ${mode === id ? color : t.dim}`,
+        background: mode === id ? color : "transparent",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {mode === id && <Check size={11} color="#fff" strokeWidth={3.5} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{title}</div>
+        <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.65, marginTop: 3 }}>{desc}</div>
+      </div>
+    </button>
+  );
+
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 250,
@@ -569,17 +617,50 @@ function ConfirmDialog({ open, title, desc, onConfirm, onClose, danger, t }) {
       backdropFilter: "blur(4px)", animation: "fadeIn .2s ease",
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: t.s1, borderRadius: 20, padding: 24, maxWidth: 360, width: "100%",
+        background: t.s1, borderRadius: 20, padding: 22, maxWidth: 380, width: "100%",
+        maxHeight: "90vh", overflowY: "auto",
         border: `1px solid ${t.bd}`, boxShadow: t.sh, animation: "scaleIn .25s ease",
       }}>
-        <div style={{ width: 48, height: 48, borderRadius: 14, background: `${danger ? P.red : P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
-          {danger ? <Trash2 size={22} color={P.red} /> : <Shield size={22} color={P.blue2} />}
+        <div style={{ width: 46, height: 46, borderRadius: 14, background: `${P.red}15`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+          <Trash2 size={21} color={P.red} />
         </div>
-        <h3 style={{ fontSize: 17, fontWeight: 800, color: t.tx, marginBottom: 6 }}>{title}</h3>
-        <p style={{ fontSize: 13, color: t.mu, lineHeight: 1.7, marginBottom: 18 }}>{desc}</p>
+        <h3 style={{ fontSize: 17, fontWeight: 900, color: t.tx, marginBottom: 6 }}>إعادة تعيين البيانات</h3>
+        <p style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.7, marginBottom: 16 }}>
+          كل شيء محفوظ على هذا الجهاز وحده. اختر ما تريد حذفه:
+        </p>
+
+        <Choice id="data" color={P.orange}
+          title="بيانات الدراسة فقط"
+          desc="المفضلة والملاحظات والمهام والجدول والإحصائيات — مع الاحتفاظ باسمك ومسارك." />
+        <Choice id="all" color={P.red}
+          title="كل شيء"
+          desc="ما سبق، بالإضافة إلى ملفك الشخصي والحساب المحفوظ على هذا الجهاز." />
+
+        <div style={{ background: t.s2, borderRadius: 14, padding: "12px 14px", margin: "6px 0 14px" }}>
+          {rows.map(r => (
+            <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+              <span style={{ fontSize: 12.5, color: r.keep ? t.mu : t.tx, flex: 1, textDecoration: r.keep ? "none" : "none" }}>{r.label}</span>
+              <span style={{ fontSize: 11.5, color: t.dim, fontFamily: "monospace" }}>{r.n}</span>
+              <span style={{
+                fontSize: 10.5, fontWeight: 800, borderRadius: 6, padding: "2px 7px",
+                background: r.keep ? `${P.green}15` : `${P.red}12`, color: r.keep ? P.green : P.red,
+              }}>{r.keep ? "يبقى" : "يُحذف"}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: `${P.gold}0f`, border: `1px solid ${P.gold}35`, borderRadius: 10, padding: "10px 12px", marginBottom: 16 }}>
+          <Lock size={14} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.65 }}>
+            قفل المسار ({TRACK_LOCK_DAYS} يوماً) لا يُلغى بإعادة التعيين — لتغيير مسارك أرسل طلباً للإدارة.
+          </span>
+        </div>
+
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose} style={{ flex: 1 }}>إلغاء</Btn>
-          <Btn variant={danger ? "danger" : "primary"} onClick={() => { onConfirm(); onClose(); }} style={{ flex: 1 }}>تأكيد</Btn>
+          <Btn variant="danger" onClick={() => { (mode === "all" ? onResetAll : onResetData)(); onClose(); }} style={{ flex: 1.4 }}>
+            <Trash2 size={14} /> {mode === "all" ? "حذف كل شيء" : "إعادة التعيين"}
+          </Btn>
         </div>
       </div>
     </div>
@@ -3961,7 +4042,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onLogout, notes, openCourse, openSettings }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, notes, openCourse, openSettings }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
@@ -3974,7 +4055,10 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
   });
   const patch = (p) => setDraft(d => ({ ...d, ...p }));
   const [requesting, setRequesting] = useState(false);
-  const lockDaysLeft = trackLockRemaining(profile);
+  // The hold follows the stamp, which survives a sign-out and a data reset —
+  // so re-creating the profile can't be used to escape it.
+  const heldTrack = lockStampOf(profile) || trackLock;
+  const lockDaysLeft = trackLockRemaining(heldTrack);
 
   // While the track is locked, a change goes to the admin as a request the
   // student explains, rather than silently editing the profile.
@@ -3988,8 +4072,9 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: profile?.name, studentId: profile?.studentId,
-          currentTrack: trackLabel(profile), reason: reason.trim(),
+          name: profile?.name || draft.name.trim(),
+          studentId: profile?.studentId || draft.studentId.trim(),
+          currentTrack: trackLabel(heldTrack), reason: reason.trim(),
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -4007,13 +4092,20 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
     if (!draft.studentId.trim()) { onToast?.("اكتب رقمك الجامعي", "warn"); return; }
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
 
-    const trackChanged = !profile ||
-      profile.track !== draft.track || profile.college !== draft.college || profile.plan !== draft.plan;
+    // A stamp left over from a sign-out or a reset still holds.
+    if (lockConflicts(heldTrack, draft)) {
+      onToast?.(`مسارك مثبَّت على «${trackLabel(heldTrack)}» — يتبقّى ${lockDaysLeft} يوم`, "warn");
+      return;
+    }
+
+    const trackChanged = !heldTrack ||
+      heldTrack.track !== draft.track || (heldTrack.college || "") !== (draft.college || "") || (heldTrack.plan || "") !== (draft.plan || "");
     if (trackChanged && !confirm(
       `تأكيد مسارك: ${trackLabel(draft)}\n\nبعد التأكيد لا يمكنك تغييره إلا بعد ${TRACK_LOCK_DAYS} يوماً، أو بإرسال طلب للإدارة.`
     )) return;
 
-    setProfile({
+    const confirmedAt = trackChanged ? Date.now() : (heldTrack?.confirmedAt || Date.now());
+    const next = {
       ...profile,
       name: draft.name.trim(),
       studentId: draft.studentId.trim().toUpperCase(),
@@ -4021,9 +4113,11 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       college: draft.college || "",
       plan: draft.plan || "",
       // Only restart the lock when the track actually changed.
-      confirmedAt: trackChanged ? Date.now() : (profile?.confirmedAt || Date.now()),
+      confirmedAt,
       created: profile?.created || Date.now(),
-    });
+    };
+    setProfile(next);
+    setTrackLock?.(lockStampOf(next));
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
   };
@@ -4093,7 +4187,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
 
           {trackLocked ? (
             <div style={{ background: `${P.gold}12`, border: `1px solid ${P.gold}40`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, marginBottom: 4 }}>مسارك: {trackLabel(profile)}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, marginBottom: 4 }}>مسارك: {trackLabel(heldTrack)}</div>
               <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 10 }}>
                 مثبَّت لمدة {TRACK_LOCK_DAYS} يوماً — يتبقّى {lockDaysLeft} يوم. لتغييره قبل ذلك أرسل طلباً للإدارة.
               </div>
@@ -4285,12 +4379,12 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       )}
 
       {!editing && profile && (
-        <button onClick={() => { if (confirm("مسح ملفك الشخصي؟ (اسمك ومسارك المحفوظين على هذا الجهاز فقط)")) onLogout?.(); }} style={{
-          width: "100%", marginTop: 4, background: `${P.red}0d`, border: `1px solid ${P.red}30`, borderRadius: 12,
-          padding: "12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: P.red,
+        <button onClick={() => onSignOut?.()} style={{
+          width: "100%", marginTop: 4, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 12,
+          padding: "12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: t.mu,
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
         }}>
-          <Trash2 size={16} /> مسح ملفي الشخصي
+          <LogOut size={16} /> تسجيل الخروج
         </button>
       )}
     </div>
@@ -4458,21 +4552,8 @@ function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
 /* ══════════════════════════════════════════════════════════════
    SETTINGS PANEL
    ══════════════════════════════════════════════════════════════ */
-function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onToast }) {
+function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onResetAll, resetCounts, profile, rememberAccount, setRememberAccount, onSignOut, onToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const router = useRouter();
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    // Go to the home page, not /login — login is optional now, so the
-    // user stays in the (now signed-out) app. If login is ever required
-    // again, middleware redirects "/" to /login on its own.
-    router.push("/");
-    router.refresh();
-  };
   const Row = ({ Icon, label, desc, children, color = P.blue2 }) => (
     <div style={{
       background: t.s2, borderRadius: 14, padding: "14px 16px", marginBottom: 8,
@@ -4560,23 +4641,33 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSo
             <div style={{ background: `${P.blue2}15`, borderRadius: 8, padding: "3px 8px", fontSize: 11.5, color: P.blue2, fontWeight: 700 }}>PRO</div>
           </div>
 
-          <Btn variant="ghost" onClick={handleSignOut} disabled={signingOut} style={{ width: "100%", marginBottom: 8 }}>
-            <LogOut size={14} /> {signingOut ? "جارٍ تسجيل الخروج..." : "تسجيل الخروج"}
-          </Btn>
+          {profile && (
+            <>
+              <Row Icon={Save} label="حفظ حسابي بعد تسجيل الخروج" color={P.gold}
+                desc={rememberAccount
+                  ? "عند العودة تظهر لك شاشة دخول باسمك ورقمك الجامعي"
+                  : "تسجيل الخروج سيحذف ملفك من هذا الجهاز نهائياً"}>
+                <Toggle on={rememberAccount} onChange={setRememberAccount} />
+              </Row>
+
+              <Btn variant="ghost" onClick={() => { onSignOut?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
+                <LogOut size={14} /> تسجيل الخروج
+              </Btn>
+            </>
+          )}
 
           <Btn variant="danger" onClick={() => setShowConfirm(true)} style={{ width: "100%" }}>
-            <Trash2 size={14} /> إعادة تعيين كل البيانات
+            <Trash2 size={14} /> إعادة تعيين البيانات
           </Btn>
         </div>
       </div>
 
-      <ConfirmDialog
+      <ResetDialog
         open={showConfirm}
-        title="إعادة تعيين البيانات"
-        desc="سيتم حذف جميع المفضلات والملاحظات والإحصائيات والإعدادات. هل أنت متأكد؟"
-        onConfirm={() => { onReset(); onClose(); onToast?.("تم إعادة تعيين جميع البيانات", "info"); }}
+        counts={resetCounts}
+        onResetData={() => { onReset(); onClose(); onToast?.("تم مسح بيانات الدراسة — ملفك ومسارك كما هما", "info"); }}
+        onResetAll={() => { onResetAll(); onClose(); onToast?.("تم حذف كل البيانات من هذا الجهاز", "info"); }}
         onClose={() => setShowConfirm(false)}
-        danger
         t={t}
       />
     </>
@@ -5046,8 +5137,131 @@ const trackLockRemaining = (p) => {
   return left > 0 ? Math.ceil(left / 86400000) : 0;
 };
 
+/** The track+date stamp that outlives a sign-out or a data reset. */
+const lockStampOf = (p) =>
+  p?.confirmedAt ? { track: p.track, college: p.college || "", plan: p.plan || "", confirmedAt: p.confirmedAt } : null;
+
+/**
+ * Does `stamp` still hold this profile to a track?
+ *
+ * The stamp is kept separately from the profile on purpose: signing out or
+ * resetting the data would otherwise be a one-tap way around the 15-day lock,
+ * which is exactly what the lock exists to prevent.
+ */
+const lockConflicts = (stamp, draft) =>
+  !!stamp && trackLockRemaining(stamp) > 0 &&
+  (stamp.track !== draft.track || (stamp.college || "") !== (draft.college || "") || (stamp.plan || "") !== (draft.plan || ""));
+
 // Kept for older code paths that referenced the flat plan map.
 const AUTH_PLANS = TRACK_PLANS;
+
+/* ══════════════════════════════════════════════════════════════
+   RETURN VISIT — the screen a signed-out student comes back to
+   ══════════════════════════════════════════════════════════════ */
+/**
+ * Shown only when an account was saved at sign-out ("حفظ حسابي"). The site
+ * itself stays public — this is a local identity check, not authentication:
+ * the data never left the device, so the ID match is a guard against the
+ * wrong person on a shared phone, nothing more.
+ */
+function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
+  const [name, setName] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [err, setErr] = useState("");
+
+  const submit = () => {
+    if (!name.trim() || !studentId.trim()) { setErr("اكتب اسمك ورقمك الجامعي"); return; }
+    if (studentId.trim().toUpperCase() !== String(saved.studentId || "").toUpperCase()) {
+      setErr("الرقم الجامعي لا يطابق الحساب المحفوظ على هذا الجهاز");
+      return;
+    }
+    onEnter({ ...saved, name: name.trim() });
+  };
+
+  const field = {
+    width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "12px 14px",
+    fontSize: 15, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 800, background: t.bg, overflowY: "auto",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}>
+      <div style={{ width: "100%", maxWidth: 380, animation: "fadeUp .4s ease" }}>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{
+            width: 72, height: 72, borderRadius: 24, margin: "0 auto 14px",
+            background: `linear-gradient(135deg,${P.gold},#e8bf5c)`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: `0 10px 28px ${P.gold}55`, fontSize: 32, fontWeight: 900, color: "#3a2e05",
+          }}>
+            {(saved.name || "ط").trim()[0] || "ط"}
+          </div>
+          <div style={{ fontSize: 21, fontWeight: 900, color: t.tx }}>أهلاً بعودتك</div>
+          <div style={{ fontSize: 13, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
+            أدخل اسمك والرقم الجامعي للمتابعة في ملفك
+          </div>
+        </div>
+
+        {/* One tap for the saved account — no typing needed */}
+        <button onClick={() => onEnter(saved)} style={{
+          width: "100%", background: t.s1, border: `1.5px solid ${P.gold}55`, borderRadius: 16,
+          padding: "14px 16px", cursor: "pointer", fontFamily: "inherit", marginBottom: 14,
+          display: "flex", alignItems: "center", gap: 12, textAlign: "right", boxShadow: t.shSm,
+        }}>
+          <div style={{ width: 40, height: 40, borderRadius: 12, background: `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <User size={18} color={P.gold} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{saved.name}</div>
+            <div style={{ fontSize: 11.5, color: t.mu, fontFamily: "monospace", direction: "ltr", textAlign: "right" }}>{saved.studentId}</div>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 800, color: P.gold, flexShrink: 0 }}>متابعة</span>
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
+          <div style={{ flex: 1, height: 1, background: t.bd }} />
+          <span style={{ fontSize: 11.5, color: t.dim, fontWeight: 700 }}>أو أدخل بياناتك</span>
+          <div style={{ flex: 1, height: 1, background: t.bd }} />
+        </div>
+
+        <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
+        <input value={name} onChange={e => { setName(e.target.value); setErr(""); }} placeholder="اكتب اسمك"
+          style={{ ...field, direction: "rtl", marginBottom: 14 }} />
+
+        <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
+        <input value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }} placeholder="مثال: S220032205"
+          onKeyDown={e => e.key === "Enter" && submit()}
+          style={{ ...field, direction: "ltr", textAlign: "left" }} />
+
+        {err && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 10, padding: "10px 12px", marginTop: 12 }}>
+            <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.6 }}>{err}</span>
+          </div>
+        )}
+
+        <Btn variant="primary" onClick={submit} style={{ width: "100%", marginTop: 16 }}>
+          <LogIn size={15} /> دخول
+        </Btn>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <Btn variant="ghost" size="sm" onClick={onSkip} style={{ flex: 1 }}>
+            تصفّح بدون حساب
+          </Btn>
+          <Btn variant="ghost" size="sm" onClick={() => { if (confirm(`حذف حساب «${saved.name}» المحفوظ على هذا الجهاز؟`)) onForget(); }} style={{ flex: 1, color: P.red }}>
+            <Trash2 size={13} /> ليس أنا
+          </Btn>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: t.dim, textAlign: "center", marginTop: 16, lineHeight: 1.7 }}>
+          الموقع مفتوح للجميع بلا تسجيل — هذه الشاشة لملفك المحفوظ على هذا الجهاز فقط.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // How early a lecture reminder fires. 0 means "when it starts", like an alarm.
 const REMIND_CHOICES = [
@@ -5129,6 +5343,13 @@ export default function App() {
   // preference (name + track + plan) that only personalises the greeting and
   // the plan-scoped calendar; everything works with or without it.
   const [profile, setProfile] = useStored("student_profile", null);
+  // Signing out keeps the account here (unless "حفظ حسابي" is off) so the
+  // return visit can offer it back behind a name + ID screen.
+  const [savedAccount, setSavedAccount] = useStored("saved_account", null);
+  const [rememberAccount, setRememberAccount] = useStored("remember_account", true);
+  const [signedOut, setSignedOut] = useStored("signed_out", false);
+  // The track stamp lives outside the profile on purpose — see lockConflicts.
+  const [trackLock, setTrackLock] = useStored("track_lock", null);
   const [recent, setRecent] = useStored("recent", []);
   const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
   const [sessionLog, setSessionLog] = useStored("sessionLog", []);
@@ -5272,14 +5493,64 @@ export default function App() {
     setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
   };
 
-  const resetAll = () => {
-    storage.clear();
-    setDark(true); setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
+  /**
+   * Wipe the study data but keep who the student is.
+   *
+   * This is the "start the semester fresh" reset. It deliberately leaves the
+   * profile, the saved account, and the settings alone — losing your track to
+   * clear a to-do list would be a surprise, and it would also hand everyone a
+   * one-tap way past the 15-day track lock.
+   */
+  const resetStudyData = () => {
+    setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
     setTotalSessions(0); setSessionLog([]); setGpaCalcs(0); setAiChats(0); setSemesters([]);
-    setSoundOn(true); setWeeklyGoal(15); setSeen(false);
     setTasks([]); setSchedule([]); setExams([]); setXp(0);
     setTab("home"); setCourse(null);
   };
+
+  /** Everything above, plus the identity — the track lock stamp still stands. */
+  const resetAll = () => {
+    const stamp = lockStampOf(profile) || trackLock;
+    storage.clear();
+    resetStudyData();
+    setDark(false); setSoundOn(true); setNotifSoundOn(true); setWeeklyGoal(15);
+    setProfile(null); setSavedAccount(null); setSignedOut(false); setRememberAccount(true);
+    // Re-write the stamp after storage.clear() so the hold survives the wipe.
+    // A fresh object matters: passing the same reference back wouldn't count as
+    // a change, so nothing would be written and the cleared key would stay gone.
+    setTrackLock(stamp ? { ...stamp } : null);
+    setSeen(false); // a full wipe returns the device to its first-run state
+  };
+
+  /**
+   * Sign out of the local profile. With "حفظ حسابي" on, the account is parked
+   * in `saved_account` and the next visit opens on the name + ID screen; with
+   * it off, the profile is gone from this device for good.
+   */
+  const signOut = () => {
+    setTrackLock(lockStampOf(profile) || trackLock);
+    if (rememberAccount && profile) {
+      setSavedAccount(profile);
+      setSignedOut(true);
+      toasts.push("تم تسجيل الخروج — حسابك محفوظ على هذا الجهاز", "info");
+    } else {
+      setSavedAccount(null);
+      setSignedOut(false);
+      toasts.push("تم تسجيل الخروج وحُذف ملفك من هذا الجهاز", "info");
+    }
+    setProfile(null);
+    setTab("home"); setCourse(null);
+  };
+
+  const resetCounts = useMemo(() => ({
+    favorites: (favorites || []).length,
+    notes: Object.keys(notes || {}).length,
+    tasks: (tasks || []).length,
+    schedule: (schedule || []).length,
+    exams: (exams || []).length,
+    sessions: (sessionLog || []).length,
+    profile: profile ? 1 : 0,
+  }), [favorites, notes, tasks, schedule, exams, sessionLog, profile]);
 
   // After the welcome, land straight on the (public) site — no gate.
   const finishOnboard = () => { setSeen(true); setShowOnboard(false); };
@@ -5415,7 +5686,7 @@ export default function App() {
           favorites={favorites} totalSessions={totalSessions}
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
-          onLogout={() => { setProfile(null); toasts.push("تم مسح ملفك الشخصي", "info"); }}
+          onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
@@ -5477,11 +5748,31 @@ export default function App() {
         dark={dark} setDark={setDark} soundOn={soundOn} setSoundOn={setSoundOn}
         notifSoundOn={notifSoundOn} setNotifSoundOn={setNotifSoundOn}
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
-        onReset={resetAll} onToast={toasts.push} />}
+        onReset={resetStudyData} onResetAll={resetAll} resetCounts={resetCounts}
+        profile={profile} rememberAccount={rememberAccount} setRememberAccount={setRememberAccount}
+        onSignOut={signOut} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
+
+      {/* Came back after signing out with an account saved on this device */}
+      {signedOut && savedAccount && !showOnboard && (
+        <WelcomeBack
+          saved={savedAccount} t={t}
+          onEnter={(p) => {
+            setProfile(p);
+            setSavedAccount(p);
+            setSignedOut(false);
+            toasts.push(`أهلاً بعودتك ${p.name} 👋`, "success");
+          }}
+          onForget={() => {
+            setSavedAccount(null); setSignedOut(false);
+            toasts.push("حُذف الحساب المحفوظ من هذا الجهاز", "info");
+          }}
+          onSkip={() => setSignedOut(false)}
+        />
+      )}
 
       {showAI && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: t.bg }}>
