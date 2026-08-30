@@ -1,6 +1,7 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota, PAID_DAILY_LIMIT } from '@/lib/ai-quota'
 import { readUsage, spendMessage, isSubscribed, looksLikeEmail, FREE_MESSAGES } from '@/lib/ai-usage'
+import { scopeRules } from '@/lib/ai-scope'
 
 export const runtime = 'nodejs'
 
@@ -153,13 +154,15 @@ async function callGemini(subject, messages, fileContext) {
 }
 
 function buildSystem(subject, fileContext) {
-  let sys = `أنت مساعد أكاديمي ذكي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية (SEU).
+  // The boundary lives in one place, shared with the quiz route: "عام" is a
+  // university-wide assistant, not a general-purpose one.
+  let sys = `${scopeRules(subject)}
+
 مهمتك مساعدة الطلاب في: شرح المفاهيم، تلخيص الوحدات، حل الأسئلة، وتقديم نصائح دراسية.
 قواعد:
 - أجب دائماً باللغة العربية الفصيحة البسيطة
 - كن موجزاً ودقيقاً ومفيداً
-- استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة
-- إذا سُئلت عن موضوع خارج المادة فوجّه الطالب بلطف`
+- استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة`
   if (fileContext) {
     sys += `\n\n${fileContext}
 عند الإجابة: استند إلى هذه الملفات عند الإمكان، وأشر إلى اسم الملف المصدر.
