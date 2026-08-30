@@ -7,7 +7,7 @@ import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
-  Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard,
+  Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard, MessageCircle,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -100,6 +100,7 @@ const TABS = [
   { id: 'students', label: 'الطلاب', Icon: GraduationCap },
   { id: 'requests', label: 'طلبات المسار', Icon: Send },
   { id: 'subs', label: 'الاشتراكات', Icon: CreditCard },
+  { id: 'support', label: 'الرسائل', Icon: MessageCircle },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
@@ -272,6 +273,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'students' && <StudentsTab flash={flash} />}
         {tab === 'requests' && <TrackRequestsTab flash={flash} />}
         {tab === 'subs' && <SubscriptionsTab flash={flash} />}
+        {tab === 'support' && <SupportTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -1145,6 +1147,127 @@ function TrackRequestsTab({ flash }) {
   )
 }
 
+/* ══════════════ SUPPORT MESSAGES ══════════════ */
+/**
+ * What students write to you.
+ *
+ * There was no route from a student to the site owner at all — the only
+ * contact details anywhere were the university's switchboard, which is not
+ * who you tell that a file is missing.
+ */
+function SupportTab({ flash }) {
+  const [items, setItems] = useState([])
+  const [tableReady, setTableReady] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await apiJSON('/api/admin/support')
+    setItems(data.messages || [])
+    setTableReady(data.tableReady !== false)
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function setStatus(m, status) {
+    let reply = m.admin_reply || ''
+    if (status === 'answered') {
+      const r = window.prompt('ردّك (يُحفظ للسجل):', reply)
+      if (r === null) return
+      reply = r
+    }
+    const { ok, data } = await apiJSON('/api/admin/support', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: m.id, status, reply }),
+    })
+    if (ok) { flash('تم التحديث'); load() } else flash(data.error || 'تعذّر الحفظ', 'error')
+  }
+
+  async function remove(m) {
+    if (!confirm('حذف هذه الرسالة؟')) return
+    await apiJSON('/api/admin/support', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: m.id }),
+    })
+    flash('تم الحذف'); load()
+  }
+
+  const statusMeta = {
+    new: { label: 'جديدة', color: P.gold },
+    read: { label: 'مقروءة', color: P.blue2 },
+    answered: { label: 'أُجيبت', color: P.green },
+  }
+  const unread = items.filter(m => m.status === 'new').length
+  const shown = filter === 'all' ? items : items.filter(m => m.status === filter)
+
+  return (
+    <div>
+      <SectionHeader title={`الرسائل${unread ? ` (${unread} جديدة)` : ''}`} onRefresh={load} />
+
+      {!tableReady && (
+        <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
+          <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>لعرض الرسائل شغّل migration <strong>015_support_messages.sql</strong> في Supabase.</div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {[['all', `الكل (${items.length})`], ['new', `جديدة (${unread})`], ['read', 'مقروءة'], ['answered', 'أُجيبت']].map(([id, label]) => (
+          <button key={id} onClick={() => setFilter(id)} style={{
+            padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
+            fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap',
+            background: filter === id ? P.blue2 : 'var(--soft)',
+            border: `1px solid ${filter === id ? P.blue2 : 'var(--bd)'}`,
+            color: filter === id ? '#fff' : 'var(--mu)',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {loading ? <Loader /> : shown.length === 0 ? <Empty text="لا رسائل" /> : shown.map(m => {
+        const meta = statusMeta[m.status] || statusMeta.new
+        return (
+          <div key={m.id} style={{ ...S.card, borderRight: `3px solid ${meta.color}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: P.purple, background: `${P.purple}18`, borderRadius: 6, padding: '2px 8px' }}>{m.topic || 'سؤال'}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--tx)' }}>{m.student_name || 'زائر'}</span>
+              {m.student_id && <span style={{ fontSize: 11.5, color: 'var(--mu)', fontFamily: 'monospace', direction: 'ltr' }}>{m.student_id}</span>}
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: '2px 8px' }}>{meta.label}</span>
+              <span style={{ fontSize: 11, color: 'var(--mu)', marginRight: 'auto' }}>{fmtDate(m.created_at)}</span>
+            </div>
+            {m.email && <div style={{ fontSize: 12, color: P.blue2, direction: 'ltr', textAlign: 'right', marginBottom: 6 }}>{m.email}</div>}
+            <div style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.85, background: 'var(--bg)', borderRadius: 10, padding: '11px 13px', marginBottom: 10, whiteSpace: 'pre-wrap' }}>{m.message}</div>
+            {m.admin_reply && (
+              <div style={{ fontSize: 12, color: 'var(--mu2)', lineHeight: 1.7, marginBottom: 10 }}>
+                <strong style={{ color: 'var(--tx)' }}>ردّك:</strong> {m.admin_reply}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {m.status === 'new' && (
+                <button onClick={() => setStatus(m, 'read')} style={{ ...S.btn(P.blue2), flex: 1 }}>
+                  <Eye size={14} /> مقروءة
+                </button>
+              )}
+              {m.status !== 'answered' && (
+                <button onClick={() => setStatus(m, 'answered')} style={{ ...S.btn(P.green), flex: 1 }}>
+                  <CheckCircle size={14} /> أُجيبت
+                </button>
+              )}
+              {m.email && (
+                <a href={`mailto:${m.email}?subject=${encodeURIComponent('رد من حلول SEU')}`}
+                  style={{ ...S.btn(P.purple), flex: 1, textDecoration: 'none', justifyContent: 'center' }}>
+                  <Send size={14} /> ردّ بالبريد
+                </a>
+              )}
+              <button onClick={() => remove(m)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ══════════════ AI SUBSCRIPTIONS + PAYMENT DETAILS ══════════════ */
 /**
  * Two jobs in one tab, because they are the same job: what a student is told
@@ -1288,7 +1411,10 @@ function SubscriptionsTab({ flash }) {
             <div style={{ fontSize: 12, color: 'var(--mu2)', marginBottom: 6, direction: 'ltr', textAlign: 'right' }}>{r.email}</div>
             {r.note && <div style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.8, background: 'var(--bg)', borderRadius: 10, padding: '10px 12px', marginBottom: 10 }}>{r.note}</div>}
             {r.receipt_url && (
-              <a href={r.receipt_url} target="_blank" rel="noopener noreferrer"
+              // Receipts are stored privately, so they open through the same
+              // authorised proxy the course files use — the raw blob URL
+              // returns 404 to a browser.
+              <a href={`/api/download?url=${encodeURIComponent(r.receipt_url)}`} target="_blank" rel="noopener noreferrer"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: P.blue2, textDecoration: 'none', marginBottom: 10, fontWeight: 700 }}>
                 <FileText size={13} /> فتح الإيصال
               </a>

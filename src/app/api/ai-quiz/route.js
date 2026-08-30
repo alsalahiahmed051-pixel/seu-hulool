@@ -1,5 +1,6 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota } from '@/lib/ai-quota'
+import { quizScope, isGeneral } from '@/lib/ai-scope'
 
 export const runtime = 'nodejs'
 
@@ -9,7 +10,17 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
 function buildQuizSystem(subject) {
-  return `أنت مساعد اختبارات. أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}". أعد JSON فقط بهذا الشكل: [{"q":"السؤال","options":["أ","ب","ج","د"],"answer":0}]. لا تكتب أي نص خارج JSON.`
+  return `أنت مساعد اختبارات لطلاب الجامعة السعودية الإلكترونية (SEU).
+${quizScope(subject)}
+
+أعد JSON فقط بهذا الشكل: [{"q":"السؤال","options":["أ","ب","ج","د"],"answer":0}]. لا تكتب أي نص خارج JSON.`
+}
+
+/** What we ask for — the general assistant must not produce trivia. */
+function quizAsk(subject) {
+  return isGeneral(subject)
+    ? 'أنشئ 5 أسئلة اختيار من متعدد لطلاب الجامعة السعودية الإلكترونية عن الدراسة الجامعية وأنظمتها ومهارات المذاكرة'
+    : `أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}"`
 }
 
 function parseQuiz(text) {
@@ -26,7 +37,7 @@ async function callAnthropic(subject) {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
     system: buildQuizSystem(subject),
-    messages: [{ role: 'user', content: `أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}"` }],
+    messages: [{ role: 'user', content: quizAsk(subject) }],
   })
   return parseQuiz(res.content[0]?.text || '')
 }
@@ -48,7 +59,7 @@ async function getFreeModels() {
 async function callOpenRouter(subject) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models')
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: `أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}"` }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject) }]
   for (const model of freeModels.slice(0, 5)) {
     try {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -67,7 +78,7 @@ async function callOpenRouter(subject) {
 
 async function callGroq(subject) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: `أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}"` }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject) }]
   for (const model of models) {
     try {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -88,7 +99,7 @@ async function callGemini(subject) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject) }] },
-    contents: [{ role: 'user', parts: [{ text: `أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}"` }] }],
+    contents: [{ role: 'user', parts: [{ text: quizAsk(subject) }] }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
   const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
 import { chatPerMinuteLimit, chatDailyLimit } from '@/lib/rate-limit'
+import { scopeRules } from '@/lib/ai-scope'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60 // seconds
@@ -77,7 +78,7 @@ export async function POST(request) {
   }
 
   // 4) Build system prompt
-  const systemPrompt = `أنت مساعد أكاديمي متخصص في مادة "${subject}" بالجامعة السعودية الإلكترونية (SEU).
+  const systemPrompt = `${scopeRules(subject)}
 - أجب بشكل واضح ومفيد باللغة العربية.
 - قدّم نصائح عملية ومحددة.
 - استخدم القوائم والعناوين عند الحاجة لتنظيم الإجابة.

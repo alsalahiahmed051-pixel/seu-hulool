@@ -645,6 +645,100 @@ function StreakWeek({ activeDays, t }) {
    AI CHAT
    ══════════════════════════════════════════════════════════════ */
 /* ══════════════════════════════════════════════════════════════
+   CONTACT THE SITE — a message that reaches the admin panel
+   ══════════════════════════════════════════════════════════════ */
+const SUPPORT_TOPICS = ["سؤال", "مشكلة", "اقتراح", "ملف ناقص"];
+
+/**
+ * Writing to whoever runs the site.
+ *
+ * The only contact details anywhere were the university's switchboard, which
+ * is not who you tell that a file is missing or a page is broken. No account
+ * needed: name, ID and email are filled in from the profile when there is one
+ * and left optional when there isn't.
+ */
+function SupportSheet({ t, onClose, profile, email, page, onToast }) {
+  const [topic, setTopic] = useState("سؤال");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+
+  const submit = async () => {
+    if (!message.trim()) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/support", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic, message: message.trim(), page,
+          name: profile?.name, studentId: profile?.studentId, email,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) { setSent(true); onToast?.("وصلت رسالتك ✅", "success"); }
+      else onToast?.(safeText(d.error, "تعذّر الإرسال"), "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setSending(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+          <ArrowLeft size={15} /> رجوع
+        </button>
+        <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+          <MessageCircle size={17} color={P.gold} /> تواصل معنا
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        {sent ? (
+          <div style={{ background: `${P.green}0d`, border: `1px solid ${P.green}40`, borderRadius: 16, padding: 20, textAlign: "center" }}>
+            <Check size={30} color={P.green} style={{ marginBottom: 10 }} />
+            <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, marginBottom: 5 }}>وصلت رسالتك</div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.8 }}>سنطّلع عليها قريباً{email ? ` ونرد على ${email}` : ""}.</div>
+            <Btn variant="ghost" size="sm" onClick={onClose} style={{ width: "100%", marginTop: 16 }}>إغلاق</Btn>
+          </div>
+        ) : (
+          <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 16, boxShadow: t.shSm }}>
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 6 }}>الموضوع</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+              {SUPPORT_TOPICS.map(x => {
+                const active = topic === x;
+                return (
+                  <button key={x} onClick={() => setTopic(x)} style={{
+                    padding: "7px 13px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                    fontSize: 12.5, fontWeight: 700,
+                    background: active ? `${P.blue2}18` : t.s2,
+                    border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
+                  }}>{x}</button>
+                );
+              })}
+            </div>
+
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 6 }}>رسالتك</div>
+            <textarea value={message} onChange={e => setMessage(e.target.value)} rows={6} autoFocus
+              placeholder="اكتب ما تريد قوله — كلما كان أوضح كان الرد أسرع"
+              style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "12px 14px", fontSize: 13.5, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", resize: "vertical", lineHeight: 1.8, marginBottom: 12 }} />
+
+            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.8, marginBottom: 14 }}>
+              {profile?.name || email
+                ? <>يُرسَل معها: {[profile?.name, profile?.studentId, email].filter(Boolean).join(" · ")}</>
+                : "لم تُكمل ملفك — أرسل بريدك داخل الرسالة إن أردت ردّاً."}
+            </div>
+
+            <Btn variant="primary" onClick={submit} disabled={sending || !message.trim()} style={{ width: "100%" }}>
+              <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال"}
+            </Btn>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    AI SUBSCRIPTION — payment details and the request
    ══════════════════════════════════════════════════════════════ */
 // Shown until an admin saves real details in the panel. Deliberately blank
@@ -660,21 +754,61 @@ const DEFAULT_PAYMENT = {
 };
 
 /**
+ * Where a receipt is stored: its own prefix, an ASCII-safe name.
+ *
+ * Arabic filenames off a phone survive the URL fine but are unreadable in the
+ * store listing, and a name with no extension makes the browser guess at the
+ * type later. Keep the extension, replace the rest with the date.
+ */
+function receiptPath(file) {
+  const ext = (String(file.name || "").match(/\.[a-z0-9]{1,5}$/i)?.[0] || "").toLowerCase()
+    || ({ "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "application/pdf": ".pdf" }[file.type] || "");
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `receipts/${stamp}-receipt${ext}`;
+}
+
+/**
+ * Turn a failed receipt upload into something a student can act on.
+ *
+ * The Blob SDK collapses every refusal from our token route into the English
+ * "Failed to retrieve the client token", so ask the route itself why.
+ */
+async function receiptError(e) {
+  const msg = String(e?.message || "");
+  if (e?.name === "TimeoutError" || /abort/i.test(msg)) {
+    return "الرفع استغرق وقتاً طويلاً — تحقّق من الاتصال وأعد المحاولة، أو أرسل الطلب بملاحظة بدل الصورة";
+  }
+  if (/client token/i.test(msg)) {
+    try {
+      const d = await fetch("/api/receipt-upload").then(r => r.json());
+      if (d && d.ok === false && d.reason) return d.reason;
+    } catch { /* offline; fall through to the generic message */ }
+    return "تعذّر بدء الرفع — أعد المحاولة، أو أرسل الطلب بملاحظة بدل الصورة";
+  }
+  return "تعذّر رفع الإيصال" + (msg ? ` (${msg})` : "");
+}
+
+/**
  * The sheet a student sees when the free questions run out.
  *
  * It says plainly what they get, what it costs, where to send it, and that a
  * human checks the receipt — no automatic payment, no card form, nothing that
  * pretends to be an instant purchase.
  */
-function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
+function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast }) {
   const { data: content } = useSiteContent("payment");
   const pay = { ...DEFAULT_PAYMENT, ...(content && typeof content === "object" ? content : {}) };
   const [note, setNote] = useState("");
+  // A student who never set an email in the assistant would otherwise send a
+  // request we cannot answer. Ask for it here rather than sending them away.
+  const [emailDraft, setEmailDraft] = useState(email || "");
+  const savedEmail = looksLikeEmail(email) ? email : (looksLikeEmail(emailDraft) ? emailDraft.trim() : "");
   const [receipt, setReceipt] = useState("");     // the stored blob URL
   const [receiptName, setReceiptName] = useState("");
   const [uploading, setUploading] = useState(0);  // 0 = idle, else percent
   const fileRef = useRef(null);
   const [sending, setSending] = useState(false);
+  const [justSent, setJustSent] = useState(false);
   const [mine, setMine] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -686,23 +820,33 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
       .finally(() => setLoaded(true));
   }, []);
 
-  /** Send the picture straight to storage, then keep only its URL. */
+  /**
+   * Send the picture straight to storage, then keep only its URL.
+   *
+   * Stored privately: a bank transfer screenshot must not be readable from a
+   * guessable URL. The admin reads it back through /api/download, which is the
+   * same authorised proxy the course files use.
+   */
   const pickReceipt = async (file) => {
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { onToast?.("الحجم أكبر من ٥ ميجابايت", "warn"); return; }
     setUploading(1);
     try {
       const { upload } = await import("@vercel/blob/client");
-      const blob = await upload(file.name, file, {
-        access: "public",
+      const blob = await upload(receiptPath(file), file, {
+        access: "private",
+        contentType: file.type || undefined,   // a share sheet can drop the extension
         handleUploadUrl: "/api/receipt-upload",
+        // Without this a stalled phone connection spins forever with no way
+        // out — the "it keeps uploading and never finishes" report.
+        abortSignal: AbortSignal.timeout(90_000),
         onUploadProgress: (p) => setUploading(Math.max(1, Math.round(p.percentage))),
       });
       setReceipt(blob.url);
       setReceiptName(file.name);
       onToast?.("تم إرفاق الإيصال ✅", "success");
     } catch (e) {
-      onToast?.("تعذّر رفع الإيصال: " + (e?.message || ""), "error");
+      onToast?.(await receiptError(e), "error");
     }
     setUploading(0);
   };
@@ -710,15 +854,25 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
   const submit = async () => {
     setSending(true);
     try {
+      // Save a newly typed email so the assistant and any later request use
+      // the same one — the student should type it once, not every time.
+      if (savedEmail && savedEmail !== email) onSaveEmail?.(savedEmail);
       const res = await fetch("/api/subscription", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profile?.name, studentId: profile?.studentId,
-          email, note: note.trim(), receiptUrl: receipt.trim(),
+          email: savedEmail, note: note.trim(), receiptUrl: receipt.trim(),
         }),
       });
       const d = await res.json().catch(() => ({}));
-      if (res.ok) { onToast?.("وصل طلبك — ستصلك النتيجة قريباً ✅", "success"); setMine({ status: "pending" }); }
+      if (res.ok) {
+        onToast?.("وصل طلبك ✅", "success");
+        // A toast disappears. This is the answer to "did it actually send?" —
+        // it stays on screen, and survives closing and reopening the sheet
+        // because the pending request comes back from the server.
+        setJustSent(true);
+        setMine({ status: "pending" });
+      }
       else onToast?.(safeText(d.error, "تعذّر إرسال الطلب"), "error");
     } catch { onToast?.("تعذّر الاتصال", "error"); }
     setSending(false);
@@ -760,10 +914,22 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
         )}
 
         {/* An answered request replaces the form: nothing to fill in twice. */}
-        {loaded && mine && mine.status === "pending" && (
-          <div style={{ background: t.s1, border: `1px solid ${P.blue2}45`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: P.blue2, marginBottom: 5 }}>طلبك قيد المراجعة</div>
-            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.8 }}>{safeText(pay.verifyNote, DEFAULT_PAYMENT.verifyNote)}</div>
+        {mine && mine.status === "pending" && (
+          <div style={{ background: justSent ? `${P.green}0d` : t.s1, border: `1px solid ${justSent ? `${P.green}45` : `${P.blue2}45`}`, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 900, color: justSent ? P.green : P.blue2, marginBottom: 6, display: "flex", alignItems: "center", gap: 7 }}>
+              {justSent ? <><Check size={16} /> تم إرسال طلبك</> : "طلبك قيد المراجعة"}
+            </div>
+            <div style={{ fontSize: 12.5, color: t.tx, lineHeight: 1.9 }}>
+              {justSent && <>وصل الطلب وهو الآن <b>قيد الانتظار</b> حتى يُراجَع ويُفعَّل.<br /></>}
+              {safeText(pay.verifyNote, DEFAULT_PAYMENT.verifyNote)}
+            </div>
+            {justSent && (
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.9, marginTop: 10, background: t.s2, borderRadius: 10, padding: "10px 12px" }}>
+                أُرسل مع الطلب: {profile?.name || "—"} · {profile?.studentId || "—"} · {savedEmail || "—"}
+                {receipt ? " · صورة الإيصال ✅" : " · بدون صورة إيصال"}
+                <br />ستظهر حالة الطلب هنا، ويصلك الرد على بريدك.
+              </div>
+            )}
           </div>
         )}
         {loaded && mine && mine.status === "rejected" && (
@@ -844,14 +1010,33 @@ function SubscribeSheet({ t, onClose, profile, email, gate, onToast }) {
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="أي تفاصيل تساعد في المراجعة"
               style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", resize: "vertical", marginBottom: 12 }} />
 
-            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, marginBottom: 12 }}>
-              يُرسَل مع الطلب: اسمك، رقمك الجامعي، وبريدك ({email || "—"}).
+            {/* The email is how you answer them. If the assistant never asked
+                for one, ask here rather than turning the request away. */}
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>
+              بريدك الإلكتروني {looksLikeEmail(email) ? "" : "— لتصلك نتيجة الطلب"}
+            </div>
+            <input type="email" inputMode="email" value={emailDraft} onChange={e => setEmailDraft(e.target.value)}
+              placeholder="مثال: name@example.com" dir="ltr"
+              style={{
+                width: "100%", border: `1px solid ${emailDraft && !looksLikeEmail(emailDraft) ? `${P.orange}70` : t.bd}`,
+                borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx,
+                fontFamily: "inherit", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 6,
+              }} />
+            {emailDraft && !looksLikeEmail(emailDraft) && (
+              <div style={{ fontSize: 11, color: P.orange, marginBottom: 8 }}>تحقّق من صيغة البريد</div>
+            )}
+
+            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "8px 0 12px" }}>
+              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {profile?.studentId || "رقمك الجامعي"} · {savedEmail || "بريدك"}.
             </div>
 
             <Btn variant="primary" onClick={submit} style={{ width: "100%" }}
-              disabled={sending || !profileComplete(profile) || (!receipt.trim() && !note.trim())}>
+              disabled={sending || !profileComplete(profile) || !savedEmail || (!receipt.trim() && !note.trim())}>
               <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال الطلب"}
             </Btn>
+            {!sending && !savedEmail && (
+              <div style={{ fontSize: 11.5, color: t.mu, textAlign: "center", marginTop: 8 }}>أضف بريدك أعلاه لتتمكن من الإرسال</div>
+            )}
           </div>
         )}
       </div>
@@ -3159,21 +3344,35 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
    ══════════════════════════════════════════════════════════════ */
 function PDFViewer({ file, onClose }) {
   const blobSrc = file.blobUrl || file.url || "";
-  const viewUrl = `/api/download?url=${encodeURIComponent(blobSrc)}`;
-  const dlUrl = `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
+  // Prefer the short route when the file has an id; it is the same content
+  // either way, but the tab a student opens then shows a tidy URL.
+  const base = file.id ? `/f/${file.id}` : `/api/download?url=${encodeURIComponent(blobSrc)}`;
+  const viewUrl = base;
+  const dlUrl = file.id ? `/f/${file.id}?dl=1` : `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "#050a16", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#0a1426", borderBottom: "1px solid #1c2e48", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#0a1426", borderBottom: "1px solid #1c2e48", flexShrink: 0 }}>
         <button onClick={onClose} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "7px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontFamily: "inherit", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
           <ArrowLeft size={14} /> رجوع
         </button>
         <div style={{ flex: 1, color: "#e4ecf8", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
-        <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 13, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+        <a href={dlUrl} title="تحميل الملف" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.18)", color: "#fff", borderRadius: 8, padding: "7px 11px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
           <Download size={12} /> تحميل
         </a>
       </div>
+
       <iframe src={viewUrl} style={{ flex: 1, border: "none", width: "100%", background: "#fff" }} title={file.name} />
+
+      {/* Phone browsers frequently refuse to render a PDF inside an iframe and
+          leave a blank panel with no explanation. This is always visible, so
+          there is a way through rather than a dead end. */}
+      <div style={{ flexShrink: 0, background: "#0a1426", borderTop: "1px solid #1c2e48", padding: "9px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: 1, fontSize: 11.5, color: "#8fa6c4", lineHeight: 1.6 }}>لا يظهر الملف؟ بعض المتصفحات لا تعرض PDF هنا.</span>
+        <a href={viewUrl} target="_blank" rel="noopener noreferrer" style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, color: "#fff", borderRadius: 8, padding: "7px 13px", fontSize: 12.5, fontWeight: 800, textDecoration: "none", display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+          <ExternalLink size={12} /> افتح في تبويب
+        </a>
+      </div>
     </div>
   );
 }
@@ -3195,7 +3394,11 @@ function RealFileItem({ file, t, onToast }) {
   };
 
   const shareFile = () => {
-    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/api/download?url=${encodeURIComponent(blobSrc)}`;
+    // Short and on our own domain — the old link embedded the whole encoded
+    // storage URL, which wrapped in every chat app and published where the
+    // file actually lives.
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const url = file.id ? `${origin}/f/${file.id}` : `${origin}/api/download?url=${encodeURIComponent(blobSrc)}`;
     if (typeof navigator !== "undefined" && navigator.clipboard) {
       navigator.clipboard.writeText(url).then(() => onToast?.("تم نسخ رابط الملف", "success")).catch(() => onToast?.("تعذّر النسخ", "error"));
     } else {
@@ -4983,14 +5186,19 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "" }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
-  const [editing, setEditing] = useState(!profile);
+  // Not auto-opened: a visitor landing on حسابي gets the explanation above
+  // and chooses, instead of being dropped into a form they didn't ask for.
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
     name: profile?.name || "",
     studentId: profile?.studentId || "",
-    track: profile?.track || "تحضيري",
+    email: profile?.email || aiEmail || "",
+    // Empty, not "تحضيري": a preselected track made the plan chips (خطة أ/ب)
+    // appear before the student had chosen anything.
+    track: profile?.track || "",
     college: profile?.college || "",
     plan: profile?.plan || "",
   });
@@ -5031,6 +5239,8 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
     if (!draft.studentId.trim()) { onToast?.("اكتب رقمك الجامعي", "warn"); return; }
+    if (draft.email.trim() && !looksLikeEmail(draft.email)) { onToast?.("صيغة البريد غير صحيحة", "warn"); return; }
+    if (!draft.track) { onToast?.("اختر مسارك أولاً", "warn"); return; }
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
 
     // A stamp left over from a sign-out or a reset still holds.
@@ -5050,6 +5260,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       ...profile,
       name: draft.name.trim(),
       studentId: draft.studentId.trim().toUpperCase(),
+      email: draft.email.trim(),
       track: draft.track,
       college: draft.college || "",
       plan: draft.plan || "",
@@ -5058,6 +5269,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       created: profile?.created || Date.now(),
     };
     setProfile(next);
+    if (next.email && next.email !== aiEmail) setAiEmail?.(next.email);
     setTrackLock?.(lockStampOf(next));
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
@@ -5069,7 +5281,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
     fetch("/api/student/identity", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: next.name, studentId: next.studentId, email: aiEmail || "",
+        name: next.name, studentId: next.studentId, email: next.email || aiEmail || "",
         track: next.track, college: next.college, plan: next.plan,
       }),
     })
@@ -5122,7 +5334,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => { setDraft({ name: profile?.name || "", studentId: profile?.studentId || "", track: profile?.track || "تحضيري", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+            <button onClick={() => { setDraft({ name: profile?.name || "", studentId: profile?.studentId || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
               <Edit3 size={16} />
             </button>
             <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
@@ -5131,6 +5343,44 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           </div>
         </div>
       </div>
+
+      {/* No profile yet: say what one adds rather than dropping straight into
+          a form, so browsing doesn't feel like a locked door. */}
+      {!editing && !profile && (
+        <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
+            <Compass size={17} color={P.gold} />
+            <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>أنت تتصفّح بدون حساب</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 14 }}>
+            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. الملف الشخصي يضيف
+            <strong style={{ color: t.tx }}> مسارك وموادك ومهامك ومفضلتك</strong> — ويُحفظ على جهازك، بلا كلمة مرور.
+          </div>
+          {/* Signing out used to leave the student here with no way back in:
+              browse mode was a one-way door. If an account is parked on this
+              device, offer it first — creating a second profile is not the fix
+              for having signed out of the first. */}
+          {savedAccount ? (
+            <>
+              <Btn variant="gold" onClick={() => onLogin?.()} style={{ width: "100%", marginBottom: 8 }}>
+                <LogIn size={15} /> دخول إلى «{savedAccount.name}»
+              </Btn>
+              <Btn variant="ghost" onClick={() => setEditing(true)} style={{ width: "100%" }}>
+                <Plus size={15} /> ملف جديد بدلاً منه
+              </Btn>
+            </>
+          ) : (
+            <Btn variant="gold" onClick={() => setEditing(true)} style={{ width: "100%" }}>
+              <User size={15} /> إنشاء حساب
+            </Btn>
+          )}
+          <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
+            {savedAccount
+              ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
+              : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
+          </div>
+        </div>
+      )}
 
       {/* Setup / edit card (no email, no password) */}
       {editing && (
@@ -5143,8 +5393,19 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
 
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="مثال: S220032205"
+          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="مثال: S222222222"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+
+          {/* One place to set the email, shared with the assistant — it used
+              to be asked for separately in the chat and nowhere else. */}
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>
+            البريد الإلكتروني <span style={{ fontWeight: 600, color: t.dim }}>— للمساعد وطلبات الاشتراك</span>
+          </label>
+          <input value={draft.email} onChange={e => patch({ email: e.target.value })} placeholder="you@example.com" type="email"
+            style={{ width: "100%", border: `1.5px solid ${draft.email && !looksLikeEmail(draft.email) ? P.red : t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: draft.email && !looksLikeEmail(draft.email) ? 5 : 14 }} />
+          {draft.email && !looksLikeEmail(draft.email) && (
+            <div style={{ fontSize: 11.5, color: P.red, marginBottom: 12 }}>صيغة البريد غير صحيحة</div>
+          )}
 
           {trackLocked ? (
             <div style={{ background: `${P.gold}12`, border: `1px solid ${P.gold}40`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
@@ -5583,7 +5844,7 @@ function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
 /* ══════════════════════════════════════════════════════════════
    SETTINGS PANEL
    ══════════════════════════════════════════════════════════════ */
-function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onResetAll, resetCounts, profile, rememberAccount, setRememberAccount, onSignOut, onToast }) {
+function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onResetAll, resetCounts, profile, rememberAccount, setRememberAccount, onSignOut, onSupport, onToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const Row = ({ Icon, label, desc, children, color = P.blue2 }) => (
     <div style={{
@@ -5686,6 +5947,10 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSo
               </Btn>
             </>
           )}
+
+          <Btn variant="ghost" onClick={() => { onSupport?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
+            <MessageCircle size={14} /> تواصل معنا
+          </Btn>
 
           <Btn variant="danger" onClick={() => setShowConfirm(true)} style={{ width: "100%" }}>
             <Trash2 size={14} /> إعادة تعيين البيانات
@@ -6311,16 +6576,20 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
         </Btn>
 
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <Btn variant="ghost" size="sm" onClick={onSkip} style={{ flex: 1 }}>
-            تصفّح بدون حساب
+          {/* "Browse" is a real destination, not a way of giving up: the site
+              is fully usable without a profile, so say so rather than making
+              this look like the failure branch. */}
+          <Btn variant="ghost" size="sm" onClick={onSkip} style={{ flex: 1.4 }}>
+            <Compass size={13} /> تصفّح الموقع
           </Btn>
-          <Btn variant="ghost" size="sm" onClick={() => { if (confirm(`حذف حساب «${saved.name}» المحفوظ على هذا الجهاز؟`)) onForget(); }} style={{ flex: 1, color: P.red }}>
-            <Trash2 size={13} /> ليس أنا
+          <Btn variant="ghost" size="sm" onClick={() => { if (confirm(`حذف حساب «${saved.name}» المحفوظ على هذا الجهاز، والبدء بملف جديد؟`)) onForget(); }} style={{ flex: 1, color: P.red }}>
+            <Plus size={13} /> ملف جديد
           </Btn>
         </div>
 
-        <div style={{ fontSize: 11.5, color: t.dim, textAlign: "center", marginTop: 16, lineHeight: 1.7 }}>
-          الموقع مفتوح للجميع بلا تسجيل — هذه الشاشة لملفك المحفوظ على هذا الجهاز فقط.
+        <div style={{ fontSize: 11.5, color: t.dim, textAlign: "center", marginTop: 16, lineHeight: 1.8 }}>
+          الموقع مفتوح للجميع بلا تسجيل — المواد والتقويم والجدول والمساعد تعمل كلها بلا حساب.
+          <br />الملف الشخصي يضيف مسارك ومهامك ومفضلتك، ويُحفظ على جهازك.
         </div>
       </div>
     </div>
@@ -6606,6 +6875,7 @@ export default function App() {
   // The subscription sheet, opened from the assistant when the free
   // allowance runs out (or from the "اشتراك" chip at any time).
   const [subOpen, setSubOpen] = useState(null); // null | gate object
+  const [supportOpen, setSupportOpen] = useState(false);
   const [aiEmail, setAiEmail] = useStored("ai_email", "");
   const requestAI = (seed) => { setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true); };
 
@@ -6654,11 +6924,13 @@ export default function App() {
     if (rememberAccount && profile) {
       setSavedAccount(profile);
       setSignedOut(true);
-      toasts.push("تم تسجيل الخروج — حسابك محفوظ على هذا الجهاز", "info");
+      // Say where the way back in is: signing out drops you into browse mode,
+      // and "how do I log in again?" was the first thing everyone asked.
+      toasts.push("تم تسجيل الخروج — للدخول مرة أخرى افتح «حسابي»", "info");
     } else {
       setSavedAccount(null);
       setSignedOut(false);
-      toasts.push("تم تسجيل الخروج وحُذف ملفك من هذا الجهاز", "info");
+      toasts.push("تم تسجيل الخروج وحُذف ملفك — يمكنك إنشاء حساب من «حسابي»", "info");
     }
     setProfile(null);
     setTab("home"); setCourse(null);
@@ -6685,15 +6957,13 @@ export default function App() {
     // "المسارات" (plural, all of them) stops being true.
     { id: "explore", Icon: Compass, label: profile?.track ? "مساري" : "المسارات" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
-    // The academic calendar earns its own tab: it was buried as a link on the
-    // links page and a strip at the bottom of home, and it is the thing
-    // students check most often after their own schedule.
+    // حسابي sits in the middle and is raised: it is the one tab that is about
+    // you rather than about content, and the middle of a seven-tab row is the
+    // easiest place to hit with a thumb.
+    { id: "profile", Icon: CircleUser, label: "حسابي", raised: true },
     { id: "calendar", Icon: Calendar, label: "التقويم" },
     { id: "fav", Icon: Star, label: "المفضلة" },
-    // "روابط SEU" → "روابط": with seven tabs the extra word was enough to
-    // push حسابي off the edge of a phone screen.
     { id: "links", Icon: Link2, label: "روابط" },
-    { id: "profile", Icon: CircleUser, label: "حسابي" },
   ];
 
   return (
@@ -6819,8 +7089,9 @@ export default function App() {
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
           onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
-          tasks={tasks} schedule={schedule} aiEmail={aiEmail}
-          notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
+          tasks={tasks} schedule={schedule} aiEmail={aiEmail} setAiEmail={setAiEmail}
+          notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)}
+          savedAccount={savedAccount} onLogin={() => setSignedOut(true)} />}
       </div>
 
       {/* Floating AI assistant button — reachable from any main tab */}
@@ -6843,32 +7114,40 @@ export default function App() {
         position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
         background: dark ? "rgba(8,19,13,.96)" : "rgba(255,255,255,.96)",
         backdropFilter: "blur(24px)", borderTop: `1px solid ${t.bd}`,
-        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        overflowX: "auto", overflowY: "visible", WebkitOverflowScrolling: "touch",
         scrollbarWidth: "none", padding: "6px 8px 14px",
         boxShadow: dark ? "0 -1px 20px rgba(0,0,0,.5)" : "0 -1px 16px rgba(0,80,45,.08)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
-        {TABS.map(({ id, Icon, label }) => {
+        {TABS.map(({ id, Icon, label, raised }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
           const badge = id === "home" ? overdueTasks : 0;
+          // The raised tab keeps a filled circle whether or not it is active,
+          // so it reads as the anchor of the row rather than another chip.
+          const filled = raised || active;
           return (
             <button key={id} onClick={() => { setTab(id); setCourse(null); }}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 background: "none", border: "none", cursor: "pointer", padding: "5px 4px",
                 transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
+                marginTop: raised ? -14 : 0,
               }}>
               <div style={{
-                width: 38, height: 31, borderRadius: 12, position: "relative",
-                background: active ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
+                width: raised ? 46 : 38, height: raised ? 46 : 31,
+                borderRadius: raised ? "50%" : 12, position: "relative",
+                background: filled ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 transition: "all .25s",
-                boxShadow: active ? `0 3px 12px ${P.blue}55` : "none",
+                border: raised ? `3px solid ${dark ? "rgba(8,19,13,.96)" : "rgba(255,255,255,.96)"}` : "none",
+                boxShadow: raised
+                  ? `0 4px 14px ${P.blue}66${active ? `, 0 0 0 2px ${P.gold}` : ""}`
+                  : (active ? `0 3px 12px ${P.blue}55` : "none"),
               }}>
-                <Icon size={17} color={active ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
+                <Icon size={raised ? 21 : 17} color={filled ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
                 {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
               </div>
-              <span style={{ fontSize: 10.5, fontWeight: active ? 800 : 500, color: active ? P.blue2 : t.dim, whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 10.5, fontWeight: active || raised ? 800 : 500, color: active ? P.blue2 : (raised ? t.tx : t.dim), whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
@@ -6883,12 +7162,15 @@ export default function App() {
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
         onReset={resetStudyData} onResetAll={resetAll} resetCounts={resetCounts}
         profile={profile} rememberAccount={rememberAccount} setRememberAccount={setRememberAccount}
-        onSignOut={signOut} onToast={toasts.push} />}
+        onSignOut={signOut} onSupport={() => setSupportOpen(true)} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
+      {supportOpen && <SupportSheet t={t} onClose={() => setSupportOpen(false)}
+        profile={profile} email={profile?.email || aiEmail} page={tab} onToast={toasts.push} />}
+
       {subOpen && <SubscribeSheet t={t} onClose={() => setSubOpen(null)} profile={profile}
-        email={aiEmail} gate={subOpen} onToast={toasts.push} />}
+        email={profile?.email || aiEmail} onSaveEmail={setAiEmail} gate={subOpen} onToast={toasts.push} />}
 
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
 

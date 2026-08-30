@@ -1,5 +1,6 @@
 import { get } from '@vercel/blob'
 import { downloadPerMinuteLimit, callerKey } from '@/lib/rate-limit'
+import { safeContentType } from '@/lib/content-type'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -45,9 +46,13 @@ export async function GET(request) {
     // Private blobs must be read through the SDK; a raw authorised fetch is
     // not sufficient for them. Fall back to fetch for older public objects.
     let body = null
+    let contentType = null
     try {
       const got = await get(url, { access: 'private' })
-      if (got?.stream) body = got.stream
+      if (got?.stream) {
+        body = got.stream
+        contentType = got.blob?.contentType || null
+      }
     } catch { /* fall through to the public path */ }
 
     if (!body) {
@@ -56,22 +61,34 @@ export async function GET(request) {
       })
       if (!res.ok) return new Response('File not found', { status: 404 })
       body = res.body
+      contentType = res.headers.get('content-type')
     }
 
     const rawName = url.split('/').pop()?.split('?')[0] || 'file.pdf'
     // strip timestamp prefix like "1748123456789-filename.pdf"
-    const filename = rawName.replace(/^\d{13}-/, '')
+    let filename
+    try { filename = decodeURIComponent(rawName) } catch { filename = rawName }
+    filename = filename.replace(/^\d{13}-/, '')
 
-    const disposition = forceDownload
-      ? `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`
-      : `inline; filename*=UTF-8''${encodeURIComponent(filename)}`
+    // This used to be hardcoded to application/pdf, which was fine while the
+    // store held only course PDFs. Transfer receipts are photos, so a
+    // hardcoded type made every one of them arrive as a broken PDF.
+    const type = safeContentType(contentType, filename)
+    // A type we don't recognise is never rendered — it is handed over as a
+    // file, so nothing unknown can execute on our own origin.
+    const inline = !forceDownload && type !== 'application/octet-stream'
+
+    const disposition = inline
+      ? `inline; filename*=UTF-8''${encodeURIComponent(filename)}`
+      : `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`
 
     return new Response(body, {
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type': type,
         'Content-Disposition': disposition,
         'Cache-Control': 'private, max-age=3600',
         'X-Frame-Options': 'SAMEORIGIN',
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   } catch (err) {

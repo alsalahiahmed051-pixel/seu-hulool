@@ -58,7 +58,29 @@ function memoryLimiter(max, windowMs, prefix) {
       if (hits.size > 5000) for (const [hk, hv] of hits) if (hv.reset <= now) hits.delete(hk)
       return { success: e.count <= max, remaining: Math.max(0, max - e.count), reset: e.reset }
     },
+    // Read the budget without spending one. Used by diagnostics that explain a
+    // refusal — asking "why was I blocked?" must not itself block you.
+    async peek(key) {
+      const e = hits.get(`${prefix}:${key}`)
+      if (!e || e.reset <= Date.now()) return max
+      return Math.max(0, max - e.count)
+    },
   }
+}
+
+/**
+ * How many requests `key` has left, without consuming one.
+ * Works for both the Upstash limiter and the in-process fallback.
+ */
+export async function remainingFor(limiter, key) {
+  try {
+    if (typeof limiter.peek === 'function') return await limiter.peek(key)
+    if (typeof limiter.getRemaining === 'function') {
+      const r = await limiter.getRemaining(key)
+      return typeof r === 'number' ? r : (r?.remaining ?? 1)
+    }
+  } catch { /* a diagnostic must never be the thing that fails */ }
+  return 1
 }
 
 export const redis = hasUpstash
@@ -125,6 +147,20 @@ export const trackRequestLimit = hasUpstash
       prefix: 'rl:trackreq',
     })
   : memoryLimiter(Number(process.env.TRACK_REQUEST_HOURLY_LIMIT || 3), 3_600_000, 'trackreq')
+
+// Receipt uploads get their own budget rather than sharing the track-change
+// one. Three per hour, shared with track requests and support messages across
+// everyone behind a campus or carrier NAT, meant a student could be refused a
+// receipt upload for an hour without having done anything — and the Blob SDK
+// reports that as an unexplained failure. A dozen an hour still bounds abuse:
+// nothing is stored until the request itself is sent.
+export const receiptUploadLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(Number(process.env.RECEIPT_UPLOAD_HOURLY_LIMIT || 12), '1 h'),
+      prefix: 'rl:receipt',
+    })
+  : memoryLimiter(Number(process.env.RECEIPT_UPLOAD_HOURLY_LIMIT || 12), 3_600_000, 'receipt')
 
 // File downloads are open to every visitor (no accounts), so cap how fast one
 // client can pull PDFs through the proxy.
