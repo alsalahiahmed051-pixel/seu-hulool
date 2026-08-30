@@ -2085,10 +2085,272 @@ const fmtCountdown = (mins) => {
   const d = Math.floor(mins / 1440); return `خلال ${d} يوم`;
 };
 
+/* ── Timetable geometry ───────────────────────────────────────
+   The weekly grid puts time on the vertical axis, so a lecture's position
+   and height have to come from real minutes. Everything below turns the
+   stored "HH:MM" + duration into pixels.                                  */
+
+const DURATION_CHOICES = [30, 50, 60, 90, 120, 180];
+// Lectures saved before durations existed were all treated as a single slot.
+const LECTURE_DEFAULT_MIN = 50;
+const lectureMinutes = (lec) => {
+  const d = Number(lec?.duration);
+  return Number.isFinite(d) && d > 0 ? d : LECTURE_DEFAULT_MIN;
+};
+/** "HH:MM" → minutes past midnight, or null when unparseable. */
+const timeToMin = (s) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((s || "").trim());
+  if (!m) return null;
+  const h = +m[1], mi = +m[2];
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+};
+const minToTime = (n) => `${String(Math.floor(n / 60) % 24).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+const fmtDuration = (min) => {
+  if (min < 60) return `${min} د`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h} س ${m} د` : `${h} ساعة`;
+};
+
+/**
+ * The hour window the grid should draw.
+ *
+ * Fitting it to the lectures that exist keeps the timetable dense: a student
+ * whose day runs 08:00–14:00 shouldn't scroll past an empty midnight. Falls
+ * back to a normal teaching day when nothing is scheduled yet.
+ */
+function gridWindow(schedule) {
+  let lo = Infinity, hi = -Infinity;
+  (schedule || []).forEach(lec => {
+    const start = timeToMin(lec.time);
+    if (start == null) return;
+    lo = Math.min(lo, start);
+    hi = Math.max(hi, start + lectureMinutes(lec));
+  });
+  if (!Number.isFinite(lo)) return { from: 8 * 60, to: 16 * 60 };
+  // Snap outward to whole hours so the labels line up with the rules.
+  return { from: Math.floor(lo / 60) * 60, to: Math.max(Math.ceil(hi / 60) * 60, Math.floor(lo / 60) * 60 + 120) };
+}
+
+/**
+ * Lay one day's lectures out, splitting the column between any that overlap.
+ *
+ * Two lectures at the same hour would otherwise draw on top of each other and
+ * one would be invisible. Overlapping runs are grouped, and each member takes
+ * an equal share of the width — the standard calendar treatment.
+ */
+function layoutDay(lecs) {
+  const items = (lecs || [])
+    .map(lec => {
+      const start = timeToMin(lec.time);
+      return start == null ? null : { lec, start, end: start + lectureMinutes(lec) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const out = [];
+  let group = [], groupEnd = -Infinity;
+  const flush = () => {
+    group.forEach((it, i) => out.push({ ...it, cols: group.length, col: i }));
+    group = []; groupEnd = -Infinity;
+  };
+  items.forEach(it => {
+    if (group.length && it.start >= groupEnd) flush();
+    group.push(it);
+    groupEnd = Math.max(groupEnd, it.end);
+  });
+  flush();
+  return out;
+}
+
+/**
+ * The weekly timetable — time on the vertical axis, days across.
+ *
+ * The old "grid" was a column of cards per day, so an 08:00 lecture and a
+ * 14:00 one sat in the same place and a three-hour gap looked identical to a
+ * ten-minute one. Here every lecture is positioned and sized by real minutes,
+ * which is the whole point of looking at a week at once: you see your gaps,
+ * your long days, and where two things collide.
+ */
+function WeekGrid({ schedule, DAYS, DAY_COLORS, todayAr, nowTick, t }) {
+  const PX_PER_MIN = 1.05;            // ~63px an hour: a 50-min lecture stays readable
+  const HEAD = 42;                    // day-header height
+  const { from, to } = useMemo(() => gridWindow(schedule), [schedule]);
+  const height = (to - from) * PX_PER_MIN;
+  const hours = [];
+  for (let m = from; m <= to; m += 60) hours.push(m);
+
+  const byDay = useMemo(() => {
+    const map = {};
+    DAYS.forEach(d => { map[d] = layoutDay((schedule || []).filter(l => l.day === d)); });
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule, DAYS]);
+
+  // The "now" line, drawn only when the current time is inside the window and
+  // today is a column. nowTick re-runs this every 30s with the countdown.
+  const nowMin = useMemo(() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowTick]);
+  const showNow = DAYS.includes(todayAr) && nowMin >= from && nowMin <= to;
+
+  // Only two or three columns fit on a phone, so today can start off-screen.
+  // Bring it into view once, without the vertical jump scrollIntoView causes.
+  //
+  // Measured with getBoundingClientRect and moved with scrollBy on purpose:
+  // scrollLeft in an RTL scroller runs from a negative minimum up to 0 in this
+  // engine and 0..max in others, so any arithmetic on offsetLeft/scrollWidth
+  // is convention-dependent and silently clamps to a no-op. Viewport rects and
+  // a relative delta mean the same thing everywhere.
+  const scrollerRef = useRef(null);
+  const todayRef = useRef(null);
+  useEffect(() => {
+    const box = scrollerRef.current, col = todayRef.current;
+    if (!box || !col) return;
+    const b = box.getBoundingClientRect(), c = col.getBoundingClientRect();
+    const delta = (c.left + c.width / 2) - (b.left + b.width / 2);
+    if (Math.abs(delta) > 4) box.scrollBy({ left: delta, behavior: "smooth" });
+  }, [todayAr]);
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div ref={scrollerRef} style={{ overflowX: "auto", paddingBottom: 8, scrollbarWidth: "thin" }}>
+        <div style={{ display: "flex", minWidth: "min-content", position: "relative" }}>
+          {/* Time gutter — first in RTL flow, so it sits on the right. Sticky,
+              because the days now scroll under it and times you can't see
+              turn the whole grid back into guesswork. */}
+          <div style={{
+            width: 46, flexShrink: 0, position: "sticky", right: 0, zIndex: 4,
+            paddingTop: HEAD, background: t.bg,
+          }}>
+            <div style={{ height, position: "relative" }}>
+              {hours.map(m => (
+                <div key={m} style={{
+                  position: "absolute", top: (m - from) * PX_PER_MIN, insetInlineStart: 0, insetInlineEnd: 6,
+                  transform: "translateY(-50%)", fontSize: 10.5, fontWeight: 700,
+                  color: t.dim, textAlign: "left", direction: "ltr", fontVariantNumeric: "tabular-nums",
+                }}>{minToTime(m)}</div>
+              ))}
+            </div>
+          </div>
+
+          {DAYS.map(day => {
+            const isToday = day === todayAr;
+            const dc = DAY_COLORS[day];
+            const laid = byDay[day] || [];
+            return (
+              <div key={day} ref={isToday ? todayRef : undefined} style={{ width: 124, flexShrink: 0, marginInlineStart: 6 }}>
+                <div style={{
+                  height: HEAD, borderRadius: "10px 10px 0 0", display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center",
+                  background: isToday ? dc : `${dc}18`, border: `1px solid ${isToday ? dc : dc + "30"}`, borderBottom: "none",
+                }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 900, color: isToday ? "#fff" : dc }}>{day}</div>
+                  <div style={{ fontSize: 9.5, color: isToday ? "rgba(255,255,255,.85)" : t.mu }}>
+                    {isToday ? "اليوم" : laid.length ? `${laid.length} محاضرة` : "فارغ"}
+                  </div>
+                </div>
+
+                <div style={{
+                  position: "relative", height, background: isToday ? `${dc}0a` : t.s2,
+                  border: `1px solid ${dc}30`, borderTop: "none", borderRadius: "0 0 10px 10px", overflow: "hidden",
+                }}>
+                  {/* Hour rules, so the eye can read a card's height as time */}
+                  {hours.map(m => (
+                    <div key={m} style={{
+                      position: "absolute", top: (m - from) * PX_PER_MIN, left: 0, right: 0,
+                      height: 1, background: t.bd, opacity: 0.55,
+                    }} />
+                  ))}
+
+                  {isToday && showNow && (
+                    <div style={{ position: "absolute", top: (nowMin - from) * PX_PER_MIN, left: 0, right: 0, height: 2, background: P.red, zIndex: 3 }}>
+                      <div style={{ position: "absolute", insetInlineEnd: 0, top: -3, width: 8, height: 8, borderRadius: "50%", background: P.red }} />
+                    </div>
+                  )}
+
+                  {laid.map(({ lec, start, end, cols, col }) => {
+                    const online = lec.mode === "أونلاين";
+                    const mc = online ? P.blue2 : P.green;
+                    const mins = end - start;
+                    const joinable = online && isUrl(lec.room);
+                    // Overlapping lectures share the width instead of hiding
+                    // one another; 2% gutters keep the split legible.
+                    const w = 100 / cols;
+                    // A flex column with the time and place fixed and the
+                    // title free to shrink: on a short card the subject name
+                    // truncates cleanly instead of the room being sliced in
+                    // half at the bottom edge.
+                    const card = (
+                      <>
+                        <div style={{ flexShrink: 0, lineHeight: 1.15, fontSize: 10, fontWeight: 900, color: mc, direction: "ltr", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                          {lec.time}–{minToTime(end)}
+                        </div>
+                        <div style={{
+                          flex: "1 1 auto", minHeight: 0, margin: "1px 0",
+                          fontSize: 11.5, fontWeight: 800, color: t.tx, lineHeight: 1.28,
+                          overflow: "hidden", display: "-webkit-box", WebkitLineClamp: mins >= 90 ? 3 : 2, WebkitBoxOrient: "vertical",
+                        }}>{lec.course}</div>
+                        <div style={{ flexShrink: 0, lineHeight: 1.15, display: "flex", alignItems: "center", gap: 3, fontSize: 9, fontWeight: 800, color: mc, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                          {online ? <Monitor size={9} /> : <MapPin size={9} />}
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {online ? (joinable ? "دخول" : "أونلاين") : (lec.room && !isUrl(lec.room) ? lec.room : "حضوري")}
+                          </span>
+                        </div>
+                      </>
+                    );
+                    const style = {
+                      position: "absolute",
+                      top: (start - from) * PX_PER_MIN + 1,
+                      height: Math.max(mins * PX_PER_MIN - 2, 44),
+                      insetInlineStart: `${col * w}%`, width: `calc(${w}% - 3px)`,
+                      background: t.s1, border: `1px solid ${mc}40`, borderInlineEnd: `3px solid ${mc}`,
+                      borderRadius: 7, padding: "3px 6px", overflow: "hidden",
+                      textAlign: "right", fontFamily: "inherit", textDecoration: "none",
+                      display: "flex", flexDirection: "column", boxSizing: "border-box", zIndex: 2,
+                    };
+                    return joinable ? (
+                      <a key={lec.id} href={linkHref(lec.room)} target="_blank" rel="noopener noreferrer"
+                        title={`${lec.course} — ${lec.time} (${fmtDuration(mins)}) — دخول المحاضرة`} style={{ ...style, cursor: "pointer" }}>
+                        {card}
+                      </a>
+                    ) : (
+                      <div key={lec.id} title={`${lec.course} — ${lec.time} (${fmtDuration(mins)})`} style={style}>
+                        {card}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", fontSize: 11, color: t.mu, padding: "0 2px" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: P.green }} /> حضوري
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 9, height: 9, borderRadius: 2, background: P.blue2 }} /> أونلاين
+        </span>
+        {showNow && (
+          <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ width: 12, height: 2, background: P.red }} /> الآن
+          </span>
+        )}
+        <span style={{ marginInlineStart: "auto", color: t.dim }}>ارتفاع البطاقة = مدة المحاضرة</span>
+      </div>
+    </div>
+  );
+}
+
 function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const [showAdd, setShowAdd] = useState(false);
   const [view, setView] = useSyncedSetting("scheduleView", "schedule_view", "list"); // list | grid
-  const [newLec, setNewLec] = useState({ course: "", customCourse: false, day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true, remindMin: 5 });
+  const [newLec, setNewLec] = useState({ course: "", customCourse: false, day: "الأحد", time: "08:00", duration: LECTURE_DEFAULT_MIN, room: "", mode: "حضوري", remind: true, remindMin: 5 });
   const [nowTick, setNowTick] = useState(0);
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
@@ -2128,8 +2390,13 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
 
   const addLecture = () => {
     if (!newLec.course.trim()) return;
-    setSchedule(s => [...(s || []), { ...newLec, remindMin: Number(newLec.remindMin ?? 5), id: Date.now() }]);
-    setNewLec({ course: "", customCourse: false, day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true, remindMin: 5 });
+    setSchedule(s => [...(s || []), {
+      ...newLec,
+      remindMin: Number(newLec.remindMin ?? 5),
+      duration: Number(newLec.duration) || LECTURE_DEFAULT_MIN,
+      id: Date.now(),
+    }]);
+    setNewLec({ course: "", customCourse: false, day: "الأحد", time: "08:00", duration: LECTURE_DEFAULT_MIN, room: "", mode: "حضوري", remind: true, remindMin: 5 });
     setShowAdd(false);
     onToast?.("تم إضافة المحاضرة", "success");
   };
@@ -2181,7 +2448,10 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
       )}
 
       {view === "list" && DAYS.map(day => {
-        const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
+        // Sort on parsed minutes: a lecture saved without a time would make
+        // localeCompare throw on undefined.
+        const dayLecs = (schedule || []).filter(l => l.day === day)
+          .sort((a, b) => (timeToMin(a.time) ?? 1e9) - (timeToMin(b.time) ?? 1e9));
         const isToday = day === todayAr;
         const dc = DAY_COLORS[day];
         return (
@@ -2209,7 +2479,11 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
                       <span style={{ fontSize: 10, fontWeight: 800, color: mc, background: `${mc}18`, borderRadius: 5, padding: "1px 6px" }}>{lec.mode || "حضوري"}</span>
                     </div>
                     <div style={{ fontSize: 12, color: t.mu, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {lec.time}{lec.room && !isUrl(lec.room) ? ` • ${lec.room}` : ""}
+                      <span style={{ direction: "ltr", display: "inline-block", fontVariantNumeric: "tabular-nums" }}>
+                        {lec.time}{timeToMin(lec.time) != null && `–${minToTime(timeToMin(lec.time) + lectureMinutes(lec))}`}
+                      </span>
+                      {` • ${fmtDuration(lectureMinutes(lec))}`}
+                      {lec.room && !isUrl(lec.room) ? ` • ${lec.room}` : ""}
                     </div>
                   </div>
                   {online && isUrl(lec.room) && (
@@ -2236,47 +2510,10 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
             لا محاضرات بعد — أضِف محاضراتك لتظهر في الشبكة الأسبوعية.
           </div>
         ) : (
-          <div style={{ overflowX: "auto", paddingBottom: 8, marginBottom: 8, scrollbarWidth: "thin" }}>
-            <div style={{ display: "flex", gap: 8, minWidth: "min-content" }}>
-              {DAYS.map(day => {
-                const dayLecs = (schedule || []).filter(l => l.day === day).sort((a, b) => a.time.localeCompare(b.time));
-                const isToday = day === todayAr;
-                const dc = DAY_COLORS[day];
-                return (
-                  <div key={day} style={{ width: 132, flexShrink: 0, display: "flex", flexDirection: "column" }}>
-                    <div style={{ textAlign: "center", padding: "7px 4px", borderRadius: "10px 10px 0 0", background: isToday ? dc : `${dc}18`, border: `1px solid ${isToday ? dc : dc + "30"}`, borderBottom: "none" }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 900, color: isToday ? "#fff" : dc }}>{day}</div>
-                      <div style={{ fontSize: 10, color: isToday ? "rgba(255,255,255,.85)" : t.mu, marginTop: 1 }}>{isToday ? "اليوم" : `${dayLecs.length} محاضرة`}</div>
-                    </div>
-                    <div style={{ flex: 1, background: t.s2, border: `1px solid ${dc}30`, borderTop: "none", borderRadius: "0 0 10px 10px", padding: 6, display: "flex", flexDirection: "column", gap: 6, minHeight: 90 }}>
-                      {dayLecs.length === 0 ? (
-                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.dim }}>—</div>
-                      ) : dayLecs.map(lec => {
-                        const online = lec.mode === "أونلاين";
-                        const mc = online ? P.blue2 : P.green;
-                        const inner = (
-                          <>
-                            <div style={{ fontSize: 11.5, fontWeight: 900, color: mc, display: "flex", alignItems: "center", gap: 4 }}>
-                              <Clock size={11} /> {lec.time}
-                            </div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, lineHeight: 1.35, margin: "3px 0" }}>{lec.course}</div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9.5, fontWeight: 800, color: mc }}>
-                              {online ? <Monitor size={10} /> : <MapPin size={10} />}
-                              {online ? "أونلاين" : (lec.room && !isUrl(lec.room) ? lec.room : "حضوري")}
-                            </div>
-                          </>
-                        );
-                        const cardStyle = { textAlign: "right", display: "block", width: "100%", background: t.s1, border: `1px solid ${mc}30`, borderRight: `3px solid ${mc}`, borderRadius: 8, padding: "7px 8px", textDecoration: "none", fontFamily: "inherit", cursor: online && isUrl(lec.room) ? "pointer" : "default" };
-                        return online && isUrl(lec.room)
-                          ? <a key={lec.id} href={linkHref(lec.room)} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={cardStyle}>{inner}</a>
-                          : <div key={lec.id} style={cardStyle}>{inner}</div>;
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <WeekGrid
+            schedule={schedule} DAYS={DAYS} DAY_COLORS={DAY_COLORS}
+            todayAr={todayAr} nowTick={nowTick} t={t}
+          />
         )
       )}
 
@@ -2324,6 +2561,28 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
               </select>
               <input type="time" value={newLec.time} onChange={e => setNewLec(p => ({ ...p, time: e.target.value }))}
                 style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none" }} />
+            </div>
+            {/* Duration drives the card's height in the weekly grid, so the
+                week reads at a glance instead of every lecture looking equal. */}
+            <div>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>
+                المدة {timeToMin(newLec.time) != null && (
+                  <span style={{ color: t.dim, fontWeight: 600 }}>
+                    — تنتهي {minToTime(timeToMin(newLec.time) + (Number(newLec.duration) || LECTURE_DEFAULT_MIN))}
+                  </span>
+                )}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {DURATION_CHOICES.map(min => {
+                  const active = (Number(newLec.duration) || LECTURE_DEFAULT_MIN) === min;
+                  return (
+                    <button key={min} onClick={() => setNewLec(p => ({ ...p, duration: min }))} style={{
+                      padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                      background: active ? `${P.blue2}18` : t.s2, border: `1.5px solid ${active ? P.blue2 : t.bd}`, color: active ? P.blue2 : t.mu,
+                    }}>{fmtDuration(min)}</button>
+                  );
+                })}
+              </div>
             </div>
             <input placeholder={newLec.mode === "أونلاين" ? "رابط المحاضرة (Zoom / Teams)" : "القاعة (اختياري)"} value={newLec.room} onChange={e => setNewLec(p => ({ ...p, room: e.target.value }))}
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: newLec.mode === "أونلاين" ? "ltr" : "rtl", textAlign: newLec.mode === "أونلاين" ? "left" : "right", outline: "none" }} />
