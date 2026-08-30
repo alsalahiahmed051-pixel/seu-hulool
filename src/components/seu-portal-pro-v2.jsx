@@ -389,6 +389,28 @@ function playBell() {
   } catch (e) {}
 }
 
+// Two-tone chime for notifications — deliberately different from the single
+// timer bell so a lecture reminder is recognisable without looking.
+function playChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const tone = (freq, at, dur = 0.45) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine"; o.frequency.value = freq;
+      const t0 = ctx.currentTime + at;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.28, t0 + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.start(t0); o.stop(t0 + dur + 0.05);
+    };
+    tone(880, 0);      // ding
+    tone(1174.7, 0.18); // dong (a fourth up)
+    setTimeout(() => ctx.close(), 1200);
+  } catch { /* audio blocked until the user interacts — fine */ }
+}
+
 /* ══════════════════════════════════════════════════════════════
    TOAST SYSTEM
    ══════════════════════════════════════════════════════════════ */
@@ -1955,7 +1977,21 @@ function SemesterChart({ semesters, t }) {
    SCHEDULE PAGE
    ══════════════════════════════════════════════════════════════ */
 const WEEK_ORDER = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
-const isUrl = (s) => /^https?:\/\//i.test((s || "").trim());
+// A lecture "room" is a link when it has a scheme OR simply looks like a
+// domain — people paste "meet.google.com/abc" far more often than the full
+// https:// form, and requiring the scheme hid the join button entirely.
+const isUrl = (s) => {
+  const v = (s || "").trim();
+  if (!v) return false;
+  if (/^https?:\/\//i.test(v)) return true;
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$|\?)/i.test(v);
+};
+// Always hand the browser an absolute URL; a bare domain in href would be
+// treated as a path on our own site and go nowhere.
+const linkHref = (s) => {
+  const v = (s || "").trim();
+  return /^https?:\/\//i.test(v) ? v : "https://" + v.replace(/^\/+/, "");
+};
 const fmtCountdown = (mins) => {
   if (mins <= 0) return "الآن";
   if (mins < 60) return `خلال ${mins} دقيقة`;
@@ -1966,7 +2002,7 @@ const fmtCountdown = (mins) => {
 function SchedulePage({ t, schedule, setSchedule, onToast }) {
   const [showAdd, setShowAdd] = useState(false);
   const [view, setView] = useSyncedSetting("scheduleView", "schedule_view", "list"); // list | grid
-  const [newLec, setNewLec] = useState({ course: "", day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true });
+  const [newLec, setNewLec] = useState({ course: "", customCourse: false, day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true, remindMin: 5 });
   const [nowTick, setNowTick] = useState(0);
   const [notifPerm, setNotifPerm] = useState(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
   const DAYS = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
@@ -2006,8 +2042,8 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
 
   const addLecture = () => {
     if (!newLec.course.trim()) return;
-    setSchedule(s => [...(s || []), { ...newLec, id: Date.now() }]);
-    setNewLec({ course: "", day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true });
+    setSchedule(s => [...(s || []), { ...newLec, remindMin: Number(newLec.remindMin ?? 5), id: Date.now() }]);
+    setNewLec({ course: "", customCourse: false, day: "الأحد", time: "08:00", room: "", mode: "حضوري", remind: true, remindMin: 5 });
     setShowAdd(false);
     onToast?.("تم إضافة المحاضرة", "success");
   };
@@ -2044,7 +2080,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
             <span style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: (nextLec.lec.mode === "أونلاين" ? P.blue2 : P.green), borderRadius: 6, padding: "1px 8px" }}>{nextLec.lec.mode || "حضوري"}</span>
           </div>
           {nextLec.lec.mode === "أونلاين" && isUrl(nextLec.lec.room) && (
-            <a href={nextLec.lec.room} target="_blank" rel="noopener noreferrer" style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", color: "#fff", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, textDecoration: "none" }}>
+            <a href={linkHref(nextLec.lec.room)} target="_blank" rel="noopener noreferrer" style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.15)", color: "#fff", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, textDecoration: "none" }}>
               <Play size={13} /> دخول المحاضرة
             </a>
           )}
@@ -2054,7 +2090,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
       {/* Notifications enable prompt */}
       {notifPerm !== "granted" && notifPerm !== "unsupported" && (schedule || []).length > 0 && (
         <button onClick={enableNotifs} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: `${P.gold}15`, border: `1px solid ${P.gold}40`, color: t.tx, borderRadius: 12, padding: "10px 14px", marginBottom: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700 }}>
-          <Bell size={15} color={P.gold} /> فعّل التنبيه قبل المحاضرة بـ 5 دقائق
+          <Bell size={15} color={P.gold} /> فعّل تنبيهات المحاضرات على هذا الجهاز
         </button>
       )}
 
@@ -2091,11 +2127,11 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
                     </div>
                   </div>
                   {online && isUrl(lec.room) && (
-                    <a href={lec.room} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={{ background: `${P.blue2}18`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.blue2, display: "flex" }}>
+                    <a href={linkHref(lec.room)} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={{ background: `${P.blue2}18`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: P.blue2, display: "flex" }}>
                       <Play size={13} />
                     </a>
                   )}
-                  <button onClick={() => toggleRemind(lec.id)} title={lec.remind === false ? "تفعيل التذكير" : "التذكير مفعّل"} style={{ background: lec.remind === false ? `${t.mu}15` : `${P.gold}18`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: lec.remind === false ? t.mu : P.gold, display: "flex" }}>
+                  <button onClick={() => toggleRemind(lec.id)} title={lec.remind === false ? "تفعيل التذكير" : `التذكير: ${remindLabel(lectureLead(lec))}`} style={{ background: lec.remind === false ? `${t.mu}15` : `${P.gold}18`, border: "none", borderRadius: 7, padding: 6, cursor: "pointer", color: lec.remind === false ? t.mu : P.gold, display: "flex" }}>
                     <Bell size={13} />
                   </button>
                   <button onClick={() => removeLecture(lec.id)} style={{ background: `${P.red}15`, border: "none", borderRadius: 7, padding: 5, cursor: "pointer", color: P.red, display: "flex" }}>
@@ -2146,7 +2182,7 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
                         );
                         const cardStyle = { textAlign: "right", display: "block", width: "100%", background: t.s1, border: `1px solid ${mc}30`, borderRight: `3px solid ${mc}`, borderRadius: 8, padding: "7px 8px", textDecoration: "none", fontFamily: "inherit", cursor: online && isUrl(lec.room) ? "pointer" : "default" };
                         return online && isUrl(lec.room)
-                          ? <a key={lec.id} href={lec.room} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={cardStyle}>{inner}</a>
+                          ? <a key={lec.id} href={linkHref(lec.room)} target="_blank" rel="noopener noreferrer" title="دخول المحاضرة" style={cardStyle}>{inner}</a>
                           : <div key={lec.id} style={cardStyle}>{inner}</div>;
                       })}
                     </div>
@@ -2162,8 +2198,22 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
         <div style={{ background: t.s1, borderRadius: 16, padding: 14, border: `1px solid ${t.bd}`, marginTop: 8, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10 }}>إضافة محاضرة جديدة</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input placeholder="اسم المادة (مطلوب)" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
-              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            {/* Course: pick from the full catalogue, or type one that isn't in it */}
+            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700 }}>المادة</div>
+            <select value={ALL_SUBJECTS_LIST.includes(newLec.course) ? newLec.course : (newLec.course ? "__custom" : "")}
+              onChange={e => {
+                const v = e.target.value;
+                setNewLec(p => ({ ...p, course: v === "__custom" ? "" : v, customCourse: v === "__custom" }));
+              }}
+              style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }}>
+              <option value="">اختر المادة…</option>
+              {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="__custom">✏️ مادة أخرى (كتابة يدوية)</option>
+            </select>
+            {(newLec.customCourse || (newLec.course && !ALL_SUBJECTS_LIST.includes(newLec.course))) && (
+              <input autoFocus placeholder="اكتب اسم المادة" value={newLec.course} onChange={e => setNewLec(p => ({ ...p, course: e.target.value }))}
+                style={{ border: `1.5px solid ${P.blue2}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
+            )}
             {/* Mode selector */}
             <div style={{ display: "flex", gap: 8 }}>
               {["حضوري", "أونلاين"].map(mode => {
@@ -2193,8 +2243,24 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
               style={{ border: `1px solid ${t.bd}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: newLec.mode === "أونلاين" ? "ltr" : "rtl", textAlign: newLec.mode === "أونلاين" ? "left" : "right", outline: "none" }} />
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: t.tx, cursor: "pointer", padding: "2px 2px" }}>
               <input type="checkbox" checked={newLec.remind !== false} onChange={e => setNewLec(p => ({ ...p, remind: e.target.checked }))} style={{ accentColor: P.gold, width: 16, height: 16 }} />
-              <Bell size={14} color={P.gold} /> تذكيري قبل المحاضرة بـ 5 دقائق
+              <Bell size={14} color={P.gold} /> ذكّرني بهذه المحاضرة
             </label>
+            {newLec.remind !== false && (
+              <div>
+                <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>متى يصلني التذكير؟</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {REMIND_CHOICES.map(({ min, label }) => {
+                    const active = Number(newLec.remindMin ?? 5) === min;
+                    return (
+                      <button key={min} onClick={() => setNewLec(p => ({ ...p, remindMin: min }))} style={{
+                        padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                        background: active ? `${P.gold}20` : t.s2, border: `1.5px solid ${active ? P.gold : t.bd}`, color: active ? P.gold : t.mu,
+                      }}>{label}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <Btn variant="ghost" size="sm" onClick={() => setShowAdd(false)} style={{ flex: 1 }}>إلغاء</Btn>
               <Btn variant="primary" size="sm" onClick={addLecture} style={{ flex: 2 }} disabled={!newLec.course.trim()}>
@@ -4293,7 +4359,7 @@ function NotifPanel({ t, onClose, notifs, setNotifs, profile, onToast }) {
 /* ══════════════════════════════════════════════════════════════
    SETTINGS PANEL
    ══════════════════════════════════════════════════════════════ */
-function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyGoal, setWeeklyGoal, onReset, onToast }) {
+function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSoundOn, setNotifSoundOn, weeklyGoal, setWeeklyGoal, onReset, onToast }) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const router = useRouter();
@@ -4360,6 +4426,9 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, weeklyG
             <Toggle on={dark} onChange={setDark} />
           </Row>
 
+          <Row Icon={notifSoundOn ? Volume2 : VolumeX} label="أصوات الإشعارات" desc="نغمة عند تذكير المحاضرات والإعلانات" color={P.gold}>
+            <Toggle on={notifSoundOn} onChange={(v) => { setNotifSoundOn(v); if (v) playChime(); }} />
+          </Row>
           <Row Icon={soundOn ? Volume2 : VolumeX} label="أصوات المؤقت" desc="تنبيه صوتي عند انتهاء الجلسة" color={P.green}>
             <Toggle on={soundOn} onChange={setSoundOn} />
           </Row>
@@ -4835,9 +4904,24 @@ const AUTH_TRACKS = [
 ];
 const AUTH_PLANS = { "تحضيري": ["خطة أ", "خطة ب"] };
 
-// Fires a reminder 5 minutes before any lecture on the current day (while the
-// app is open): in-app toast + sound + a browser notification if permitted.
-function useLectureReminders(schedule, soundOn, push) {
+// How early a lecture reminder fires. 0 means "when it starts", like an alarm.
+const REMIND_CHOICES = [
+  { min: 0, label: "عند البدء" },
+  { min: 5, label: "قبل 5 د" },
+  { min: 10, label: "قبل 10 د" },
+  { min: 15, label: "قبل 15 د" },
+  { min: 30, label: "قبل 30 د" },
+  { min: 60, label: "قبل ساعة" },
+];
+const remindLabel = (m) => (REMIND_CHOICES.find(c => c.min === Number(m))?.label) || `قبل ${m} د`;
+// Lectures saved before this existed keep the original 5-minute lead.
+const lectureLead = (lec) => (lec.remindMin == null ? 5 : Number(lec.remindMin));
+
+/**
+ * Fires each lecture's reminder at its own lead time (while the app is open):
+ * in-app toast + chime + a browser notification when permitted.
+ */
+function useLectureReminders(schedule, notifSoundOn, push) {
   const firedRef = useRef(null);
   if (firedRef.current === null) firedRef.current = new Set();
   useEffect(() => {
@@ -4850,14 +4934,18 @@ function useLectureReminders(schedule, soundOn, push) {
         if (lec.day !== today || !lec.time || lec.remind === false) return;
         const [h, m] = String(lec.time).split(":").map(Number);
         if (isNaN(h)) return;
+        const lead = lectureLead(lec);
         const diff = (h * 60 + m) - nowMin;
         const key = `${lec.id}_${dateKey}`;
-        if (diff > 0 && diff <= 5 && !firedRef.current.has(key)) {
+        // "At start" still needs a small window so a tick can land inside it.
+        const due = lead === 0 ? (diff <= 0 && diff > -2) : (diff > 0 && diff <= lead);
+        if (due && !firedRef.current.has(key)) {
           firedRef.current.add(key);
           const where = lec.mode === "أونلاين" ? "أونلاين" : (lec.room || "");
-          const body = `${lec.course} تبدأ خلال ${diff} دقيقة${where ? " • " + where : ""}`;
+          const when = diff <= 0 ? "تبدأ الآن" : `تبدأ خلال ${diff} دقيقة`;
+          const body = `${lec.course} ${when}${where ? " • " + where : ""}`;
           push?.(`⏰ ${body}`, "warn");
-          if (soundOn) playBell();
+          if (notifSoundOn) playChime();
           try {
             if (typeof Notification !== "undefined" && Notification.permission === "granted") {
               new Notification("تذكير محاضرة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
@@ -4869,7 +4957,7 @@ function useLectureReminders(schedule, soundOn, push) {
     tick();
     const iv = setInterval(tick, 30000);
     return () => clearInterval(iv);
-  }, [schedule, soundOn, push]);
+  }, [schedule, notifSoundOn, push]);
 }
 
 export default function App() {
@@ -4903,6 +4991,9 @@ export default function App() {
   const [aiChats, setAiChats] = useStored("aiChats", 0);
   const [semesters, setSemesters] = useStored("semesters", []);
   const [soundOn, setSoundOn] = useSyncedSetting("soundOn", "sound_on", true);
+  // Notification chime is its own switch: plenty of people want the lecture
+  // reminder audible while keeping the study timer silent.
+  const [notifSoundOn, setNotifSoundOn] = useSyncedSetting("notifSoundOn", "notif_sound_on", true);
   const [weeklyGoal, setWeeklyGoal] = useSyncedSetting("weeklyGoal", "weekly_goal", 15);
   const [seen, setSeen] = useSyncedSetting("onboarded", "onboarded", false);
   const [tasks, setTasks] = useStored("tasks", []);
@@ -4927,7 +5018,7 @@ export default function App() {
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark, brandPreset);
   const toasts = useToasts();
-  useLectureReminders(schedule, soundOn, toasts.push);
+  useLectureReminders(schedule, notifSoundOn, toasts.push);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
@@ -5239,6 +5330,7 @@ export default function App() {
       {notifOpen && <NotifPanel t={t} onClose={() => setNotifOpen(false)} notifs={notifs} setNotifs={setNotifs} profile={profile} onToast={toasts.push} />}
       {settingsOpen && <SettingsPanel t={t} onClose={() => setSettingsOpen(false)}
         dark={dark} setDark={setDark} soundOn={soundOn} setSoundOn={setSoundOn}
+        notifSoundOn={notifSoundOn} setNotifSoundOn={setNotifSoundOn}
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
         onReset={resetAll} onToast={toasts.push} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
