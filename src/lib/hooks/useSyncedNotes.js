@@ -27,12 +27,15 @@ export function useSyncedNotes() {
   // Empty on the first render so server and client markup match; saved notes
   // are adopted right after mount. See useSyncedSetting for why.
   const [notes, setNotesState] = useState({})
-  const hydrated = useRef(false)
+  // State, not a ref — see useStored: a ref is already true when the writer
+  // effect runs later in the same commit, so it would stamp {} over the saved
+  // notes before the next render puts them back.
+  const [ready, setReady] = useState(false)
   const userIdRef = useRef(null)
 
-  useEffect(() => { hydrated.current = true; setNotesState(lsGet()) }, [])
+  useEffect(() => { setNotesState(lsGet()); setReady(true) }, [])
 
-  useEffect(() => { if (hydrated.current) lsSet(notes) }, [notes])
+  useEffect(() => { if (ready) lsSet(notes) }, [ready, notes])
 
   const pushToServer = useCallback(async (obj) => {
     const uid = userIdRef.current

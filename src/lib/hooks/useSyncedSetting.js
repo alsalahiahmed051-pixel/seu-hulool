@@ -34,16 +34,21 @@ export function useSyncedSetting(localKey, column, initial) {
   // value (dark mode above all), and React then aborts hydration — which in a
   // production build takes the whole app down with a client-side exception.
   const [val, setValState] = useState(initial)
-  const hydrated = useRef(false)
+  // State, not a ref: a ref set by the reader effect is already true when the
+  // writer effect runs later in the SAME commit, where `val` is still
+  // `initial` — so the writer would stamp the default over the saved setting
+  // and only correct it on the next render. Batching both setState calls
+  // means the writer's first run already sees the hydrated value.
+  const [ready, setReady] = useState(false)
   const userIdRef = useRef(null)
 
   useEffect(() => {
-    hydrated.current = true
     setValState(lsGet(localKey, initial))
+    setReady(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localKey])
 
-  useEffect(() => { if (hydrated.current) lsSet(localKey, val) }, [localKey, val])
+  useEffect(() => { if (ready) lsSet(localKey, val) }, [ready, localKey, val])
 
   useEffect(() => {
     let cancelled = false

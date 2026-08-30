@@ -69,14 +69,19 @@ function useStored(key, initial) {
   // with "a client-side exception has occurred"). The stored value is adopted
   // right after mount, and only then do we start writing back.
   const [val, setVal] = useState(initial);
-  const hydrated = useRef(false);
+  // `ready` is state, not a ref, on purpose. A ref flipped by the reader
+  // effect is already true when the writer effect runs later in the SAME
+  // commit — where `val` is still `initial` — so the writer would stamp the
+  // empty value over the saved one, and only put it back on the next render.
+  // Batching both setState calls means the writer's first run already sees
+  // the hydrated value, and storage is never briefly wrong.
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    const stored = storage.get(key, initial);
-    hydrated.current = true;
-    setVal(stored);
+    setVal(storage.get(key, initial));
+    setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  useEffect(() => { if (hydrated.current) storage.set(key, val); }, [key, val]);
+  useEffect(() => { if (ready) storage.set(key, val); }, [ready, key, val]);
   return [val, setVal];
 }
 
@@ -4042,7 +4047,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, notes, openCourse, openSettings }) {
+function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings }) {
   const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
   const totalHours = Math.floor(totalMins / 60);
   const [editing, setEditing] = useState(!profile);
@@ -4230,6 +4235,73 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
           ))}
         </div>
       )}
+
+      {/* My plan — the track spelled out, with its subjects and what's due */}
+      {!editing && profile && (() => {
+        const subjects = myTrackSubjects(profile);
+        const openTasks = (tasks || []).filter(tk => !tk.done).length;
+        const lectures = (schedule || []).length;
+        return (
+          <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.gold}35`, boxShadow: t.shSm }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+              <GradCap size={16} color={P.gold} />
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, flex: 1 }}>خطتي</div>
+              {lockDaysLeft > 0 && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: P.gold, background: `${P.gold}15`, borderRadius: 7, padding: "3px 8px" }}>
+                  <Lock size={10} /> {lockDaysLeft} يوم
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 14 }}>{trackLabel(profile)}</div>
+
+            {subjects.length > 0 && (
+              <>
+                <div style={{ fontSize: 11.5, color: t.dim, fontWeight: 700, marginBottom: 8 }}>
+                  {subjects.length === 1 ? "مادتي" : `موادي (${subjects.length})`}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+                  {subjects.map(s => {
+                    const SIcon = getIcon(s);
+                    return (
+                      <button key={s} onClick={() => openCourse(s)} style={{
+                        background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "10px 12px",
+                        cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
+                        fontFamily: "inherit", textAlign: "right", transition: "all .2s",
+                      }}
+                        onMouseEnter={e => e.currentTarget.style.borderColor = P.gold + "60"}
+                        onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                        <div style={{ width: 30, height: 30, borderRadius: 9, background: `${P.gold}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <SIcon size={14} color={P.gold} />
+                        </div>
+                        <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
+                        <ChevronLeft size={14} color={t.dim} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+              {[
+                { label: "مهام مفتوحة", value: openTasks, tab: "home", color: P.green },
+                { label: "محاضرات", value: lectures, tab: "schedule", color: P.blue2 },
+                { label: "مفضلة", value: favorites.length, tab: "fav", color: P.gold },
+              ].map(({ label, value, tab, color }) => (
+                <button key={label} onClick={() => setActiveTab(tab)} style={{
+                  background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "10px 6px",
+                  cursor: "pointer", fontFamily: "inherit", textAlign: "center", transition: "all .2s",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = color}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+                  <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
+                  <div style={{ fontSize: 11, color: t.mu, fontWeight: 600, marginTop: 2 }}>{label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Snapshot stats */}
       {!editing && (
@@ -5137,6 +5209,23 @@ const trackLockRemaining = (p) => {
   return left > 0 ? Math.ceil(left / 86400000) : 0;
 };
 
+/**
+ * The subjects a student's own plan puts in front of them.
+ *
+ * تحضيري is the only track the catalogue breaks into subjects — خطة أ and
+ * خطة ب are its two terms. Everywhere else the programme itself is the leaf
+ * the rest of the app treats as a course, so that is what comes back.
+ */
+const myTrackSubjects = (p) => {
+  if (!p?.track) return [];
+  if (p.track === "تحضيري") {
+    const idx = TRACK_PLANS["تحضيري"].indexOf(p.plan);
+    const term = Object.values(TREE.preparatory.plans)[idx];
+    return term?.subjects || [];
+  }
+  return p.plan ? [p.plan] : [];
+};
+
 /** The track+date stamp that outlives a sign-out or a data reset. */
 const lockStampOf = (p) =>
   p?.confirmedAt ? { track: p.track, college: p.college || "", plan: p.plan || "", confirmedAt: p.confirmedAt } : null;
@@ -5687,6 +5776,7 @@ export default function App() {
           sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
           onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
+          tasks={tasks} schedule={schedule}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)} />}
       </div>
 
