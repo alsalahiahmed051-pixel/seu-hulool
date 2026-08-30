@@ -803,13 +803,21 @@ async function receiptError(e) {
 function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast }) {
   const { data: content } = useSiteContent("payment");
   const pay = { ...DEFAULT_PAYMENT, ...(content && typeof content === "object" ? content : {}) };
-  const [note, setNote] = useState("");
+  // The draft is kept on the device, not just in this component's state.
+  // Picking a photo sends the phone to its gallery app, and a phone short of
+  // memory kills the browser while it is in the background — the "the whole
+  // browser closes" report. Nothing we run can prevent that, but coming back
+  // to an empty form afterwards is ours to prevent: an already-uploaded
+  // receipt in particular must not have to be uploaded twice.
+  const DRAFT = "subscribe_draft";
+  const draft0 = storage.get(DRAFT, null) || {};
+  const [note, setNote] = useState(draft0.note || "");
   // A student who never set an email in the assistant would otherwise send a
   // request we cannot answer. Ask for it here rather than sending them away.
-  const [emailDraft, setEmailDraft] = useState(email || "");
+  const [emailDraft, setEmailDraft] = useState(email || draft0.email || "");
   const savedEmail = looksLikeEmail(email) ? email : (looksLikeEmail(emailDraft) ? emailDraft.trim() : "");
-  const [receipt, setReceipt] = useState("");     // the stored blob URL
-  const [receiptName, setReceiptName] = useState("");
+  const [receipt, setReceipt] = useState(draft0.receipt || "");     // the stored blob URL
+  const [receiptName, setReceiptName] = useState(draft0.receiptName || "");
   const [uploading, setUploading] = useState(0);  // 0 = idle, else percent
   const fileRef = useRef(null);
   const [sending, setSending] = useState(false);
@@ -825,6 +833,13 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
+
+  // Written on every change rather than on unmount: a process the OS kills
+  // never gets to unmount, which is exactly the case this protects against.
+  useEffect(() => {
+    if (justSent) return;
+    storage.set(DRAFT, { note, receipt, receiptName, email: emailDraft });
+  }, [note, receipt, receiptName, emailDraft, justSent]);
 
   /**
    * Send the picture straight to storage, then keep only its URL.
@@ -879,6 +894,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
         // because the pending request comes back from the server.
         setJustSent(true);
         setMine({ status: "pending" });
+        storage.set(DRAFT, null);   // sent — nothing left to recover
       }
       else {
         // Kept on screen, not only as a toast: a toast is gone in three
@@ -1021,6 +1037,17 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
                 </span>
                 <span style={{ fontSize: 11, color: t.dim }}>صورة أو PDF · حتى ٥ ميجابايت</span>
               </button>
+            )}
+
+            {/* Choosing a photo hands the phone to its gallery app, and a
+                phone short of memory may close the browser while it is there.
+                The receipt was never mandatory — a note is enough — so say so
+                rather than leaving a student stuck at a step their device
+                cannot complete. */}
+            {!receipt && (
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.8, marginBottom: 12, background: t.s2, borderRadius: 10, padding: "9px 11px" }}>
+                لا تستطيع إرفاق صورة؟ اكتب في الملاحظة أدناه <strong style={{ color: t.tx }}>المبلغ وتاريخ التحويل وآخر ٤ أرقام من حسابك</strong> وأرسل — الإيصال ليس شرطاً.
+              </div>
             )}
 
             <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>ملاحظة (اختياري)</div>
