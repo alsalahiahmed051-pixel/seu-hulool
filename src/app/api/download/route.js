@@ -1,13 +1,20 @@
-import { createClient } from '@/lib/supabase/server'
+import { get } from '@vercel/blob'
+import { downloadPerMinuteLimit, callerKey } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
 
 export async function GET(request) {
-  // Require a logged-in user before proxying any file.
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return new Response('يجب تسجيل الدخول', { status: 401 })
+  // The site is public and has no accounts, so this cannot require a login:
+  // the old check rejected every visitor, which made every file undownloadable.
+  // Abuse is bounded by a per-IP rate limit plus the host allow-list below.
+  const rl = await downloadPerMinuteLimit.limit(callerKey(request))
+  if (!rl.success) {
+    return new Response('طلبات كثيرة — انتظر قليلاً ثم أعد المحاولة', {
+      status: 429,
+      headers: { 'Retry-After': String(Math.max(1, Math.ceil((rl.reset - Date.now()) / 1000))) },
+    })
+  }
 
   const { searchParams } = new URL(request.url)
   const rawUrl = searchParams.get('url')
@@ -26,16 +33,30 @@ export async function GET(request) {
   } catch {
     return new Response('Invalid url', { status: 400 })
   }
-  if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('.public.blob.vercel-storage.com')) {
+  // Accept either Blob hostname: the store used `.public.` historically, and
+  // privately-stored blobs are addressed on the bare `blob.vercel-storage.com`
+  // domain. Anything else is refused so our token is never sent elsewhere.
+  if (parsed.protocol !== 'https:' || !/(^|\.)blob\.vercel-storage\.com$/.test(parsed.hostname)) {
     return new Response('Invalid file host', { status: 400 })
   }
   const url = parsed.toString()
 
   try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
-    })
-    if (!res.ok) return new Response('File not found', { status: 404 })
+    // Private blobs must be read through the SDK; a raw authorised fetch is
+    // not sufficient for them. Fall back to fetch for older public objects.
+    let body = null
+    try {
+      const got = await get(url, { access: 'private' })
+      if (got?.stream) body = got.stream
+    } catch { /* fall through to the public path */ }
+
+    if (!body) {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
+      })
+      if (!res.ok) return new Response('File not found', { status: 404 })
+      body = res.body
+    }
 
     const rawName = url.split('/').pop()?.split('?')[0] || 'file.pdf'
     // strip timestamp prefix like "1748123456789-filename.pdf"
@@ -45,7 +66,7 @@ export async function GET(request) {
       ? `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`
       : `inline; filename*=UTF-8''${encodeURIComponent(filename)}`
 
-    return new Response(res.body, {
+    return new Response(body, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': disposition,

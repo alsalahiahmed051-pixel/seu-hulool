@@ -47,9 +47,14 @@ export async function POST(request) {
     return Response.json({ error: 'تصنيف غير معروف' }, { status: 400 })
   }
   // Only accept URLs the store actually issued, so this can't be used to add
-  // arbitrary links to the library.
-  if (!/^https:\/\/[a-z0-9-]+\.public\.blob\.vercel-storage\.com\//i.test(blobUrl) &&
-      !/^https:\/\/[a-z0-9-]+\.blob\.vercel-storage\.com\//i.test(blobUrl)) {
+  // arbitrary links to the library. Parse rather than pattern-match the whole
+  // string, so a crafted path or fragment can't fake the host.
+  try {
+    const u = new URL(blobUrl)
+    if (u.protocol !== 'https:' || !/(^|\.)blob\.vercel-storage\.com$/.test(u.hostname)) {
+      throw new Error('bad host')
+    }
+  } catch {
     return Response.json({ error: 'رابط الملف غير صالح' }, { status: 400 })
   }
 

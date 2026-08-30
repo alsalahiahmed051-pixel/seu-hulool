@@ -116,6 +116,16 @@ export const aiDailyLimit = hasUpstash
     })
   : memoryLimiter(Number(process.env.AI_DAILY_LIMIT || 80), 86_400_000, 'ai:day')
 
+// File downloads are open to every visitor (no accounts), so cap how fast one
+// client can pull PDFs through the proxy.
+export const downloadPerMinuteLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(Number(process.env.DOWNLOAD_PER_MINUTE_LIMIT || 30), '1 m'),
+      prefix: 'rl:dl:minute',
+    })
+  : memoryLimiter(Number(process.env.DOWNLOAD_PER_MINUTE_LIMIT || 30), 60_000, 'dl:min')
+
 /**
  * Identity used for rate limiting on the public AI endpoints.
  *
