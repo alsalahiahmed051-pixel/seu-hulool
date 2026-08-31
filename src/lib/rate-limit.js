@@ -33,7 +33,12 @@ class MemoryStore {
   async eval() { return [1, Date.now() + 60000] } // graceful no-op
 }
 
-const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+// Exported because `redis` below is a real Upstash client OR an in-process
+// Map that merely has the same method names. Anything that needs the value to
+// actually survive — the student-facing message allowance, above all — has to
+// be able to tell the two apart, since on serverless the Map is per-instance
+// and effectively amnesiac.
+export const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
 
 /**
  * Real in-process limiter used when Upstash isn't configured.

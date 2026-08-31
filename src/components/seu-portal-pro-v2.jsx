@@ -1147,6 +1147,23 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  const blocked = !!(gate && !gate.subscribed && gate.blocked && !askEmail);
+  // "خلال ٤٢ دقيقة" has to keep counting down, and the window has to lift
+  // itself when it elapses — otherwise a student who waits it out still sees
+  // the block and has to guess that reloading fixes it.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!blocked || !gate?.resetAt) return;
+    const id = setInterval(() => {
+      if (Date.now() >= gate.resetAt) {
+        setGate(g => (g ? { ...g, blocked: false, used: 0, remaining: g.limit, resetAt: 0 } : g));
+      } else {
+        tick(n => n + 1);
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [blocked, gate?.resetAt, gate?.limit]);
+
   const [menuId, setMenuId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [fileContext, setFileContext] = useState(null);
@@ -1506,25 +1523,54 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         </div>
       )}
 
-      {/* What is left of the allowance — the server's number, not a guess */}
-      {gate && !gate.subscribed && !askEmail && (
-        <div style={{
-          padding: "7px 12px", background: gate.blocked ? `${P.orange}12` : t.s1,
-          borderTop: `1px solid ${t.bd}`, flexShrink: 0,
-          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-        }}>
-          <Sparkles size={12} color={gate.blocked ? P.orange : t.mu} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 11.5, color: gate.blocked ? P.orange : t.mu, fontWeight: gate.blocked ? 800 : 600, flex: 1, minWidth: 0 }}>
-            {gate.blocked
-              ? `انتهت أسئلتك المجانية — تتجدّد ${untilLabel(gate.resetAt)}`
-              : `بقي ${gate.remaining} من ${gate.limit} أسئلة`}
-          </span>
+      {/* Counting down — a bar, so "3 of 5" reads at a glance rather than
+          having to be parsed. The server's number, never a local guess. */}
+      {gate && !gate.subscribed && !gate.blocked && !askEmail && (
+        <div style={{ padding: "8px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+            <Sparkles size={12} color={gate.remaining <= 1 ? P.orange : t.mu} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 11.5, color: gate.remaining <= 1 ? P.orange : t.mu, fontWeight: gate.remaining <= 1 ? 800 : 600, flex: 1, minWidth: 0 }}>
+              {gate.remaining === 1 ? "بقي سؤال واحد" : `بقي ${gate.remaining} من ${gate.limit} أسئلة`}
+            </span>
+            {onSubscribe && (
+              <button onClick={() => onSubscribe(gate)} style={{
+                background: "transparent", border: `1px solid ${t.bd}`, borderRadius: 14,
+                padding: "3px 11px", cursor: "pointer", fontFamily: "inherit",
+                fontSize: 11.5, fontWeight: 800, color: P.blue2, flexShrink: 0,
+              }}>اشتراك</button>
+            )}
+          </div>
+          <div style={{ height: 3, borderRadius: 2, background: t.bd, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${Math.max(0, Math.min(100, (gate.remaining / (gate.limit || 1)) * 100))}%`,
+              background: gate.remaining <= 1 ? P.orange : P.blue2, borderRadius: 2, transition: "width .3s ease",
+              marginRight: 0, marginLeft: "auto",
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Out of questions. This replaces the composer rather than sitting above
+          it: a text box you can still type into, whose Send does nothing but
+          reopen a sheet, reads as broken. Say what happened, when it comes
+          back, and the one thing that lifts it now. */}
+      {gate && !gate.subscribed && gate.blocked && !askEmail && (
+        <div style={{ padding: "16px 14px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 9, background: `${P.orange}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Sparkles size={15} color={P.orange} />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 900, color: t.tx }}>انتهت أسئلتك المجانية</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 12 }}>
+            استخدمت {gate.limit} من {gate.limit} أسئلة.
+            {gate.resetAt ? <> تعود مجاناً <strong style={{ color: t.tx }}>{untilLabel(gate.resetAt)}</strong>.</> : null}
+            {onSubscribe ? " أو اشترك الآن وتسأل بلا حدّ." : ""}
+          </div>
           {onSubscribe && (
-            <button onClick={() => onSubscribe(gate)} style={{
-              background: gate.blocked ? P.orange : "transparent", border: `1px solid ${gate.blocked ? P.orange : t.bd}`,
-              borderRadius: 14, padding: "3px 11px", cursor: "pointer", fontFamily: "inherit",
-              fontSize: 11.5, fontWeight: 800, color: gate.blocked ? "#fff" : P.blue2, flexShrink: 0,
-            }}>اشتراك</button>
+            <Btn variant="primary" onClick={() => onSubscribe(gate)} style={{ width: "100%" }}>
+              <Sparkles size={14} /> اشترك — أسئلة بلا حدّ
+            </Btn>
           )}
         </div>
       )}
@@ -1535,8 +1581,8 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         </div>
       )}
 
-      {/* Input */}
-      <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+      {/* Input — hidden while blocked, since the card above has taken its place */}
+      <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: blocked ? "none" : "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
         <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={fileContext ? `اسأل عن ملفات ${subject}...` : `اسأل عن ${subject}...`}
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
