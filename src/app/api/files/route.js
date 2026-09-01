@@ -2,6 +2,8 @@ import { del } from '@vercel/blob'
 import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
 import { courseMatches, canonicalCourse } from '@/lib/courses'
+import { ACCOUNTS_ONLY } from '@/lib/auth-config'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -27,6 +29,27 @@ export async function GET(request) {
   // name ("حاسب", "رياضيات"…) still show up under the real course.
   if (course) files = files.filter(f => courseMatches(f.courseName, course))
   if (category) files = files.filter(f => f.category === category)
+
+  // The real gate on downloading is here, not on /api/download: a visitor who
+  // never receives `blobUrl` has nothing to fetch, while the listing itself
+  // stays visible so browsing still shows what the library holds. Gating the
+  // download route instead would be weaker and noisier — the URL would already
+  // be in the page by then.
+  //
+  // Only enforced once ACCOUNTS_ONLY is on. Until then the gate is the
+  // client's, and it is honestly advisory: the server cannot see a
+  // device-local profile, so withholding here today would take downloads away
+  // from every current student and give them no way to get them back.
+  if (ACCOUNTS_ONLY) {
+    let user = null
+    try {
+      const supabase = await createClient()
+      user = (await supabase.auth.getUser()).data.user
+    } catch { /* unreachable auth is not a reason to hand out storage URLs */ }
+    if (!user) {
+      files = files.map(({ blobUrl, url, ...rest }) => ({ ...rest, locked: true }))
+    }
+  }
 
   return Response.json({ files, blobEnabled: true })
 }

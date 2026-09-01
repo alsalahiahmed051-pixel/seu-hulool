@@ -4,6 +4,7 @@ import { CATALOGUE } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
+import { browseGate } from "@/lib/auth-config";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
@@ -698,6 +699,51 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
             </Btn>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What a browsing visitor is told when they reach for something an account
+ * unlocks. Named for what it is rather than "upgrade": nothing is being sold
+ * here, and the free part of the site is genuinely free.
+ */
+function NeedAccountSheet({ t, what, onClose, accounts }) {
+  const lines = {
+    file: ["الملفات للطلاب المسجّلين", "التصفّح مفتوح للجميع — أما فتح الملفات وتحميلها فيحتاج حساباً. مجاني، ودقيقة واحدة."],
+    ai: ["المساعد الذكي للطلاب المسجّلين", "أنشئ حسابك لتسأل المساعد عن موادك — ويحفظ لك مسارك وجدولك ومهامك أيضاً."],
+    save: ["الحفظ يحتاج حساباً", "المفضلة والملاحظات والمهام والجدول تُحفظ في حسابك لتتبعك على أي جهاز."],
+  }[what] || ["يحتاج حساباً", "أنشئ حسابك للاستفادة الكاملة من الموقع."];
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 700, background: "rgba(0,0,0,.6)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.s1, borderRadius: "22px 22px 0 0", padding: "22px 18px 28px", width: "100%", maxWidth: 620, animation: "fadeUp .28s ease" }}>
+        <div style={{ width: 38, height: 4, borderRadius: 2, background: t.bd, margin: "0 auto 16px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 11, background: `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Lock size={17} color={P.gold} />
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: t.tx }}>{lines[0]}</div>
+        </div>
+        <div style={{ fontSize: 13, color: t.mu, lineHeight: 1.9, marginBottom: 16 }}>{lines[1]}</div>
+        {accounts ? (
+          <>
+            <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
+              <User size={15} /> إنشاء حساب مجاني
+            </Btn>
+            <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
+              <LogIn size={15} /> لدي حساب — تسجيل الدخول
+            </Btn>
+          </>
+        ) : (
+          <Btn variant="gold" onClick={onClose} style={{ width: "100%" }}>
+            <User size={15} /> أكمل ملفك من «حسابي»
+          </Btn>
+        )}
+        <button onClick={onClose} style={{ width: "100%", background: "none", border: "none", marginTop: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu }}>
+          أكمل التصفّح
+        </button>
       </div>
     </div>
   );
@@ -3245,7 +3291,7 @@ function PDFViewer({ file, onClose }) {
   );
 }
 
-function RealFileItem({ file, t, onToast }) {
+function RealFileItem({ file, t, onToast, canOpen = true, onNeedAccount = null }) {
   const [viewing, setViewing] = useState(false);
   const ratingKey = `real_${file.id || file.name}`;
   const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[ratingKey] || 0));
@@ -3313,12 +3359,21 @@ function RealFileItem({ file, t, onToast }) {
           <button onClick={shareFile} style={{ background: `${P.purple}12`, border: `1px solid ${P.purple}25`, borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: P.purple, display: "flex", alignItems: "center", gap: 3 }}>
             <Share2 size={12} />
           </button>
-          <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
-            <Eye size={12} /> قراءة
+          {/* Browsing is open; taking the files home is not. The buttons stay
+              visible rather than disappearing — a student should be able to see
+              that the material is there and what it costs to reach it. */}
+          <button onClick={() => canOpen ? setViewing(true) : onNeedAccount?.()} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, opacity: canOpen ? 1 : 0.55 }}>
+            {canOpen ? <Eye size={12} /> : <Lock size={12} />} قراءة
           </button>
-          <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-            <Download size={12} /> تحميل
-          </a>
+          {canOpen ? (
+            <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+              <Download size={12} /> تحميل
+            </a>
+          ) : (
+            <button onClick={() => onNeedAccount?.()} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, opacity: 0.65 }}>
+              <Lock size={12} /> تحميل
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -3523,7 +3578,7 @@ function AISection({ subject, t, onChat, files, onToast }) {
   );
 }
 
-function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast, onAskAI }) {
+function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast, onAskAI, canOpenFiles = true, onNeedAccount = null }) {
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
   const [realLoading, setRealLoading] = useState(true);
@@ -3728,7 +3783,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                             )}
                           </div>
                         )}
-                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} />)}
+                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} canOpen={canOpenFiles} onNeedAccount={onNeedAccount} />)}
                         {shown.length === 0 && (
                           <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
@@ -6195,9 +6250,21 @@ export default function App() {
   const [subOpen, setSubOpen] = useState(null); // null | gate object
   const [supportOpen, setSupportOpen] = useState(false);
   const [aiEmail, setAiEmail] = useStored("ai_email", "");
-  const requestAI = (seed) => { setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true); };
+  // Browsing is open; downloading, asking and saving are what an account is
+  // for. One rule, in one place — see browseGate in auth-config.js for why it
+  // is "has a profile" today and how it tightens to "has an account".
+  const allowed = browseGate(profile, account.signedIn);
+  const [needAccount, setNeedAccount] = useState(null);   // null | "file" | "ai" | "save"
+
+  const requestAI = (seed) => {
+    if (!allowed) { setNeedAccount("ai"); return; }
+    setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true);
+  };
 
   const toggleFav = (s) => {
+    // "لا يُحفظ له شيء" — a favourite is saved state, so it needs the account
+    // like everything else that persists.
+    if (!allowed) { setNeedAccount("save"); return; }
     const exists = favorites.includes(s);
     toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
     setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
@@ -6380,7 +6447,8 @@ export default function App() {
           subject={course} favorites={favorites} toggleFav={toggleFav}
           notes={notes} setNotes={setNotes} t={t}
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
-          onAskAI={(subj) => { setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
+          onAskAI={(subj) => { if (!allowed) { setNeedAccount("ai"); return; } setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
+          canOpenFiles={allowed} onNeedAccount={() => setNeedAccount("file")}
           onBack={() => { setCourse(null); setTab("explore"); }} />}
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
@@ -6610,6 +6678,10 @@ export default function App() {
             }
           </div>
         </div>
+      )}
+      {needAccount && (
+        <NeedAccountSheet t={t} what={needAccount} accounts={account.configured}
+          onClose={() => setNeedAccount(null)} />
       )}
       <ToastStack list={toasts.list} />
     </div>
