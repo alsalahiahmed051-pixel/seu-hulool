@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { CATALOGUE } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
+import { useAccount } from "@/lib/hooks/useAccount";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
@@ -4579,7 +4580,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null }) {
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, studentCode = "" }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
@@ -4716,6 +4717,12 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
               {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{trackLabel(profile)}</span>}
+              {/* The site's own handle, assigned at signup and never editable
+                  — it is what the admin quotes back when answering a request,
+                  so it has to be somewhere the student can read it out. */}
+              {studentCode && (
+                <span title="رقمك في الموقع" style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: "rgba(255,255,255,.85)", borderRadius: 7, padding: "2px 8px", fontFamily: "monospace", direction: "ltr" }}>{studentCode}</span>
+              )}
               {profile?.studentId && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.75)", fontFamily: "monospace", direction: "ltr" }}>{profile.studentId}</span>}
             </div>
           </div>
@@ -4739,14 +4746,22 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>أنت تتصفّح بدون حساب</div>
           </div>
           <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 14 }}>
-            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. الملف الشخصي يضيف
-            <strong style={{ color: t.tx }}> مسارك وموادك ومهامك ومفضلتك</strong> — ويُحفظ على جهازك، بلا كلمة مرور.
+            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. الحساب يضيف
+            <strong style={{ color: t.tx }}> مسارك وموادك ومهامك ومفضلتك</strong> — ويتبعك على أي جهاز.
           </div>
-          {/* Signing out used to leave the student here with no way back in:
-              browse mode was a one-way door. If an account is parked on this
-              device, offer it first — creating a second profile is not the fix
-              for having signed out of the first. */}
-          {savedAccount ? (
+          {/* A real account now, with an email behind it. The device-local
+              profile still opens for anyone who made one before accounts
+              existed — it is offered second, not instead. */}
+          {accounts ? (
+            <>
+              <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
+                <User size={15} /> إنشاء حساب
+              </Btn>
+              <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
+                <LogIn size={15} /> لدي حساب — تسجيل الدخول
+              </Btn>
+            </>
+          ) : savedAccount ? (
             <>
               <Btn variant="gold" onClick={() => onLogin?.()} style={{ width: "100%", marginBottom: 8 }}>
                 <LogIn size={15} /> دخول إلى «{savedAccount.name}»
@@ -4761,9 +4776,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             </Btn>
           )}
           <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
-            {savedAccount
-              ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
-              : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
+            {accounts
+              ? "الاسم والبريد وكلمة المرور — ويصلك رمز تأكيد على بريدك."
+              : savedAccount
+                ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
+                : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
           </div>
         </div>
       )}
@@ -6052,7 +6069,17 @@ export default function App() {
   // Fully public site — no login/registration. `profile` is an OPTIONAL local
   // preference (name + track + plan) that only personalises the greeting and
   // the plan-scoped calendar; everything works with or without it.
-  const [profile, setProfile] = useStored("student_profile", null);
+  const [localProfile, setLocalProfile] = useStored("student_profile", null);
+  // One owner of identity. A Supabase session wins when there is one; the
+  // device-local profile still stands for anyone who has not made an account
+  // yet, so nothing a current student has is lost the day this ships.
+  const account = useAccount({ localProfile, setLocalProfile });
+  const profile = account.profile;
+  const setProfile = (next) => {
+    const value = typeof next === "function" ? next(profile) : next;
+    setLocalProfile(value);
+    if (account.signedIn && value) account.saveProfile(value);
+  };
   // Signing out keeps the account here (unless "حفظ حسابي" is off) so the
   // return visit can offer it back behind a name + ID screen.
   const [savedAccount, setSavedAccount] = useStored("saved_account", null);
@@ -6197,7 +6224,7 @@ export default function App() {
     storage.clear();
     resetStudyData();
     setDark(false); setSoundOn(true); setNotifSoundOn(true); setWeeklyGoal(15);
-    setProfile(null); setSavedAccount(null); setSignedOut(false); setRememberAccount(true);
+    setLocalProfile(null); setSavedAccount(null); setSignedOut(false); setRememberAccount(true);
     // Re-write the stamp after storage.clear() so the hold survives the wipe.
     // A fresh object matters: passing the same reference back wouldn't count as
     // a change, so nothing would be written and the cleared key would stay gone.
@@ -6210,20 +6237,25 @@ export default function App() {
    * in `saved_account` and the next visit opens on the name + ID screen; with
    * it off, the profile is gone from this device for good.
    */
-  const signOut = () => {
+  const signOut = async () => {
+    // The hold outlives the sign-out: it is anchored on a stamp kept outside
+    // the profile precisely so signing out cannot be used to escape it.
     setTrackLock(lockStampOf(profile) || trackLock);
-    if (rememberAccount && profile) {
-      setSavedAccount(profile);
-      setSignedOut(true);
-      // Say where the way back in is: signing out drops you into browse mode,
-      // and "how do I log in again?" was the first thing everyone asked.
-      toasts.push("تم تسجيل الخروج — للدخول مرة أخرى افتح «حسابي»", "info");
+    if (account.signedIn) {
+      await account.signOut();
+      toasts.push("تم تسجيل الخروج — يمكنك الدخول مرة أخرى من «حسابي»", "info");
     } else {
-      setSavedAccount(null);
-      setSignedOut(false);
-      toasts.push("تم تسجيل الخروج وحُذف ملفك — يمكنك إنشاء حساب من «حسابي»", "info");
+      if (rememberAccount && profile) {
+        setSavedAccount(profile);
+        setSignedOut(true);
+        toasts.push("تم تسجيل الخروج — للدخول مرة أخرى افتح «حسابي»", "info");
+      } else {
+        setSavedAccount(null);
+        setSignedOut(false);
+        toasts.push("تم تسجيل الخروج وحُذف ملفك — يمكنك إنشاء حساب من «حسابي»", "info");
+      }
+      setLocalProfile(null);
     }
-    setProfile(null);
     setTab("home"); setCourse(null);
   };
 
@@ -6374,7 +6406,8 @@ export default function App() {
           onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
           tasks={tasks} schedule={schedule} aiEmail={aiEmail} setAiEmail={setAiEmail}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)}
-          savedAccount={savedAccount} onLogin={() => setSignedOut(true)} />}
+          savedAccount={savedAccount} onLogin={() => setSignedOut(true)}
+          accounts={account.configured} studentCode={profile?.studentCode || ""} />}
       </div>
 
       {/* Floating AI assistant button — reachable from any main tab */}
