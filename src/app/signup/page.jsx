@@ -88,7 +88,12 @@ export default function SignUpPage() {
         </>
       }
     >
-      <form onSubmit={handleSubmit}>
+      {/* noValidate: `required` alone hands the student the browser's own
+          bubble, which is in the browser's language rather than the page's and
+          says nothing useful about the password rule. The per-field Arabic
+          messages below are what should be shown, so native validation is
+          turned off and validate() is the only gate. */}
+      <form onSubmit={handleSubmit} noValidate>
         <ErrorBox message={error} />
 
         <Input
