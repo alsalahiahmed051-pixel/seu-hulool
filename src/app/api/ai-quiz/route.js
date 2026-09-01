@@ -1,6 +1,6 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota } from '@/lib/ai-quota'
-import { quizScope, isGeneral } from '@/lib/ai-scope'
+import { quizScope, isGeneral, resolveSubject } from '@/lib/ai-scope'
 
 export const runtime = 'nodejs'
 
@@ -120,10 +120,10 @@ export async function POST(request) {
   } catch {
     return Response.json({ error: 'صيغة الطلب غير صحيحة' }, { status: 400 })
   }
-  const { subject } = body
-  if (!subject || typeof subject !== 'string' || subject.length > 200) {
+  if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 200) {
     return Response.json({ error: 'مادة غير صحيحة' }, { status: 400 })
   }
+  const subject = resolveSubject(body.subject)
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)

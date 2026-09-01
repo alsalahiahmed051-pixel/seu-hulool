@@ -8,9 +8,27 @@
  * scoped here, in one place, rather than drifting apart in two route files.
  */
 
+import { ALL_COURSE_NAMES, canonicalCourse } from '@/lib/courses'
+
 export const GENERAL = 'عام'
 
 export const isGeneral = (subject) => String(subject || '').trim() === GENERAL
+
+/**
+ * The subject a request may actually ask about.
+ *
+ * `subject` arrives from the browser and was only ever length-checked, so it
+ * was a free string interpolated into the system prompt — anything a caller
+ * typed became "تخصصك مادة X" and steered the assistant wherever they liked.
+ * Anything that is not a real course in the catalogue is treated as the
+ * general assistant, which is still university-scoped.
+ */
+export function resolveSubject(subject) {
+  const s = String(subject || '').trim()
+  if (!s || isGeneral(s)) return GENERAL
+  const c = canonicalCourse(s)
+  return ALL_COURSE_NAMES.includes(c) ? c : GENERAL
+}
 
 /** The university this site serves — the fixed frame around every answer. */
 const UNIVERSITY = `الجامعة السعودية الإلكترونية (SEU) — جامعة حكومية سعودية للتعليم المدمج، تضم السنة التحضيرية (مسار علمي/إداري، خطة أ وخطة ب) ودرجات البكالوريوس والدبلوم والدراسات العليا، وتعتمد على البلاكبورد والحضور الافتراضي والحضوري.`

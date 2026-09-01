@@ -62,6 +62,13 @@ function makeInertClient() {
       getSession: async () => ({ data: { session: null }, error: NOT_CONFIGURED }),
       signOut: async () => ({ error: null }),
       signInWithPassword: async () => ({ data: { user: null, session: null }, error: NOT_CONFIGURED }),
+      // The sign-up half. Missing from this stand-in until accounts existed,
+      // which would have broken the keyless build all over again — the exact
+      // regression this file was written to fix.
+      signUp: async () => ({ data: { user: null, session: null }, error: NOT_CONFIGURED }),
+      verifyOtp: async () => ({ data: { user: null, session: null }, error: NOT_CONFIGURED }),
+      signInWithOtp: async () => ({ data: { user: null, session: null }, error: NOT_CONFIGURED }),
+      resend: async () => ({ data: null, error: NOT_CONFIGURED }),
       signInWithOAuth: async () => ({ data: null, error: NOT_CONFIGURED }),
       resetPasswordForEmail: async () => ({ data: null, error: NOT_CONFIGURED }),
       updateUser: async () => ({ data: { user: null }, error: NOT_CONFIGURED }),

@@ -15,7 +15,14 @@ function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  // /auth/callback redirects here with ?error=auth_failed when a code exchange
+  // fails, and this page ignored it — a failed sign-in landed on a blank form
+  // with no hint that anything had gone wrong.
+  const [error, setError] = useState(
+    search.get('error') === 'auth_failed'
+      ? 'تعذّر إكمال تسجيل الدخول — حاول مرة أخرى'
+      : null
+  )
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -50,13 +57,17 @@ function LoginForm() {
 
   return (
     <AuthShell
-      title="دخول الإدارة"
-      subtitle="هذه الصفحة مخصّصة لفريق إدارة المنصة فقط — الموقع متاح للطلاب بدون تسجيل دخول."
+      title="تسجيل الدخول"
+      subtitle="أهلاً بعودتك — ادخل لتجد مسارك وموادك ومهامك كما تركتها."
       footer={
         <>
-          طالب؟{' '}
-          <Link href="/" style={{ color: '#60a5fa', fontWeight: 700, textDecoration: 'none' }}>
-            ادخل الموقع مباشرة
+          ليس لديك حساب؟{' '}
+          <Link href="/signup" style={{ color: '#60a5fa', fontWeight: 700, textDecoration: 'none' }}>
+            أنشئ حساباً
+          </Link>
+          <span style={{ color: '#334155', margin: '0 8px' }}>·</span>
+          <Link href="/?browse=1" style={{ color: '#7d97b8', textDecoration: 'none' }}>
+            تصفّح بدون حساب
           </Link>
         </>
       }
@@ -97,7 +108,7 @@ function LoginForm() {
           label="البريد الإلكتروني"
           type="email" required value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="[email protected]" dir="ltr"
+          placeholder="name@example.com" dir="ltr"
           style={{ textAlign: 'left' }}
         />
         <Input

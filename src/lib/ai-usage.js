@@ -1,5 +1,5 @@
 import { createHmac } from 'crypto'
-import { redis } from '@/lib/rate-limit'
+import { redis, hasUpstash } from '@/lib/rate-limit'
 import { createAdminClient } from '@/lib/supabase/server'
 
 /**
@@ -19,6 +19,33 @@ export const COOLDOWN_MS = Number(process.env.AI_COOLDOWN_MINUTES || 60) * 60_00
 
 const mem = new Map() // deviceId -> { count, resetAt }
 
+const shape = (used, resetAt) => ({
+  used,
+  remaining: Math.max(0, FREE_MESSAGES - used),
+  resetAt,
+})
+
+/**
+ * Where the count is kept, in order of preference.
+ *
+ * This used to be "redis, else memory", but `redis` is a real Upstash client
+ * only when Upstash is configured — otherwise it is an in-process Map wearing
+ * the same method names, and `typeof redis.get === 'function'` is true either
+ * way. So on Vercel every question landed in whichever instance served it:
+ * the first counted, the second hit a different instance and counted as the
+ * first again, and reopening the page handed out a fresh five. The rule the
+ * student sees was not enforced at all.
+ *
+ * Supabase is the durable store now, because it is already configured here.
+ * Upstash is still preferred when present, and the Map remains only as a
+ * last resort for local development.
+ */
+const useRedis = () => hasUpstash && redis && typeof redis.get === 'function'
+
+function db() {
+  try { return createAdminClient() } catch { return null }
+}
+
 /**
  * Current usage for a device, without spending anything.
  * Returns { used, remaining, resetAt } where resetAt is when the window rolls.
@@ -26,45 +53,80 @@ const mem = new Map() // deviceId -> { count, resetAt }
 export async function readUsage(deviceId) {
   const key = `aiuse:${deviceId}`
   const now = Date.now()
+  const fresh = shape(0, now + COOLDOWN_MS)
+  if (!deviceId) return fresh
 
-  if (redis && typeof redis.get === 'function') {
+  if (useRedis()) {
     try {
       const raw = await redis.get(key)
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-      if (parsed && parsed.resetAt > now) {
-        return { used: parsed.count, remaining: Math.max(0, FREE_MESSAGES - parsed.count), resetAt: parsed.resetAt }
+      if (parsed && parsed.resetAt > now) return shape(parsed.count, parsed.resetAt)
+      return fresh
+    } catch { /* fall through */ }
+  }
+
+  const sb = db()
+  if (sb) {
+    try {
+      const { data, error } = await sb
+        .from('ai_usage')
+        .select('used, reset_at')
+        .eq('device_id', deviceId)
+        .maybeSingle()
+      if (!error) {
+        if (!data) return fresh
+        const resetAt = new Date(data.reset_at).getTime()
+        // An elapsed window is a fresh one; the row is rewritten on the next spend.
+        return resetAt > now ? shape(data.used, resetAt) : fresh
       }
-      return { used: 0, remaining: FREE_MESSAGES, resetAt: now + COOLDOWN_MS }
-    } catch { /* fall through to memory */ }
+    } catch { /* fall through */ }
   }
 
   const e = mem.get(key)
-  if (e && e.resetAt > now) {
-    return { used: e.count, remaining: Math.max(0, FREE_MESSAGES - e.count), resetAt: e.resetAt }
-  }
-  return { used: 0, remaining: FREE_MESSAGES, resetAt: now + COOLDOWN_MS }
+  if (e && e.resetAt > now) return shape(e.count, e.resetAt)
+  return fresh
 }
 
 /** Record one question. Returns the usage *after* it. */
 export async function spendMessage(deviceId) {
   const key = `aiuse:${deviceId}`
   const now = Date.now()
-  const cur = await readUsage(deviceId)
-  // A fresh window starts at the first question of the window, so the hour is
-  // measured from when the student started, not from midnight.
-  const resetAt = cur.used === 0 ? now + COOLDOWN_MS : cur.resetAt
-  const next = { count: cur.used + 1, resetAt }
+  if (!deviceId) return shape(1, now + COOLDOWN_MS)
 
-  if (redis && typeof redis.set === 'function') {
+  if (useRedis()) {
     try {
+      const cur = await readUsage(deviceId)
+      const resetAt = cur.used === 0 ? now + COOLDOWN_MS : cur.resetAt
+      const next = { count: cur.used + 1, resetAt }
       await redis.set(key, JSON.stringify(next), { ex: Math.ceil((resetAt - now) / 1000) })
-      return { used: next.count, remaining: Math.max(0, FREE_MESSAGES - next.count), resetAt }
-    } catch { /* fall through to memory */ }
+      return shape(next.count, resetAt)
+    } catch { /* fall through */ }
   }
 
+  const sb = db()
+  if (sb) {
+    try {
+      // One statement, server-side: read-then-write from here would let two
+      // questions sent at once both read the same count and both write
+      // count + 1, handing out a free question per race.
+      const { data, error } = await sb.rpc('spend_ai_message', {
+        p_device_id: deviceId,
+        p_window_secs: Math.round(COOLDOWN_MS / 1000),
+      })
+      const row = Array.isArray(data) ? data[0] : data
+      if (!error && row) return shape(row.used, new Date(row.reset_at).getTime())
+    } catch { /* fall through */ }
+  }
+
+  // Last resort. Per-instance, so it under-counts on serverless — but the
+  // alternative is refusing to answer at all, and the paid-provider cap in
+  // ai-quota.js is a separate, independent guard on what this can cost.
+  const cur = await readUsage(deviceId)
+  const resetAt = cur.used === 0 ? now + COOLDOWN_MS : cur.resetAt
+  const next = { count: cur.used + 1, resetAt }
   mem.set(key, next)
   if (mem.size > 5000) for (const [k, v] of mem) if (v.resetAt <= now) mem.delete(k)
-  return { used: next.count, remaining: Math.max(0, FREE_MESSAGES - next.count), resetAt }
+  return shape(next.count, resetAt)
 }
 
 /**

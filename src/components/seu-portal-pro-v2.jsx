@@ -3,6 +3,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { CATALOGUE } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
+import { useAccount } from "@/lib/hooks/useAccount";
+import { browseGate } from "@/lib/auth-config";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
@@ -330,20 +332,6 @@ const GRADE_SCALE = [
 ];
 const scoreToGrade = (s) => GRADE_SCALE.find(g => s >= g.min) || GRADE_SCALE[GRADE_SCALE.length - 1];
 
-const ACHIEVEMENTS = [
-  { id: "first_visit", title: "بداية الرحلة", desc: "افتح أول مادة", icon: Compass, color: P.blue2, check: (s) => (s.viewed?.length || 0) >= 1 },
-  { id: "explorer", title: "المستكشف", desc: "افتح 5 مواد", icon: Globe, color: P.purple, check: (s) => (s.viewed?.length || 0) >= 5 },
-  { id: "bookworm", title: "عاشق الكتب", desc: "افتح 15 مادة", icon: BookOpen, color: P.green, check: (s) => (s.viewed?.length || 0) >= 15 },
-  { id: "collector", title: "المجمّع", desc: "أضف 5 مواد للمفضلة", icon: Star, color: P.gold, check: (s) => (s.favorites?.length || 0) >= 5 },
-  { id: "focused", title: "التركيز", desc: "أكمل 5 جلسات بومودورو", icon: Target, color: P.red, check: (s) => (s.totalSessions || 0) >= 5 },
-  { id: "dedicated", title: "المثابر", desc: "أكمل 25 جلسة بومودورو", icon: Flame, color: P.orange, check: (s) => (s.totalSessions || 0) >= 25 },
-  { id: "marathon", title: "الماراثون", desc: "أكمل 100 جلسة بومودورو", icon: Trophy, color: P.gold, check: (s) => (s.totalSessions || 0) >= 100 },
-  { id: "calc_pro", title: "الحاسب الذكي", desc: "احسب معدلك 5 مرات", icon: Calculator, color: P.cyan, check: (s) => (s.gpaCalcs || 0) >= 5 },
-  { id: "streak3", title: "3 أيام متتالية", desc: "حافظ على سلسلة 3 أيام", icon: Flame, color: P.orangeLight, check: (s) => (s.streak || 0) >= 3 },
-  { id: "streak7", title: "أسبوع كامل", desc: "حافظ على سلسلة 7 أيام", icon: Flame, color: P.red, check: (s) => (s.streak || 0) >= 7 },
-  { id: "note_taker", title: "كاتب الملاحظات", desc: "أضف ملاحظة لمادة", icon: PenLine, color: P.purple, check: (s) => Object.keys(s.notes || {}).length >= 1 },
-  { id: "ai_friend", title: "صديق الذكاء", desc: "تحدث مع المساعد الذكي", icon: Sparkles, color: P.blueLight, check: (s) => (s.aiChats || 0) >= 1 },
-];
 
 /* ══════════════════════════════════════════════════════════════
    UTILITIES
@@ -618,33 +606,6 @@ function ResetDialog({ open, counts, onClose, onResetData, onResetAll, t }) {
   );
 }
 
-function StreakWeek({ activeDays, t }) {
-  const days = last7Days();
-  const labels = ["أحد", "اثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
-  return (
-    <div style={{ display: "flex", gap: 6, justifyContent: "space-between" }}>
-      {days.map((d) => {
-        const isToday = d === todayKey();
-        const active = activeDays.includes(d);
-        const dow = new Date(d).getDay();
-        return (
-          <div key={d} style={{ textAlign: "center", flex: 1 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 10, margin: "0 auto",
-              background: active ? `linear-gradient(135deg,${P.orange},${P.orangeLight})` : t.s3,
-              border: isToday ? `2px solid ${P.gold}` : `1px solid ${t.bd}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: active ? `0 4px 12px ${P.orange}40` : "none", transition: "all .3s",
-            }}>
-              {active && <Flame size={15} color="#fff" />}
-            </div>
-            <div style={{ fontSize: 11, color: isToday ? P.gold : t.mu, marginTop: 4, fontWeight: isToday ? 700 : 500 }}>{labels[dow]}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════
    AI CHAT
@@ -738,6 +699,51 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
             </Btn>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What a browsing visitor is told when they reach for something an account
+ * unlocks. Named for what it is rather than "upgrade": nothing is being sold
+ * here, and the free part of the site is genuinely free.
+ */
+function NeedAccountSheet({ t, what, onClose, accounts }) {
+  const lines = {
+    file: ["الملفات للطلاب المسجّلين", "التصفّح مفتوح للجميع — أما فتح الملفات وتحميلها فيحتاج حساباً. مجاني، ودقيقة واحدة."],
+    ai: ["المساعد الذكي للطلاب المسجّلين", "أنشئ حسابك لتسأل المساعد عن موادك — ويحفظ لك مسارك وجدولك ومهامك أيضاً."],
+    save: ["الحفظ يحتاج حساباً", "المفضلة والملاحظات والمهام والجدول تُحفظ في حسابك لتتبعك على أي جهاز."],
+  }[what] || ["يحتاج حساباً", "أنشئ حسابك للاستفادة الكاملة من الموقع."];
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 700, background: "rgba(0,0,0,.6)", backdropFilter: "blur(6px)", display: "flex", alignItems: "flex-end", justifyContent: "center", animation: "fadeIn .2s ease" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.s1, borderRadius: "22px 22px 0 0", padding: "22px 18px 28px", width: "100%", maxWidth: 620, animation: "fadeUp .28s ease" }}>
+        <div style={{ width: 38, height: 4, borderRadius: 2, background: t.bd, margin: "0 auto 16px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 11, background: `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Lock size={17} color={P.gold} />
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: t.tx }}>{lines[0]}</div>
+        </div>
+        <div style={{ fontSize: 13, color: t.mu, lineHeight: 1.9, marginBottom: 16 }}>{lines[1]}</div>
+        {accounts ? (
+          <>
+            <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
+              <User size={15} /> إنشاء حساب مجاني
+            </Btn>
+            <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
+              <LogIn size={15} /> لدي حساب — تسجيل الدخول
+            </Btn>
+          </>
+        ) : (
+          <Btn variant="gold" onClick={onClose} style={{ width: "100%" }}>
+            <User size={15} /> أكمل ملفك من «حسابي»
+          </Btn>
+        )}
+        <button onClick={onClose} style={{ width: "100%", background: "none", border: "none", marginTop: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu }}>
+          أكمل التصفّح
+        </button>
       </div>
     </div>
   );
@@ -1147,6 +1153,23 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  const blocked = !!(gate && !gate.subscribed && gate.blocked && !askEmail);
+  // "خلال ٤٢ دقيقة" has to keep counting down, and the window has to lift
+  // itself when it elapses — otherwise a student who waits it out still sees
+  // the block and has to guess that reloading fixes it.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!blocked || !gate?.resetAt) return;
+    const id = setInterval(() => {
+      if (Date.now() >= gate.resetAt) {
+        setGate(g => (g ? { ...g, blocked: false, used: 0, remaining: g.limit, resetAt: 0 } : g));
+      } else {
+        tick(n => n + 1);
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [blocked, gate?.resetAt, gate?.limit]);
+
   const [menuId, setMenuId] = useState(null);
   const [copied, setCopied] = useState(false);
   const [fileContext, setFileContext] = useState(null);
@@ -1506,25 +1529,54 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         </div>
       )}
 
-      {/* What is left of the allowance — the server's number, not a guess */}
-      {gate && !gate.subscribed && !askEmail && (
-        <div style={{
-          padding: "7px 12px", background: gate.blocked ? `${P.orange}12` : t.s1,
-          borderTop: `1px solid ${t.bd}`, flexShrink: 0,
-          display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-        }}>
-          <Sparkles size={12} color={gate.blocked ? P.orange : t.mu} style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 11.5, color: gate.blocked ? P.orange : t.mu, fontWeight: gate.blocked ? 800 : 600, flex: 1, minWidth: 0 }}>
-            {gate.blocked
-              ? `انتهت أسئلتك المجانية — تتجدّد ${untilLabel(gate.resetAt)}`
-              : `بقي ${gate.remaining} من ${gate.limit} أسئلة`}
-          </span>
+      {/* Counting down — a bar, so "3 of 5" reads at a glance rather than
+          having to be parsed. The server's number, never a local guess. */}
+      {gate && !gate.subscribed && !gate.blocked && !askEmail && (
+        <div style={{ padding: "8px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+            <Sparkles size={12} color={gate.remaining <= 1 ? P.orange : t.mu} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: 11.5, color: gate.remaining <= 1 ? P.orange : t.mu, fontWeight: gate.remaining <= 1 ? 800 : 600, flex: 1, minWidth: 0 }}>
+              {gate.remaining === 1 ? "بقي سؤال واحد" : `بقي ${gate.remaining} من ${gate.limit} أسئلة`}
+            </span>
+            {onSubscribe && (
+              <button onClick={() => onSubscribe(gate)} style={{
+                background: "transparent", border: `1px solid ${t.bd}`, borderRadius: 14,
+                padding: "3px 11px", cursor: "pointer", fontFamily: "inherit",
+                fontSize: 11.5, fontWeight: 800, color: P.blue2, flexShrink: 0,
+              }}>اشتراك</button>
+            )}
+          </div>
+          <div style={{ height: 3, borderRadius: 2, background: t.bd, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", width: `${Math.max(0, Math.min(100, (gate.remaining / (gate.limit || 1)) * 100))}%`,
+              background: gate.remaining <= 1 ? P.orange : P.blue2, borderRadius: 2, transition: "width .3s ease",
+              marginRight: 0, marginLeft: "auto",
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Out of questions. This replaces the composer rather than sitting above
+          it: a text box you can still type into, whose Send does nothing but
+          reopen a sheet, reads as broken. Say what happened, when it comes
+          back, and the one thing that lifts it now. */}
+      {gate && !gate.subscribed && gate.blocked && !askEmail && (
+        <div style={{ padding: "16px 14px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 9, background: `${P.orange}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Sparkles size={15} color={P.orange} />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 900, color: t.tx }}>انتهت أسئلتك المجانية</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 12 }}>
+            استخدمت {gate.limit} من {gate.limit} أسئلة.
+            {gate.resetAt ? <> تعود مجاناً <strong style={{ color: t.tx }}>{untilLabel(gate.resetAt)}</strong>.</> : null}
+            {onSubscribe ? " أو اشترك الآن وتسأل بلا حدّ." : ""}
+          </div>
           {onSubscribe && (
-            <button onClick={() => onSubscribe(gate)} style={{
-              background: gate.blocked ? P.orange : "transparent", border: `1px solid ${gate.blocked ? P.orange : t.bd}`,
-              borderRadius: 14, padding: "3px 11px", cursor: "pointer", fontFamily: "inherit",
-              fontSize: 11.5, fontWeight: 800, color: gate.blocked ? "#fff" : P.blue2, flexShrink: 0,
-            }}>اشتراك</button>
+            <Btn variant="primary" onClick={() => onSubscribe(gate)} style={{ width: "100%" }}>
+              <Sparkles size={14} /> اشترك — أسئلة بلا حدّ
+            </Btn>
           )}
         </div>
       )}
@@ -1535,8 +1587,8 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         </div>
       )}
 
-      {/* Input */}
-      <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+      {/* Input — hidden while blocked, since the card above has taken its place */}
+      <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: blocked ? "none" : "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
         <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={fileContext ? `اسأل عن ملفات ${subject}...` : `اسأل عن ${subject}...`}
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
@@ -1603,8 +1655,6 @@ function QuizMode({ subject, t, onToast }) {
       const existing = storage.get("quiz_scores", []);
       storage.set("quiz_scores", [...existing, { subject, score: finalScore, total: quiz.length, date: Date.now() }]);
       // Award XP
-      const xp = storage.get("xp", 0);
-      storage.set("xp", xp + 50);
       onToast?.(`+50 XP! أكملت الاختبار`, "success");
     } else {
       setCurrent(c => c + 1); setSelected(null);
@@ -1988,169 +2038,6 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
   );
 }
 
-/* ══════════════════════════════════════════════════════════════
-   POMODORO TIMER (with history + sound + custom durations)
-   ══════════════════════════════════════════════════════════════ */
-function PomodoroTimer({ t, sessionLog, setSessionLog, totalSessions, setTotalSessions, soundOn, onToast }) {
-  const [mode, setMode] = useState("work");
-  const [secs, setSecs] = useState(25 * 60);
-  const [running, setRunning] = useState(false);
-  const [subject, setSubject] = useStored("pomoSubject", "المذاكرة");
-  const [customWork, setCustomWork] = useStored("pomoCustomWork", 25);
-  const [showSettings, setShowSettings] = useState(false);
-  const timerRef = useRef(null);
-  const DURATIONS = { work: customWork * 60, short: 5 * 60, long: 15 * 60 };
-  const todaySessions = sessionLog.filter(s => s.date === todayKey()).length;
-  const todayMins = sessionLog.filter(s => s.date === todayKey()).reduce((a, s) => a + s.dur, 0);
-
-  useEffect(() => { setSecs(DURATIONS[mode]); }, [customWork]);
-
-  useEffect(() => {
-    if (running) {
-      timerRef.current = setInterval(() => setSecs(s => {
-        if (s <= 1) {
-          clearInterval(timerRef.current); setRunning(false);
-          if (soundOn) playBell();
-          if (mode === "work") {
-            setTotalSessions(n => n + 1);
-            setSessionLog(l => [...l, { date: todayKey(), dur: customWork, subject, t: Date.now() }]);
-            onToast?.("جلسة دراسة مكتملة!", "success");
-          } else {
-            onToast?.("⏰ انتهى وقت الراحة", "info");
-          }
-          return 0;
-        }
-        return s - 1;
-      }), 1000);
-    } else clearInterval(timerRef.current);
-    return () => clearInterval(timerRef.current);
-  }, [running, mode, customWork, subject, soundOn]);
-
-  const changeMode = (m) => { clearInterval(timerRef.current); setRunning(false); setMode(m); setSecs(DURATIONS[m]); };
-  const reset = () => { clearInterval(timerRef.current); setRunning(false); setSecs(DURATIONS[mode]); };
-  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
-  const ss = String(secs % 60).padStart(2, "0");
-  const prog = 1 - secs / DURATIONS[mode];
-  const r = 58, circ = 2 * Math.PI * r;
-  const modeColor = mode === "work" ? P.blue2 : mode === "short" ? P.green : P.gold;
-
-  return (
-    <div style={{ animation: "fadeUp .4s ease" }}>
-      <div style={{
-        background: `linear-gradient(135deg,${P.navy},${P.blue})`, borderRadius: 20,
-        padding: "28px 24px", marginBottom: 16, textAlign: "center", position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: -40, right: -40, width: 140, height: 140, borderRadius: "50%", background: `${modeColor}15` }} />
-        <div style={{ position: "relative" }}>
-          <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 24 }}>
-            {[["work", "⚡ دراسة"], ["short", "☕ راحة"], ["long", "🌿 راحة طويلة"]].map(([m, l]) => (
-              <button key={m} onClick={() => changeMode(m)} style={{
-                background: mode === m ? "rgba(255,255,255,.2)" : "transparent",
-                border: `1px solid rgba(255,255,255,${mode === m ? .4 : .15})`, borderRadius: 20,
-                padding: "5px 12px", cursor: "pointer", fontSize: 12, color: "rgba(255,255,255,.9)", fontFamily: "inherit"
-              }}>
-                {l}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ position: "relative", display: "inline-block", marginBottom: 16 }}>
-            <svg width={140} height={140} style={{ transform: "rotate(-90deg)" }}>
-              <circle cx={70} cy={70} r={r} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth={8} />
-              <circle cx={70} cy={70} r={r} fill="none" stroke={modeColor} strokeWidth={8}
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - prog)} strokeLinecap="round"
-                style={{ transition: "stroke-dashoffset .9s linear" }} />
-            </svg>
-            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", textAlign: "center" }}>
-              <div style={{ fontSize: 30, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 2 }}>{mm}:{ss}</div>
-              <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginTop: 2 }}>{mode === "work" ? "دراسة" : mode === "short" ? "راحة" : "راحة طويلة"}</div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", alignItems: "center" }}>
-            <button onClick={reset} style={{
-              background: "rgba(255,255,255,.1)", border: "none", borderRadius: "50%",
-              width: 40, height: 40, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.7)"
-            }}>
-              <RotateCcw size={16} />
-            </button>
-            <button onClick={() => setRunning(rv => !rv)} style={{
-              background: running ? "#dc2626" : `${modeColor}`, border: "none", borderRadius: 24,
-              padding: "12px 32px", cursor: "pointer", color: "#fff", fontSize: 15, fontWeight: 800,
-              fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, boxShadow: `0 4px 20px ${modeColor}50`
-            }}>
-              {running ? <><Pause size={16} />إيقاف</> : <><Play size={16} />بدء</>}
-            </button>
-            <button onClick={() => setShowSettings(s => !s)} style={{
-              background: "rgba(255,255,255,.1)", border: "none", borderRadius: "50%",
-              width: 40, height: 40, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.7)"
-            }}>
-              <Settings size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {showSettings && (
-        <div style={{ background: t.s1, borderRadius: 14, padding: 14, marginBottom: 12, border: `1px solid ${t.bd}`, animation: "fadeUp .3s ease" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 10 }}>إعدادات المؤقت</div>
-          <div style={{ fontSize: 12, color: t.mu, marginBottom: 6 }}>مدة جلسة الدراسة: {customWork} دقيقة</div>
-          <input type="range" min={10} max={60} step={5} value={customWork}
-            onChange={e => setCustomWork(+e.target.value)}
-            style={{ width: "100%", accentColor: P.blue2 }} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.dim, marginTop: 4 }}>
-            <span>10د</span><span>60د</span>
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <div style={{ background: t.s1, borderRadius: 14, padding: "14px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: P.blue2 }}>{todaySessions}</div>
-          <div style={{ fontSize: 12, color: t.mu }}>جلسات اليوم</div>
-        </div>
-        <div style={{ background: t.s1, borderRadius: 14, padding: "14px", border: `1px solid ${t.bd}`, textAlign: "center" }}>
-          <div style={{ fontSize: 26, fontWeight: 900, color: P.gold }}>{todayMins}</div>
-          <div style={{ fontSize: 12, color: t.mu }}>دقيقة دراسة</div>
-        </div>
-      </div>
-
-      <div style={{ background: t.s1, borderRadius: 14, padding: "12px 14px", border: `1px solid ${t.bd}`, marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: t.mu, marginBottom: 6 }}>مادة الدراسة الحالية</div>
-        <input value={subject} onChange={e => setSubject(e.target.value)}
-          style={{
-            width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "8px 12px",
-            fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl",
-            outline: "none", boxSizing: "border-box",
-          }} />
-      </div>
-
-      {sessionLog.length > 0 && (
-        <div style={{ background: t.s1, borderRadius: 14, padding: 14, border: `1px solid ${t.bd}` }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-            <History size={14} color={t.mu} />
-            <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>آخر الجلسات</div>
-            <div style={{ marginRight: "auto", fontSize: 12, color: t.dim }}>الإجمالي: {totalSessions}</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 200, overflowY: "auto" }}>
-            {[...sessionLog].reverse().slice(0, 8).map((s, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: t.s2, borderRadius: 10 }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Clock size={13} color={P.blue2} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{s.subject}</div>
-                  <div style={{ fontSize: 11.5, color: t.mu }}>{new Date(s.t).toLocaleString("ar-SA", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "short" })}</div>
-                </div>
-                <div style={{ fontSize: 13, color: P.green, fontWeight: 700 }}>{s.dur}د</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════
    GRADE CALC (per course)
@@ -2331,7 +2218,7 @@ const fmtTaskWhen = (d) => {
   return `${date} ${d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}`;
 };
 
-function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, profile }) {
+function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, profile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("الكل");
   const blank = () => ({
@@ -2383,7 +2270,6 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, profile
     }]);
     setNt(blank());
     setShowAdd(false);
-    const cur = storage.get("xp", 0); storage.set("xp", cur + 15); setXp?.(cur + 15);
     onToast?.("تمت الإضافة +15 XP", "success");
   };
   const toggle = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
@@ -2765,29 +2651,6 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, setXp, profile
   );
 }
 
-/* ══════════════════════════════════════════════════════════════
-   DAILY PROGRESS BAR
-   ══════════════════════════════════════════════════════════════ */
-function DailyProgress({ sessionLog, weeklyGoal, t }) {
-  const todayMins = (sessionLog || []).filter(s => s.date === todayKey()).reduce((a, s) => a + (s.dur || 25), 0);
-  const goalMins = Math.max(1, Math.round(weeklyGoal * 25 / 5));
-  const pct = Math.min(100, Math.round((todayMins / goalMins) * 100));
-  const barColor = pct < 30 ? P.red : pct < 70 ? P.orange : P.green;
-  return (
-    <div style={{ background: t.s1, borderRadius: 18, padding: 14, marginBottom: 14, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-          <Activity size={14} color={barColor} /> إنجاز اليوم
-        </div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: barColor }}>{pct}%</span>
-      </div>
-      <div style={{ height: 8, background: t.s3, borderRadius: 4, overflow: "hidden", marginBottom: 5 }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${barColor},${barColor}cc)`, borderRadius: 4, transition: "width .6s ease" }} />
-      </div>
-      <div style={{ fontSize: 12, color: t.mu }}>{todayMins} دقيقة من {goalMins} دقيقة</div>
-    </div>
-  );
-}
 
 /* ══════════════════════════════════════════════════════════════
    SEMESTER CHART
@@ -3428,7 +3291,7 @@ function PDFViewer({ file, onClose }) {
   );
 }
 
-function RealFileItem({ file, t, onToast }) {
+function RealFileItem({ file, t, onToast, canOpen = true, onNeedAccount = null }) {
   const [viewing, setViewing] = useState(false);
   const ratingKey = `real_${file.id || file.name}`;
   const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[ratingKey] || 0));
@@ -3496,12 +3359,21 @@ function RealFileItem({ file, t, onToast }) {
           <button onClick={shareFile} style={{ background: `${P.purple}12`, border: `1px solid ${P.purple}25`, borderRadius: 8, padding: "6px 8px", cursor: "pointer", color: P.purple, display: "flex", alignItems: "center", gap: 3 }}>
             <Share2 size={12} />
           </button>
-          <button onClick={() => setViewing(true)} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }}>
-            <Eye size={12} /> قراءة
+          {/* Browsing is open; taking the files home is not. The buttons stay
+              visible rather than disappearing — a student should be able to see
+              that the material is there and what it costs to reach it. */}
+          <button onClick={() => canOpen ? setViewing(true) : onNeedAccount?.()} style={{ background: `${P.blue2}15`, border: `1px solid ${P.blue2}35`, borderRadius: 8, padding: "6px 10px", cursor: "pointer", color: P.blue2, fontSize: 12, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4, opacity: canOpen ? 1 : 0.55 }}>
+            {canOpen ? <Eye size={12} /> : <Lock size={12} />} قراءة
           </button>
-          <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-            <Download size={12} /> تحميل
-          </a>
+          {canOpen ? (
+            <a href={dlUrl} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+              <Download size={12} /> تحميل
+            </a>
+          ) : (
+            <button onClick={() => onNeedAccount?.()} style={{ background: `linear-gradient(135deg,${P.blue},${P.blue2})`, border: "none", borderRadius: 8, padding: "6px 10px", color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, opacity: 0.65 }}>
+              <Lock size={12} /> تحميل
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -3706,7 +3578,7 @@ function AISection({ subject, t, onChat, files, onToast }) {
   );
 }
 
-function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast, onAskAI }) {
+function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t, onChat, onToast, onAskAI, canOpenFiles = true, onNeedAccount = null }) {
   const [open, setOpen] = useState(null);
   const [realFiles, setRealFiles] = useState({});
   const [realLoading, setRealLoading] = useState(true);
@@ -3911,7 +3783,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                             )}
                           </div>
                         )}
-                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} />)}
+                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} canOpen={canOpenFiles} onNeedAccount={onNeedAccount} />)}
                         {shown.length === 0 && (
                           <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
@@ -3931,410 +3803,10 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
 /* ══════════════════════════════════════════════════════════════
    HOME PAGE
    ══════════════════════════════════════════════════════════════ */
-/* ══════════════════════════════════════════════════════════════
-   STUDY ANALYTICS (Feature 6)
-   ══════════════════════════════════════════════════════════════ */
-function StudyAnalytics({ sessionLog, t }) {
-  const now = Date.now();
-  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
-  const recent = (sessionLog || []).filter(s => {
-    const ts = s.t || (s.date ? new Date(s.date).getTime() : 0);
-    return ts >= weekAgo;
-  });
-  const totalMins = recent.reduce((a, s) => a + (s.dur || 25), 0);
-  const bySubject = {};
-  recent.forEach(s => {
-    const subj = s.subject || "عام";
-    bySubject[subj] = (bySubject[subj] || 0) + (s.dur || 25);
-  });
-  const sorted = Object.entries(bySubject).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxMins = sorted[0]?.[1] || 1;
-
-  if (recent.length === 0) {
-    return (
-      <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginTop: 16, border: `1px solid ${t.bd}` }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-          <BarChart size={15} color={P.purple} /> إحصائيات المذاكرة
-        </div>
-        <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13, lineHeight: 1.7 }}>
-          لم تسجّل أي جلسات مذاكرة هذا الأسبوع — استخدم مؤقت البومودورو
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginTop: 16, border: `1px solid ${t.bd}` }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-          <BarChart size={15} color={P.purple} /> إحصائيات المذاكرة
-        </div>
-        <div style={{ fontSize: 12, color: t.mu }}>{totalMins} دقيقة هذا الأسبوع</div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {sorted.map(([subject, mins]) => {
-          const pct = Math.round((mins / maxMins) * 100);
-          return (
-            <div key={subject}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 13, color: t.tx, fontWeight: 600 }}>{subject}</span>
-                <span style={{ fontSize: 12, color: t.mu }}>{mins}د</span>
-              </div>
-              <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${P.purple},${P.blue2})`, borderRadius: 3, transition: "width .6s" }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════
-   XP BAR (Feature 8)
-   ══════════════════════════════════════════════════════════════ */
-function XPBar({ xp, t }) {
-  const level = getXpLevel(xp);
-  const progress = level.next ? Math.round(((xp - level.min) / (level.next - level.min)) * 100) : 100;
-  return (
-    <div style={{ background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 12, background: `${P.gold}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Trophy size={18} color={P.gold} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{level.stars} {level.name}</div>
-          <div style={{ fontSize: 12, color: t.mu }}>{xp} XP{level.next ? ` / ${level.next}` : " (أقصى مستوى)"}</div>
-        </div>
-        <div style={{ fontSize: 22, fontWeight: 900, color: P.gold }}>{xp}</div>
-      </div>
-      {level.next && (
-        <div>
-          <div style={{ height: 6, background: t.s3, borderRadius: 3, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${progress}%`, background: `linear-gradient(90deg,${P.gold},${P.orange})`, borderRadius: 3, transition: "width .6s" }} />
-          </div>
-          <div style={{ fontSize: 11.5, color: t.mu, marginTop: 4 }}>
-            {level.next - xp} XP للمستوى التالي
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 
-/* ══════════════════════════════════════════════════════════════
-   MONTHLY REPORT MODAL (Feature 7)
-   ══════════════════════════════════════════════════════════════ */
-function MonthlyReportModal({ t, sessionLog, tasks, semesters, onClose }) {
-  const now = new Date();
-  const monthNames = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
-  const monthName = monthNames[now.getMonth()];
 
-  const thisMonth = (sessionLog || []).filter(s => {
-    const d = new Date(s.t || (s.date ? s.date + "T12:00:00" : Date.now()));
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  });
-  const totalMonthMins = thisMonth.reduce((a, s) => a + (s.dur || 25), 0);
-  const totalMonthHours = Math.floor(totalMonthMins / 60);
 
-  const doneTasks = (tasks || []).filter(tk => tk.done).length;
-  const lastGpa = semesters?.length ? parseFloat(semesters[semesters.length - 1]?.gpa || 0) : null;
-
-  const bySubject = {};
-  thisMonth.forEach(s => { const sub = s.subject || "عام"; bySubject[sub] = (bySubject[sub] || 0) + (s.dur || 25); });
-  const topSubject = Object.entries(bySubject).sort((a, b) => b[1] - a[1])[0]?.[0] || "—";
-
-  const studyDays = new Set(thisMonth.map(s => s.date || new Date(s.t || Date.now()).toISOString().slice(0, 10))).size;
-
-  // Weekly breakdown for this month
-  const weeklyMins = [0, 0, 0, 0, 0];
-  thisMonth.forEach(s => {
-    const d = new Date(s.t || (s.date ? s.date + "T12:00:00" : Date.now()));
-    const dayOfMonth = d.getDate();
-    const weekIdx = Math.min(Math.floor((dayOfMonth - 1) / 7), 4);
-    weeklyMins[weekIdx] += (s.dur || 25);
-  });
-  const maxWeekMins = Math.max(...weeklyMins, 1);
-
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(0,0,0,.6)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, animation: "fadeIn .2s ease" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.s1, borderRadius: 24, padding: 24, maxWidth: 420, width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: t.sh, border: `1px solid ${t.bd}`, animation: "scaleIn .25s ease" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <div style={{ fontSize: 17, fontWeight: 900, color: t.tx, display: "flex", alignItems: "center", gap: 8 }}>
-            <FileBarChart size={18} color={P.blue2} /> التقرير الشهري
-          </div>
-          <button onClick={onClose} style={{ background: t.s2, border: "none", borderRadius: 8, padding: 7, cursor: "pointer", display: "flex", color: t.mu }}>
-            <X size={16} />
-          </button>
-        </div>
-
-        <div style={{ background: t.hero, borderRadius: 16, padding: 16, marginBottom: 16, textAlign: "center" }}>
-          <div style={{ fontSize: 22, fontWeight: 900, color: P.gold }}>{monthName} {now.getFullYear()}</div>
-          <div style={{ fontSize: 13, color: "rgba(255,255,255,.6)", marginTop: 4 }}>التقرير الشهري الأكاديمي</div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-          {[
-            { label: "ساعات الدراسة", value: totalMonthHours + "س", color: P.blue2, Icon: Clock },
-            { label: "مهام منجزة", value: doneTasks, color: P.green, Icon: CheckCircle },
-            { label: "آخر معدل", value: lastGpa ? lastGpa.toFixed(2) : "—", color: P.gold, Icon: Trophy },
-            { label: "أيام الدراسة", value: studyDays, color: P.purple, Icon: Calendar },
-          ].map(({ label, value, color, Icon: Ic }) => (
-            <div key={label} style={{ background: t.s2, borderRadius: 12, padding: 12, border: `1px solid ${t.bd}`, textAlign: "center" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 8px" }}>
-                <Ic size={15} color={color} />
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
-              <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2 }}>{label}</div>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ background: t.s2, borderRadius: 12, padding: 12, marginBottom: 16, border: `1px solid ${t.bd}` }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, marginBottom: 4 }}>المادة الأكثر مذاكرة</div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: P.blue2 }}>{topSubject}</div>
-        </div>
-
-        <div style={{ background: t.s1, borderRadius: 14, padding: 14, border: `1px solid ${t.bd}` }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 12 }}>دقائق الدراسة أسبوعياً</div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
-            {weeklyMins.map((v, i) => {
-              const h = Math.max(4, (v / maxWeekMins) * 100);
-              return (
-                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <div style={{ fontSize: 11, color: t.dim }}>{v}</div>
-                  <div style={{ width: "100%", height: `${h}%`, borderRadius: "4px 4px 0 0", background: `linear-gradient(180deg,${P.blue2},${P.blue})`, minHeight: 4 }} />
-                  <div style={{ fontSize: 11, color: t.mu }}>أ{i + 1}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════
-   FOCUS MODE OVERLAY (Feature 5)
-   ══════════════════════════════════════════════════════════════ */
-const FOCUS_QUOTES = [
-  "ركّز على خطوة واحدة الآن، والباقي يتبع.",
-  "٢٥ دقيقة تركيز كامل تساوي ساعة من التشتّت.",
-  "النجاح مجموع جهود صغيرة تتكرّر كل يوم.",
-  "أغلق كل شيء… إلا هدفك.",
-  "أنت أقرب مما تظن، أكمِل.",
-  "الاستمرار أهم من الكمال.",
-  "دقيقة تركيز الآن خير من ساعة ندم لاحقاً.",
-];
-const FOCUS_WORK = [25, 50, 90];
-const FOCUS_BREAK = [5, 10, 15];
-const FOCUS_SUGS = ["📝 لخّص الفكرة الرئيسية", "🧠 اشرح ببساطة", "💡 أعطني مثالاً", "❓ سؤال اختبار سريع"];
-
-function FocusMode({ t, sessionLog, setSessionLog, totalSessions, setTotalSessions, soundOn, onToast, onClose, setXp }) {
-  const [focusSubject, setFocusSubject] = useState(ALL_SUBJECTS_LIST[0] || "عام");
-  const [mode, setMode] = useState("work"); // work | break
-  const [workMin, setWorkMin] = useState(25);
-  const [breakMin, setBreakMin] = useState(5);
-  const [secs, setSecs] = useState(25 * 60);
-  const [running, setRunning] = useState(false);
-  const [focusQ, setFocusQ] = useState("");
-  const [focusA, setFocusA] = useState("");
-  const [focusLoading, setFocusLoading] = useState(false);
-  const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * FOCUS_QUOTES.length));
-  const [dayGoal, setDayGoal] = useStored("focusDayGoal", 4);
-  const timerRef = useRef(null);
-
-  const total = (mode === "work" ? workMin : breakMin) * 60;
-  const mm = String(Math.floor(secs / 60)).padStart(2, "0");
-  const ss = String(secs % 60).padStart(2, "0");
-  const prog = total > 0 ? 1 - secs / total : 0;
-  const r = 96; const circ = 2 * Math.PI * r;
-  const modeColor = mode === "work" ? P.blue2 : P.green;
-  const todaySessions = (sessionLog || []).filter(s => s.date === todayKey()).length;
-  const todayMins = (sessionLog || []).filter(s => s.date === todayKey()).reduce((a, s) => a + (s.dur || 25), 0);
-
-  useEffect(() => { const iv = setInterval(() => setQuoteIdx(i => (i + 1) % FOCUS_QUOTES.length), 12000); return () => clearInterval(iv); }, []);
-
-  useEffect(() => {
-    if (running) {
-      timerRef.current = setInterval(() => setSecs(s => {
-        if (s <= 1) {
-          clearInterval(timerRef.current); setRunning(false);
-          if (soundOn) playBell();
-          if (mode === "work") {
-            setTotalSessions(n => n + 1);
-            setSessionLog(l => [...l, { date: todayKey(), dur: workMin, subject: focusSubject, t: Date.now() }]);
-            const xp = storage.get("xp", 0); storage.set("xp", xp + 30); setXp(xp + 30);
-            onToast?.("جلسة تركيز مكتملة! خذ راحة 🎉 +30 XP", "success");
-            setMode("break"); return breakMin * 60;
-          }
-          onToast?.("انتهت الراحة — لنكمل 💪", "info");
-          setMode("work"); return workMin * 60;
-        }
-        return s - 1;
-      }), 1000);
-    } else clearInterval(timerRef.current);
-    return () => clearInterval(timerRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, mode, workMin, breakMin, focusSubject, soundOn]);
-
-  const changeMode = (m) => { clearInterval(timerRef.current); setRunning(false); setMode(m); setSecs((m === "work" ? workMin : breakMin) * 60); };
-  const setPreset = (min) => { clearInterval(timerRef.current); setRunning(false); if (mode === "work") setWorkMin(min); else setBreakMin(min); setSecs(min * 60); };
-  const reset = () => { clearInterval(timerRef.current); setRunning(false); setSecs(total); };
-
-  const askAI = async (q) => {
-    const query = (q || focusQ).trim();
-    if (!query || focusLoading) return;
-    setFocusQ(query); setFocusLoading(true); setFocusA("");
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: focusSubject, messages: [{ role: "user", content: query }], fileContext: null }),
-      });
-      const d = await res.json();
-      setFocusA(d.text || d.error || "لا توجد إجابة");
-    } catch { setFocusA("تعذّر الاتصال"); }
-    setFocusLoading(false);
-  };
-
-  const presetList = mode === "work" ? FOCUS_WORK : FOCUS_BREAK;
-  const curMin = mode === "work" ? workMin : breakMin;
-
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 450, overflowY: "auto",
-      background: mode === "work"
-        ? "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(10,138,88,.28) 0%, transparent 60%), linear-gradient(180deg,#04120c,#02070f 60%,#04120c)"
-        : "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(5,150,105,.28) 0%, transparent 60%), linear-gradient(180deg,#04140d,#02100a 60%,#04140d)",
-      display: "flex", flexDirection: "column", animation: "fadeIn .3s ease", transition: "background .6s ease" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px" }}>
-        <button onClick={onClose} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 10, padding: "8px 13px", cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
-          <ArrowLeft size={15} /> رجوع
-        </button>
-        <div style={{ flex: 1, fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
-          <Target size={18} color={P.gold} /> وضع التركيز
-        </div>
-        <button onClick={onClose} title="إغلاق" style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 10, padding: 9, cursor: "pointer", color: "#fff", display: "flex" }}>
-          <X size={18} />
-        </button>
-      </div>
-
-      <div style={{ flex: 1, padding: "8px 16px 32px", maxWidth: 460, margin: "0 auto", width: "100%" }}>
-        {/* Today snapshot */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-          {[{ l: "جلسات اليوم", v: todaySessions, i: Flame }, { l: "دقائق اليوم", v: todayMins, i: Clock }, { l: "الإجمالي", v: totalSessions, i: Trophy }].map(({ l, v, i: Ic }) => (
-            <div key={l} style={{ flex: 1, background: "rgba(255,255,255,.06)", borderRadius: 14, padding: "12px 8px", textAlign: "center", border: "1px solid rgba(255,255,255,.08)" }}>
-              <Ic size={15} color={P.gold} style={{ marginBottom: 5 }} />
-              <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", lineHeight: 1 }}>{v}</div>
-              <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.55)", marginTop: 3 }}>{l}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Daily session goal — visual dots that fill as sessions complete */}
-        <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 14, padding: "11px 13px", marginBottom: 18, border: "1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 9 }}>
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,.65)", fontWeight: 700 }}>هدف اليوم</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <button onClick={() => setDayGoal(g => Math.max(1, g - 1))} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, width: 22, height: 22, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Minus size={11} /></button>
-              <span style={{ fontSize: 12.5, fontWeight: 900, color: P.gold, minWidth: 44, textAlign: "center" }}>{todaySessions}/{dayGoal}</span>
-              <button onClick={() => setDayGoal(g => Math.min(12, g + 1))} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, width: 22, height: 22, cursor: "pointer", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={11} /></button>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {Array.from({ length: dayGoal }).map((_, i) => (
-              <div key={i} style={{
-                flex: 1, minWidth: 14, height: 7, borderRadius: 4,
-                background: i < todaySessions ? `linear-gradient(90deg,${P.gold},${P.goldRich})` : "rgba(255,255,255,.12)",
-                boxShadow: i < todaySessions ? `0 0 8px ${P.gold}55` : "none", transition: "all .3s",
-              }} />
-            ))}
-          </div>
-          {todaySessions >= dayGoal && (
-            <div style={{ fontSize: 11.5, color: P.gold, fontWeight: 800, marginTop: 8, textAlign: "center" }}>🎉 أنجزت هدف اليوم — أحسنت!</div>
-          )}
-        </div>
-
-        {/* Mode + preset */}
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 12 }}>
-          {[["work", "⚡ دراسة"], ["break", "☕ راحة"]].map(([m, l]) => (
-            <button key={m} onClick={() => changeMode(m)} style={{ flex: 1, background: mode === m ? modeColor : "rgba(255,255,255,.06)", border: `1px solid ${mode === m ? modeColor : "rgba(255,255,255,.12)"}`, borderRadius: 12, padding: "9px", cursor: "pointer", fontSize: 13.5, fontWeight: 800, color: "#fff", fontFamily: "inherit" }}>{l}</button>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 18 }}>
-          {presetList.map(min => (
-            <button key={min} onClick={() => setPreset(min)} style={{ background: curMin === min ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.05)", border: `1px solid rgba(255,255,255,${curMin === min ? .35 : .1})`, borderRadius: 20, padding: "5px 16px", cursor: "pointer", fontSize: 12.5, color: "#fff", fontFamily: "inherit", fontWeight: 700 }}>{min} د</button>
-          ))}
-        </div>
-
-        {/* Big ring */}
-        <div style={{ position: "relative", width: 220, height: 220, margin: "0 auto 8px" }}>
-          <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
-            <circle cx={110} cy={110} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={10} />
-            <circle cx={110} cy={110} r={r} fill="none" stroke={modeColor} strokeWidth={10}
-              strokeDasharray={circ} strokeDashoffset={circ * (1 - prog)} strokeLinecap="round"
-              style={{ transition: "stroke-dashoffset 1s linear", filter: `drop-shadow(0 0 10px ${modeColor})` }} />
-          </svg>
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ fontSize: 52, fontWeight: 900, color: "#fff", fontFamily: "monospace", letterSpacing: 1, lineHeight: 1 }}>{mm}:{ss}</div>
-            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.6)", marginTop: 8 }}>{mode === "work" ? "وقت التركيز" : "استراحة"}</div>
-            <div style={{ fontSize: 12, color: P.gold, fontWeight: 800, marginTop: 2 }}>{Math.round(prog * 100)}%</div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div style={{ display: "flex", gap: 14, justifyContent: "center", marginBottom: 18 }}>
-          <button onClick={reset} title="إعادة" style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: "50%", width: 46, height: 46, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.8)" }}>
-            <RotateCcw size={17} />
-          </button>
-          <button onClick={() => setRunning(rv => !rv)} style={{ background: running ? P.red : `linear-gradient(135deg,${modeColor},${modeColor}cc)`, border: "none", borderRadius: 26, padding: "13px 40px", cursor: "pointer", color: "#fff", fontSize: 16, fontWeight: 800, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 8, boxShadow: `0 8px 24px ${(running ? P.red : modeColor)}55` }}>
-            {running ? <><Pause size={18} />إيقاف</> : <><Play size={18} />ابدأ</>}
-          </button>
-        </div>
-
-        {/* Motivational quote */}
-        <div style={{ textAlign: "center", color: "rgba(255,255,255,.7)", fontSize: 13.5, lineHeight: 1.8, marginBottom: 20, padding: "0 10px", minHeight: 44, transition: "opacity .4s" }}>
-          « {FOCUS_QUOTES[quoteIdx]} »
-        </div>
-
-        {/* Subject */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)", marginBottom: 6 }}>مادة الدراسة</div>
-          <select value={focusSubject} onChange={e => setFocusSubject(e.target.value)}
-            style={{ width: "100%", background: "rgba(255,255,255,.08)", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: "11px 14px", fontSize: 14, fontFamily: "inherit", direction: "rtl", outline: "none", fontWeight: 700 }}>
-            {ALL_SUBJECTS_LIST.map(s => <option key={s} value={s} style={{ background: "#0a3d29" }}>{s}</option>)}
-          </select>
-        </div>
-
-        {/* Quick AI */}
-        <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 16, padding: 16, border: "1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,.85)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={14} color={P.gold} /> اسأل المساعد أثناء تركيزك
-          </div>
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", marginBottom: 10, scrollbarWidth: "none" }}>
-            {FOCUS_SUGS.map(s => (
-              <button key={s} onClick={() => askAI(s.replace(/^[^؀-ۿ]+/, ""))} style={{ whiteSpace: "nowrap", background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 18, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>{s}</button>
-            ))}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={focusQ} onChange={e => setFocusQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
-              placeholder="اكتب سؤالك..."
-              style={{ flex: 1, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 10, padding: "9px 12px", color: "#fff", fontSize: 13, fontFamily: "inherit", direction: "rtl", outline: "none" }} />
-            <button onClick={() => askAI()} disabled={focusLoading || !focusQ.trim()} style={{ background: focusLoading || !focusQ.trim() ? "rgba(255,255,255,.1)" : `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 10, padding: "9px 15px", cursor: "pointer", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-              {focusLoading ? "…" : <Send size={13} />}
-            </button>
-          </div>
-          {focusA && (
-            <div style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: 12, fontSize: 13, color: "rgba(255,255,255,.85)", lineHeight: 1.8, maxHeight: 180, overflowY: "auto", whiteSpace: "pre-wrap", marginTop: 10 }}>
-              {mdToText(focusA)}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Icons an admin can pick for a calendar event (JSON stores the name).
 const CAL_ICONS = { Flame, Trophy, FileText, GraduationCap, PenLine, Calendar, Award, Bell, Star, BookOpen, CheckCircle, CreditCard };
@@ -4573,7 +4045,7 @@ function AcademicCalendar({ t, onOpenAll }) {
   );
 }
 
-function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activeDays, weeklyGoal, weekProgress, achievements, sessionLog, semesters, schedule, tasks, setTasks, onToast, exams, setExams, xp, setXp, profile, guest, onShowFocus, onShowReport }) {
+function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters, schedule, tasks, setTasks, onToast, exams, setExams, profile }) {
   // Clock-dependent text is computed after mount only. Rendering it during SSR
   // would bake in the server's time/locale, which rarely matches the visitor's
   // and makes React fail hydration (the app then dies with a client-side
@@ -4622,13 +4094,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
-  const unlocked = ACHIEVEMENTS.filter(a => a.check(achievements));
-  const goalPct = Math.min(100, Math.round((weekProgress / Math.max(1, weeklyGoal)) * 100));
-  const weekMins = (sessionLog || []).filter(s => {
-    const d = new Date(); d.setDate(d.getDate() - 6);
-    return new Date(s.date || s.completed_at || Date.now()) >= d;
-  }).reduce((a, s) => a + (s.dur || s.duration_minutes || s.duration || 25), 0);
-  const lastGpa = semesters?.length ? semesters[semesters.length - 1]?.gpa : null;
 
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
@@ -4705,7 +4170,7 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
       </div>
 
       {/* Unified tasks + exams hub */}
-      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} setXp={setXp} profile={profile} />
+      <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} profile={profile} />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
         <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
@@ -4713,34 +4178,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
         <StatCard Icon={Users} value={5000} suffix="+" label="طالب نشط" color={P.green} t={t} />
       </div>
 
-      {recent.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-              <History size={15} color={t.mu} /> آخر ما تصفّحت
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
-            {recent.slice(0, 8).map((s, i) => {
-              const SIcon = getIcon(s);
-              return (
-                <button key={i} onClick={() => openCourse(s)} style={{
-                  background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14, padding: "12px 14px",
-                  cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 10,
-                  minWidth: 160, flexShrink: 0, transition: "all .2s",
-                }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-                  <div style={{ width: 32, height: 32, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <SIcon size={16} color={P.blue2} />
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: t.tx, textAlign: "right" }}>{s}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Study tip — an invitation, not a fact nobody asked for */}
       <div style={{
@@ -4791,48 +4228,9 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, recent, streak, activ
           thing here the bottom nav cannot already do in one press. The old
           "وصول سريع" grid sent three of its six tiles to the same tab and the
           rest to tabs already sitting in the nav, so it was decoration. */}
-      {recent.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-            <History size={15} color={P.blue2} /> تابع من حيث توقفت
-          </div>
-          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "none" }}>
-            {recent.slice(0, 6).map((sname) => {
-              const SIcon = getIcon(sname);
-              return (
-                <button key={sname} onClick={() => openCourse(sname)} style={{
-                  flexShrink: 0, width: 140, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14,
-                  padding: 12, cursor: "pointer", textAlign: "right", fontFamily: "inherit", boxShadow: t.shSm,
-                  display: "flex", flexDirection: "column", gap: 8, transition: "all .2s",
-                }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-                  <div style={{ width: 34, height: 34, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <SIcon size={16} color={P.blue2} />
-                  </div>
-                  <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, lineHeight: 1.45, minHeight: 36, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{sname}</div>
-                  <div style={{ fontSize: 11, color: P.blue2, fontWeight: 700, display: "flex", alignItems: "center", gap: 3 }}>
-                    متابعة <ChevronLeft size={11} />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Academic calendar strip — bottom */}
       <AcademicCalendar t={t} onOpenAll={() => setActiveTab("calendar")} />
-
-      {/* Focus mode — bottom */}
-      <button onClick={onShowFocus} style={{ width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, border: "none", borderRadius: 14, padding: "16px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12, fontFamily: "inherit", marginBottom: 8 }}>
-        <Target size={22} color="#fff" />
-        <div style={{ textAlign: "right", flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: "#fff" }}>وضع التركيز</div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,.65)" }}>مؤقت دراسة + مساعد ذكي — كل ما تحتاجه للمذاكرة</div>
-        </div>
-        <ChevronLeft size={18} color="rgba(255,255,255,.6)" />
-      </button>
     </div>
   );
 }
@@ -5237,9 +4635,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessionLog, streak, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null }) {
-  const totalMins = sessionLog.reduce((a, s) => a + s.dur, 0);
-  const totalHours = Math.floor(totalMins / 60);
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, studentCode = "" }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
@@ -5255,6 +4651,19 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
   });
   const patch = (p) => setDraft(d => ({ ...d, ...p }));
   const [requesting, setRequesting] = useState(false);
+  // The admin has always been able to write a reply; nothing ever showed it,
+  // because a request row records a name and a number and neither identifies
+  // the caller. It is keyed on the signed device cookie now, so this asks for
+  // "my request" and gets an answer.
+  const [myRequest, setMyRequest] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/track-request")
+      .then(r => r.json())
+      .then(d => { if (alive) setMyRequest(d.request || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [requesting]);
   // The hold follows the stamp, which survives a sign-out and a data reset —
   // so re-creating the profile can't be used to escape it.
   const heldTrack = lockStampOf(profile) || trackLock;
@@ -5346,10 +4755,6 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       .catch(() => {});
   };
 
-  const days = last7Days();
-  const dayLabels = ["أحد", "اثن", "ثلا", "أرب", "خمي", "جمع", "سبت"];
-  const weekData = days.map(d => sessionLog.filter(s => s.date === d).reduce((a, s) => a + s.dur, 0));
-  const maxMin = Math.max(...weekData, 30);
   const initial = (profile?.name || "ط").trim()[0] || "ط";
 
   const quickActions = [
@@ -5380,8 +4785,13 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
               {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{trackLabel(profile)}</span>}
+              {/* The site's own handle, assigned at signup and never editable
+                  — it is what the admin quotes back when answering a request,
+                  so it has to be somewhere the student can read it out. */}
+              {studentCode && (
+                <span title="رقمك في الموقع" style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: "rgba(255,255,255,.85)", borderRadius: 7, padding: "2px 8px", fontFamily: "monospace", direction: "ltr" }}>{studentCode}</span>
+              )}
               {profile?.studentId && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.75)", fontFamily: "monospace", direction: "ltr" }}>{profile.studentId}</span>}
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", display: "flex", alignItems: "center", gap: 5 }}><Clock size={12} color={P.gold} /> {totalHours} ساعة دراسة</span>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -5404,14 +4814,22 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>أنت تتصفّح بدون حساب</div>
           </div>
           <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 14 }}>
-            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. الملف الشخصي يضيف
-            <strong style={{ color: t.tx }}> مسارك وموادك ومهامك ومفضلتك</strong> — ويُحفظ على جهازك، بلا كلمة مرور.
+            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. الحساب يضيف
+            <strong style={{ color: t.tx }}> مسارك وموادك ومهامك ومفضلتك</strong> — ويتبعك على أي جهاز.
           </div>
-          {/* Signing out used to leave the student here with no way back in:
-              browse mode was a one-way door. If an account is parked on this
-              device, offer it first — creating a second profile is not the fix
-              for having signed out of the first. */}
-          {savedAccount ? (
+          {/* A real account now, with an email behind it. The device-local
+              profile still opens for anyone who made one before accounts
+              existed — it is offered second, not instead. */}
+          {accounts ? (
+            <>
+              <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
+                <User size={15} /> إنشاء حساب
+              </Btn>
+              <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
+                <LogIn size={15} /> لدي حساب — تسجيل الدخول
+              </Btn>
+            </>
+          ) : savedAccount ? (
             <>
               <Btn variant="gold" onClick={() => onLogin?.()} style={{ width: "100%", marginBottom: 8 }}>
                 <LogIn size={15} /> دخول إلى «{savedAccount.name}»
@@ -5426,9 +4844,11 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             </Btn>
           )}
           <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
-            {savedAccount
-              ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
-              : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
+            {accounts
+              ? "الاسم والبريد وكلمة المرور — ويصلك رمز تأكيد على بريدك."
+              : savedAccount
+                ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
+                : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
           </div>
         </div>
       )}
@@ -5444,7 +4864,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
 
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="مثال: S222222222"
+          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="رقمك الجامعي"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
 
           {/* One place to set the email, shared with the assistant — it used
@@ -5464,12 +4884,43 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
               <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 10 }}>
                 مثبَّت لمدة {TRACK_LOCK_DAYS} يوماً — يتبقّى {lockDaysLeft} يوم. لتغييره قبل ذلك أرسل طلباً للإدارة.
               </div>
+
+              {/* Where the admin's answer arrives. A request that vanishes into
+                  silence is why students ask twice. */}
+              {myRequest && (
+                <div style={{
+                  background: t.s2, borderRadius: 10, padding: "10px 12px", marginBottom: 10,
+                  border: `1px solid ${myRequest.status === "approved" ? `${P.green}45` : myRequest.status === "rejected" ? `${P.red}40` : t.bd}`,
+                }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, marginBottom: 4, color: myRequest.status === "approved" ? P.green : myRequest.status === "rejected" ? P.red : P.blue2 }}>
+                    {myRequest.status === "approved" ? "وافقت الإدارة على طلبك ✅"
+                      : myRequest.status === "rejected" ? "لم يُقبل طلبك"
+                        : "طلبك قيد المراجعة"}
+                  </div>
+                  {myRequest.admin_reply ? (
+                    <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.8 }}>
+                      <span style={{ color: t.mu, fontWeight: 700 }}>ردّ الإدارة: </span>
+                      {safeText(myRequest.admin_reply, "")}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7 }}>
+                      {myRequest.status === "pending" ? "سيصلك الرد هنا." : ""}
+                    </div>
+                  )}
+                  {myRequest.status === "approved" && (
+                    <div style={{ fontSize: 11.5, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
+                      يمكنك الآن اختيار مسارك من جديد.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button onClick={requestTrackChange} disabled={requesting} style={{
                 width: "100%", background: t.s2, border: `1px solid ${P.gold}55`, borderRadius: 10,
                 padding: "10px", cursor: requesting ? "wait" : "pointer", fontFamily: "inherit",
                 fontSize: 12.5, fontWeight: 800, color: P.gold, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}>
-                <Send size={13} /> {requesting ? "جارٍ الإرسال…" : "طلب تغيير المسار"}
+                <Send size={13} /> {requesting ? "جارٍ الإرسال…" : myRequest?.status === "pending" ? "إرسال طلب آخر" : "طلب تغيير المسار"}
               </button>
             </div>
           ) : (
@@ -5578,9 +5029,9 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
       {!editing && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
           {[
-            { Icon: Flame, label: "سلسلة أيام", value: streak || 0, color: P.orange },
-            { Icon: Clock, label: "ساعات الدراسة", value: totalHours, color: P.blue2 },
             { Icon: Star, label: "المفضلة", value: favorites.length, color: P.gold },
+            { Icon: CheckCircle, label: "مهامي", value: (tasks || []).length, color: P.green },
+            { Icon: CalendarDays, label: "محاضراتي", value: (schedule || []).length, color: P.blue2 },
           ].map(({ Icon, label, value, color }) => (
             <div key={label} style={{ background: t.s1, borderRadius: 16, padding: "14px 8px", border: `1px solid ${t.bd}`, textAlign: "center", boxShadow: t.shSm }}>
               <Icon size={17} color={color} style={{ marginBottom: 6 }} />
@@ -5664,62 +5115,7 @@ function ProfilePage({ t, achievements, recent, favorites, totalSessions, sessio
         );
       })()}
 
-      {!editing && (
-      <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-            <BarChart2 size={16} color={P.blue2} /> دقائق الدراسة هذا الأسبوع
-          </div>
-          <div style={{ fontSize: 12, color: t.mu }}>{weekData.reduce((a, b) => a + b, 0)}د إجمالي</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 110 }}>
-          {weekData.map((v, i) => {
-            const h = Math.max(4, (v / maxMin) * 100);
-            const dow = new Date(days[i]).getDay();
-            const isToday = days[i] === todayKey();
-            return (
-              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                <div style={{ fontSize: 11, color: t.dim, fontWeight: 600 }}>{v}</div>
-                <div style={{
-                  width: "100%", height: `${h}%`, borderRadius: 8,
-                  background: isToday ? `linear-gradient(180deg,${P.gold},${P.orange})` : `linear-gradient(180deg,${P.blue2},${P.blue})`,
-                  transition: "height .8s ease", boxShadow: isToday ? `0 4px 12px ${P.gold}40` : "none", minHeight: 4,
-                }} />
-                <div style={{ fontSize: 11.5, color: isToday ? P.gold : t.mu, fontWeight: isToday ? 700 : 500 }}>{dayLabels[dow]}</div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      )}
 
-      {!editing && recent.length > 0 && (
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-            <History size={15} color={t.mu} /> النشاط الأخير
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {recent.slice(0, 5).map((s, i) => {
-              const SIcon = getIcon(s);
-              return (
-                <button key={i} onClick={() => openCourse(s)} style={{
-                  background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "10px 12px",
-                  cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
-                  fontFamily: "inherit", textAlign: "right", transition: "all .2s",
-                }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2 + "60"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-                  <div style={{ width: 32, height: 32, borderRadius: 10, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <SIcon size={15} color={P.blue2} />
-                  </div>
-                  <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
-                  <ChevronLeft size={14} color={t.dim} />
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {!editing && profile && (
         <button onClick={() => onSignOut?.()} style={{
@@ -6604,7 +6000,7 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
           style={{ ...field, direction: "rtl", marginBottom: 14 }} />
 
         <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-        <input value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }} placeholder="مثال: S220032205"
+        <input value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }} placeholder="رقمك الجامعي"
           onKeyDown={e => e.key === "Enter" && submit()}
           style={{ ...field, direction: "ltr", textAlign: "left" }} />
 
@@ -6772,7 +6168,17 @@ export default function App() {
   // Fully public site — no login/registration. `profile` is an OPTIONAL local
   // preference (name + track + plan) that only personalises the greeting and
   // the plan-scoped calendar; everything works with or without it.
-  const [profile, setProfile] = useStored("student_profile", null);
+  const [localProfile, setLocalProfile] = useStored("student_profile", null);
+  // One owner of identity. A Supabase session wins when there is one; the
+  // device-local profile still stands for anyone who has not made an account
+  // yet, so nothing a current student has is lost the day this ships.
+  const account = useAccount({ localProfile, setLocalProfile });
+  const profile = account.profile;
+  const setProfile = (next) => {
+    const value = typeof next === "function" ? next(profile) : next;
+    setLocalProfile(value);
+    if (account.signedIn && value) account.saveProfile(value);
+  };
   // Signing out keeps the account here (unless "حفظ حسابي" is off) so the
   // return visit can offer it back behind a name + ID screen.
   const [savedAccount, setSavedAccount] = useStored("saved_account", null);
@@ -6780,9 +6186,6 @@ export default function App() {
   const [signedOut, setSignedOut] = useStored("signed_out", false);
   // The track stamp lives outside the profile on purpose — see lockConflicts.
   const [trackLock, setTrackLock] = useStored("track_lock", null);
-  const [recent, setRecent] = useStored("recent", []);
-  const [totalSessions, setTotalSessions] = useStored("totalSessions", 0);
-  const [sessionLog, setSessionLog] = useStored("sessionLog", []);
   const [gpaCalcs, setGpaCalcs] = useStored("gpaCalcs", 0);
   const [aiChats, setAiChats] = useStored("aiChats", 0);
   const [semesters, setSemesters] = useStored("semesters", []);
@@ -6795,11 +6198,11 @@ export default function App() {
   const [tasks, setTasks] = useStored("tasks", []);
   const [schedule, setSchedule] = useStored("schedule", []);
   const [exams, setExams] = useStored("exams", []);
-  const [xp, setXp] = useStored("xp", 0);
-  const [showFocus, setShowFocus] = useState(false);
-  const [showMonthlyReport, setShowMonthlyReport] = useState(false);
   const [aiSubject, setAiSubject] = useState("عام");
   // The assistant's subject list, with the student's own plan lifted to the top.
+  // Only ever a widening, never the default: the picker below shows the
+  // student's own plan and nothing else until they ask for the rest.
+  const [aiAllSubjects, setAiAllSubjects] = useState(false);
   const aiSubjectGroups = useMemo(() => {
     const mine = myTrackSubjects(profile).filter(s => ALL_COURSES.includes(s));
     return { mine, rest: ALL_COURSES.filter(c => !mine.includes(c)) };
@@ -6827,40 +6230,6 @@ export default function App() {
     return (tasks || []).filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
   }, [tasks]);
 
-  const activeDays = useMemo(() => {
-    const dates = new Set((sessionLog || []).map(s => s.date));
-    return [...dates];
-  }, [sessionLog]);
-
-  const streak = useMemo(() => {
-    const dates = new Set((sessionLog || []).map(s => s.date));
-    let count = 0;
-    const d = new Date();
-    while (true) {
-      const key = d.toISOString().slice(0, 10);
-      if (dates.has(key)) { count++; d.setDate(d.getDate() - 1); }
-      else if (count === 0 && key === todayKey()) {
-        d.setDate(d.getDate() - 1);
-        if (dates.has(d.toISOString().slice(0, 10))) { count++; d.setDate(d.getDate() - 1); }
-        else break;
-      } else break;
-    }
-    return count;
-  }, [sessionLog]);
-
-  const prevStreakRef = useRef(null);
-  useEffect(() => {
-    if (prevStreakRef.current === null) { prevStreakRef.current = streak; return; }
-    const prev = prevStreakRef.current;
-    prevStreakRef.current = streak;
-    const milestones = { 3: "3 أيام متواصلة! استمر!", 7: "أسبوع كامل! أنت رائع!", 14: "أسبوعان! إنجاز حقيقي!", 30: "شهر كامل! أسطوري!" };
-    if (streak > prev && milestones[streak]) toasts.push(milestones[streak], "success");
-  }, [streak]);
-
-  const weekProgress = useMemo(() => {
-    const days = last7Days();
-    return (sessionLog || []).filter(s => days.includes(s.date)).length;
-  }, [sessionLog]);
 
   useEffect(() => {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
@@ -6878,7 +6247,7 @@ export default function App() {
 
   useEffect(() => {
     if (skipNavPushRef.current) { skipNavPushRef.current = false; return; }
-    const o = [showMonthlyReport?'R':'', showFocus?'F':'', showAI?'A':'',
+    const o = [showAI?'A':'',
                notifOpen?'N':'', settingsOpen?'S':'', searchOpen?'Q':''].join('');
     const state = { tab, course: course || null, o };
     const top = navHistoryRef.current[navHistoryRef.current.length - 1];
@@ -6886,7 +6255,7 @@ export default function App() {
       navHistoryRef.current.push(state);
       window.history.pushState(state, '');
     }
-  }, [tab, course, showMonthlyReport, showFocus, showAI, notifOpen, settingsOpen, searchOpen]);
+  }, [tab, course, showAI, notifOpen, settingsOpen, searchOpen]);
 
   const backHandlerRef = useRef(null);
   backHandlerRef.current = () => {
@@ -6896,8 +6265,6 @@ export default function App() {
     const prev = navHistoryRef.current[navHistoryRef.current.length - 1];
     if (!prev) { skipNavPushRef.current = false; return; }
     // Close overlays that weren't open in previous state
-    if (showMonthlyReport && !prev.o.includes('R')) setShowMonthlyReport(false);
-    if (showFocus        && !prev.o.includes('F')) setShowFocus(false);
     if (showAI           && !prev.o.includes('A')) setShowAI(false);
     if (notifOpen        && !prev.o.includes('N')) setNotifOpen(false);
     if (settingsOpen     && !prev.o.includes('S')) setSettingsOpen(false);
@@ -6917,7 +6284,6 @@ export default function App() {
   const openCourse = (s) => {
     setCourse(s);
     setTab("course");
-    setRecent(prev => [s, ...(prev || []).filter(x => x !== s)].slice(0, 12));
   };
 
   // Public site: every feature is open to everyone, no account required.
@@ -6928,9 +6294,21 @@ export default function App() {
   const [subOpen, setSubOpen] = useState(null); // null | gate object
   const [supportOpen, setSupportOpen] = useState(false);
   const [aiEmail, setAiEmail] = useStored("ai_email", "");
-  const requestAI = (seed) => { setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true); };
+  // Browsing is open; downloading, asking and saving are what an account is
+  // for. One rule, in one place — see browseGate in auth-config.js for why it
+  // is "has a profile" today and how it tightens to "has an account".
+  const allowed = browseGate(profile, account.signedIn);
+  const [needAccount, setNeedAccount] = useState(null);   // null | "file" | "ai" | "save"
+
+  const requestAI = (seed) => {
+    if (!allowed) { setNeedAccount("ai"); return; }
+    setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true);
+  };
 
   const toggleFav = (s) => {
+    // "لا يُحفظ له شيء" — a favourite is saved state, so it needs the account
+    // like everything else that persists.
+    if (!allowed) { setNeedAccount("save"); return; }
     const exists = favorites.includes(s);
     toasts.push(exists ? `أُزيلت ${s} من المفضلة` : `أُضيفت ${s} للمفضلة`, exists ? "info" : "success");
     setFavorites(prev => (prev || []).includes(s) ? (prev || []).filter(x => x !== s) : [...(prev || []), s]);
@@ -6945,9 +6323,9 @@ export default function App() {
    * one-tap way past the 15-day track lock.
    */
   const resetStudyData = () => {
-    setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({}); setRecent([]);
+    setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({});
     setTotalSessions(0); setSessionLog([]); setGpaCalcs(0); setAiChats(0); setSemesters([]);
-    setTasks([]); setSchedule([]); setExams([]); setXp(0);
+    setTasks([]); setSchedule([]); setExams([]);
     setTab("home"); setCourse(null);
   };
 
@@ -6957,7 +6335,7 @@ export default function App() {
     storage.clear();
     resetStudyData();
     setDark(false); setSoundOn(true); setNotifSoundOn(true); setWeeklyGoal(15);
-    setProfile(null); setSavedAccount(null); setSignedOut(false); setRememberAccount(true);
+    setLocalProfile(null); setSavedAccount(null); setSignedOut(false); setRememberAccount(true);
     // Re-write the stamp after storage.clear() so the hold survives the wipe.
     // A fresh object matters: passing the same reference back wouldn't count as
     // a change, so nothing would be written and the cleared key would stay gone.
@@ -6970,20 +6348,25 @@ export default function App() {
    * in `saved_account` and the next visit opens on the name + ID screen; with
    * it off, the profile is gone from this device for good.
    */
-  const signOut = () => {
+  const signOut = async () => {
+    // The hold outlives the sign-out: it is anchored on a stamp kept outside
+    // the profile precisely so signing out cannot be used to escape it.
     setTrackLock(lockStampOf(profile) || trackLock);
-    if (rememberAccount && profile) {
-      setSavedAccount(profile);
-      setSignedOut(true);
-      // Say where the way back in is: signing out drops you into browse mode,
-      // and "how do I log in again?" was the first thing everyone asked.
-      toasts.push("تم تسجيل الخروج — للدخول مرة أخرى افتح «حسابي»", "info");
+    if (account.signedIn) {
+      await account.signOut();
+      toasts.push("تم تسجيل الخروج — يمكنك الدخول مرة أخرى من «حسابي»", "info");
     } else {
-      setSavedAccount(null);
-      setSignedOut(false);
-      toasts.push("تم تسجيل الخروج وحُذف ملفك — يمكنك إنشاء حساب من «حسابي»", "info");
+      if (rememberAccount && profile) {
+        setSavedAccount(profile);
+        setSignedOut(true);
+        toasts.push("تم تسجيل الخروج — للدخول مرة أخرى افتح «حسابي»", "info");
+      } else {
+        setSavedAccount(null);
+        setSignedOut(false);
+        toasts.push("تم تسجيل الخروج وحُذف ملفك — يمكنك إنشاء حساب من «حسابي»", "info");
+      }
+      setLocalProfile(null);
     }
-    setProfile(null);
     setTab("home"); setCourse(null);
   };
 
@@ -6993,14 +6376,12 @@ export default function App() {
     tasks: (tasks || []).length,
     schedule: (schedule || []).length,
     exams: (exams || []).length,
-    sessions: (sessionLog || []).length,
     profile: profile ? 1 : 0,
-  }), [favorites, notes, tasks, schedule, exams, sessionLog, profile]);
+  }), [favorites, notes, tasks, schedule, exams, profile]);
 
   // After the welcome, land straight on the (public) site — no gate.
   const finishOnboard = () => { setSeen(true); setShowOnboard(false); };
 
-  const achievementsState = { viewed: recent, favorites, totalSessions, gpaCalcs, streak, notes, aiChats };
 
   const TABS = [
     { id: "home", Icon: Home, label: "الرئيسية" },
@@ -7097,13 +6478,10 @@ export default function App() {
       <div style={{ maxWidth: 620, margin: "0 auto", padding: "18px 16px" }}>
         {tab === "home" && <HomePage
           setActiveTab={(id) => { setTab(id); setCourse(null); }}
-          openCourse={openCourse} onOpenAI={requestAI} t={t} recent={recent} streak={streak}
-          activeDays={activeDays} weeklyGoal={weeklyGoal} weekProgress={weekProgress}
-          achievements={achievementsState} sessionLog={sessionLog} semesters={semesters}
+          openCourse={openCourse} onOpenAI={requestAI} t={t}
+          weeklyGoal={weeklyGoal} semesters={semesters}
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
-          exams={exams} setExams={setExams} xp={xp} setXp={setXp} profile={profile}
-          guest={false}
-          onShowFocus={() => setShowFocus(true)} onShowReport={() => setShowMonthlyReport(true)} />}
+          exams={exams} setExams={setExams} profile={profile} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
 
@@ -7113,7 +6491,8 @@ export default function App() {
           subject={course} favorites={favorites} toggleFav={toggleFav}
           notes={notes} setNotes={setNotes} t={t}
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
-          onAskAI={(subj) => { setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
+          onAskAI={(subj) => { if (!allowed) { setNeedAccount("ai"); return; } setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
+          canOpenFiles={allowed} onNeedAccount={() => setNeedAccount("file")}
           onBack={() => { setCourse(null); setTab("explore"); }} />}
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
@@ -7130,23 +6509,21 @@ export default function App() {
             <GPACalc t={t} onCalc={() => setGpaCalcs(c => c + 1)}
               semesters={semesters} setSemesters={setSemesters} onToast={toasts.push} />
             <SemesterChart semesters={semesters} t={t} />
-            <StudyAnalytics sessionLog={sessionLog} t={t} />
           </div>
         )}
 
         {tab === "profile" && <ProfilePage
-          t={t} achievements={achievementsState} recent={recent}
-          favorites={favorites} totalSessions={totalSessions}
-          sessionLog={sessionLog} streak={streak} profile={profile} setProfile={setProfile}
+          t={t} favorites={favorites} profile={profile} setProfile={setProfile}
           setActiveTab={(id) => { setTab(id); setCourse(null); }} onToast={toasts.push}
           onSignOut={signOut} trackLock={trackLock} setTrackLock={setTrackLock}
           tasks={tasks} schedule={schedule} aiEmail={aiEmail} setAiEmail={setAiEmail}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)}
-          savedAccount={savedAccount} onLogin={() => setSignedOut(true)} />}
+          savedAccount={savedAccount} onLogin={() => setSignedOut(true)}
+          accounts={account.configured} studentCode={profile?.studentCode || ""} />}
       </div>
 
       {/* Floating AI assistant button — reachable from any main tab */}
-      {!showAI && !showFocus && !settingsOpen && !searchOpen && !notifOpen && !showMonthlyReport && !course && (
+      {!showAI && !settingsOpen && !searchOpen && !notifOpen && !course && (
         <button onClick={requestAI} title="المساعد الذكي" aria-label="المساعد الذكي" style={{
           position: "fixed", bottom: 82, left: 16, zIndex: 90,
           width: 56, height: 56, borderRadius: "50%", border: "none", cursor: "pointer",
@@ -7282,24 +6659,41 @@ export default function App() {
                     direction: "rtl",
                   }}>
                   <option value="عام" style={{ background: "#0a3d29", color: "#fff" }}>🌐 عام — مساعد SEU</option>
-                  {/* Your own subjects first, then everything else. Scrolling
-                      a 20-programme list to reach your one course was the
-                      slowest thing about switching subject. */}
+                  {/* Bound to the student's plan, not merely sorted by it. A
+                      تحضيري/خطة أ student was still handed all 22 catalogue
+                      entries with their three lifted to the top; their own
+                      three (plus عام) are the whole list now. Someone with no
+                      plan chosen — anyone browsing — still gets everything,
+                      and "كل المواد" below widens it back for the rest. */}
                   {aiSubjectGroups.mine.length > 0 && (
                     <optgroup label="موادي" style={{ background: "#0a3d29", color: "#fff" }}>
                       {aiSubjectGroups.mine.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
                     </optgroup>
                   )}
-                  {aiSubjectGroups.mine.length > 0 ? (
-                    <optgroup label="كل المواد" style={{ background: "#0a3d29", color: "#fff" }}>
-                      {aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
-                    </optgroup>
-                  ) : (
-                    aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)
+                  {(aiSubjectGroups.mine.length === 0 || aiAllSubjects) && (
+                    aiSubjectGroups.mine.length > 0 ? (
+                      <optgroup label="كل المواد" style={{ background: "#0a3d29", color: "#fff" }}>
+                        {aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                      </optgroup>
+                    ) : (
+                      aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)
+                    )
                   )}
                 </select>
                 <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               </div>
+              {/* myTrackSubjects returns one programme name for تخصص/دبلوم and
+                  the three term subjects for تحضيري — so without this a
+                  bachelor student's picker would hold two entries and no way
+                  out of it. */}
+              {aiSubjectGroups.mine.length > 0 && !aiAllSubjects && (
+                <button onClick={() => setAiAllSubjects(true)} style={{
+                  background: "none", border: "none", padding: "6px 2px 0", cursor: "pointer",
+                  fontFamily: "inherit", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,.65)",
+                }}>
+                  تسأل عن مادة خارج خطتك؟ اعرض كل المواد
+                </button>
+              )}
             </div>
             {/* Mode tabs */}
             <div style={{ display: "flex", gap: 8, padding: "0 16px 12px" }}>
@@ -7329,15 +6723,9 @@ export default function App() {
           </div>
         </div>
       )}
-      {showFocus && (
-        <FocusMode t={t} sessionLog={sessionLog} setSessionLog={setSessionLog}
-          totalSessions={totalSessions} setTotalSessions={setTotalSessions}
-          soundOn={soundOn} onToast={toasts.push} onClose={() => setShowFocus(false)}
-          setXp={setXp} />
-      )}
-      {showMonthlyReport && (
-        <MonthlyReportModal t={t} sessionLog={sessionLog} tasks={tasks} semesters={semesters}
-          onClose={() => setShowMonthlyReport(false)} />
+      {needAccount && (
+        <NeedAccountSheet t={t} what={needAccount} accounts={account.configured}
+          onClose={() => setNeedAccount(null)} />
       )}
       <ToastStack list={toasts.list} />
     </div>
