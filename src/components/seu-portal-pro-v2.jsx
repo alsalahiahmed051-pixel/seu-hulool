@@ -4651,6 +4651,19 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   });
   const patch = (p) => setDraft(d => ({ ...d, ...p }));
   const [requesting, setRequesting] = useState(false);
+  // The admin has always been able to write a reply; nothing ever showed it,
+  // because a request row records a name and a number and neither identifies
+  // the caller. It is keyed on the signed device cookie now, so this asks for
+  // "my request" and gets an answer.
+  const [myRequest, setMyRequest] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/track-request")
+      .then(r => r.json())
+      .then(d => { if (alive) setMyRequest(d.request || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [requesting]);
   // The hold follows the stamp, which survives a sign-out and a data reset —
   // so re-creating the profile can't be used to escape it.
   const heldTrack = lockStampOf(profile) || trackLock;
@@ -4871,12 +4884,43 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 10 }}>
                 مثبَّت لمدة {TRACK_LOCK_DAYS} يوماً — يتبقّى {lockDaysLeft} يوم. لتغييره قبل ذلك أرسل طلباً للإدارة.
               </div>
+
+              {/* Where the admin's answer arrives. A request that vanishes into
+                  silence is why students ask twice. */}
+              {myRequest && (
+                <div style={{
+                  background: t.s2, borderRadius: 10, padding: "10px 12px", marginBottom: 10,
+                  border: `1px solid ${myRequest.status === "approved" ? `${P.green}45` : myRequest.status === "rejected" ? `${P.red}40` : t.bd}`,
+                }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 800, marginBottom: 4, color: myRequest.status === "approved" ? P.green : myRequest.status === "rejected" ? P.red : P.blue2 }}>
+                    {myRequest.status === "approved" ? "وافقت الإدارة على طلبك ✅"
+                      : myRequest.status === "rejected" ? "لم يُقبل طلبك"
+                        : "طلبك قيد المراجعة"}
+                  </div>
+                  {myRequest.admin_reply ? (
+                    <div style={{ fontSize: 12, color: t.tx, lineHeight: 1.8 }}>
+                      <span style={{ color: t.mu, fontWeight: 700 }}>ردّ الإدارة: </span>
+                      {safeText(myRequest.admin_reply, "")}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7 }}>
+                      {myRequest.status === "pending" ? "سيصلك الرد هنا." : ""}
+                    </div>
+                  )}
+                  {myRequest.status === "approved" && (
+                    <div style={{ fontSize: 11.5, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
+                      يمكنك الآن اختيار مسارك من جديد.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button onClick={requestTrackChange} disabled={requesting} style={{
                 width: "100%", background: t.s2, border: `1px solid ${P.gold}55`, borderRadius: 10,
                 padding: "10px", cursor: requesting ? "wait" : "pointer", fontFamily: "inherit",
                 fontSize: 12.5, fontWeight: 800, color: P.gold, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               }}>
-                <Send size={13} /> {requesting ? "جارٍ الإرسال…" : "طلب تغيير المسار"}
+                <Send size={13} /> {requesting ? "جارٍ الإرسال…" : myRequest?.status === "pending" ? "إرسال طلب آخر" : "طلب تغيير المسار"}
               </button>
             </div>
           ) : (

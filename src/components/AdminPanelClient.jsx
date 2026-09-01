@@ -1050,6 +1050,46 @@ function CalendarTab({ flash }) {
 }
 
 /* ══════════════ TRACK CHANGE REQUESTS ══════════════ */
+/**
+ * The reply box on a pending request.
+ *
+ * Module scope, not nested inside TrackRequestsTab: a component declared
+ * inside another is a new type on every render, so React would unmount and
+ * remount this textarea on each keystroke and focus would be lost after every
+ * character. That exact bug already happened once in this file with PayField.
+ */
+function RequestReply({ req, busy, onAnswer }) {
+  const [reply, setReply] = useState(req.admin_reply || '')
+  return (
+    <div style={{ marginTop: 4 }}>
+      <textarea
+        value={reply}
+        onChange={e => setReply(e.target.value)}
+        rows={2}
+        placeholder="اكتب ردّك للطالب — يمكنك الإرسال دون البتّ في الطلب"
+        style={{
+          width: '100%', boxSizing: 'border-box', background: 'var(--bg)',
+          border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px',
+          fontSize: 12.5, color: 'var(--tx)', fontFamily: 'inherit',
+          direction: 'rtl', outline: 'none', resize: 'vertical', marginBottom: 8,
+        }}
+      />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={() => onAnswer(req, 'pending', reply)} disabled={busy || !reply.trim()}
+          style={{ ...S.btn(P.blue2), flex: 1, opacity: reply.trim() ? 1 : 0.5 }}>
+          <Send size={14} /> أرسل ردّاً فقط
+        </button>
+        <button onClick={() => onAnswer(req, 'approved', reply)} disabled={busy} style={{ ...S.btn(P.green), flex: 1 }}>
+          <CheckCircle size={14} /> موافقة
+        </button>
+        <button onClick={() => onAnswer(req, 'rejected', reply)} disabled={busy} style={{ ...S.btn(P.red), flex: 1 }}>
+          رفض
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function TrackRequestsTab({ flash }) {
   const [items, setItems] = useState([])
   const [tableReady, setTableReady] = useState(true)
@@ -1065,18 +1105,20 @@ function TrackRequestsTab({ flash }) {
   }, [])
   useEffect(() => { load() }, [load])
 
-  async function answer(req, status) {
-    const verb = status === 'approved' ? 'الموافقة على' : 'رفض'
-    const reply = window.prompt(`ردّك على الطالب (${verb} الطلب) — اختياري:`)
-    if (reply === null) return
+  // status 'pending' means "answer them, decide later" — the owner asked to be
+  // able to write back and ask what they meant before approving anything. A
+  // window.prompt could not do that: it only appeared as part of deciding.
+  async function answer(req, status, reply) {
     setBusy(req.id)
     const { ok, data } = await apiJSON('/api/admin/track-requests', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: req.id, status, reply }),
     })
     setBusy(null)
-    if (ok) { flash(status === 'approved' ? 'تمت الموافقة' : 'تم الرفض'); load() }
-    else flash(data.error || 'تعذّر الحفظ', 'error')
+    if (ok) {
+      flash(status === 'approved' ? 'تمت الموافقة' : status === 'rejected' ? 'تم الرفض' : 'أُرسل ردّك')
+      load()
+    } else flash(data.error || 'تعذّر الحفظ', 'error')
   }
 
   async function remove(req) {
@@ -1123,17 +1165,10 @@ function TrackRequestsTab({ flash }) {
                 <strong style={{ color: 'var(--tx)' }}>ردّك:</strong> {r.admin_reply}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {r.status === 'pending' && (
-                <>
-                  <button onClick={() => answer(r, 'approved')} disabled={busy === r.id} style={{ ...S.btn(P.green), flex: 1 }}>
-                    <CheckCircle size={14} /> موافقة
-                  </button>
-                  <button onClick={() => answer(r, 'rejected')} disabled={busy === r.id} style={{ ...S.btn(P.red), flex: 1 }}>
-                    رفض
-                  </button>
-                </>
-              )}
+            {r.status === 'pending' && (
+              <RequestReply req={r} busy={busy === r.id} onAnswer={answer} />
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               <button onClick={() => remove(r)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
             </div>
           </div>
@@ -1141,7 +1176,7 @@ function TrackRequestsTab({ flash }) {
       })}
 
       <div style={{ ...S.card, fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
-        المسار مثبَّت 15 يوماً بعد تأكيده. الموافقة هنا تسجّل قرارك وردّك؛ الطالب يعيد اختيار مساره من صفحة حسابه.
+        المسار مثبَّت 15 يوماً بعد تأكيده. «أرسل ردّاً فقط» يوصل رسالتك للطالب ويترك الطلب معلّقاً — للسؤال أو طلب توضيح قبل أن تقرّر. الموافقة تسجّل قرارك، ثم يعيد الطالب اختيار مساره من صفحة حسابه.
       </div>
     </div>
   )
