@@ -1,7 +1,7 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota, PAID_DAILY_LIMIT } from '@/lib/ai-quota'
 import { readUsage, spendMessage, isSubscribed, looksLikeEmail, FREE_MESSAGES } from '@/lib/ai-usage'
-import { scopeRules } from '@/lib/ai-scope'
+import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 
 export const runtime = 'nodejs'
 
@@ -185,11 +185,14 @@ export async function POST(request) {
   } catch {
     return Response.json({ error: 'صيغة الطلب غير صحيحة' }, { status: 400 })
   }
-  const { subject, messages, fileContext } = body
+  const { messages, fileContext } = body
 
-  if (!subject || typeof subject !== 'string' || subject.length > 200) {
+  if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 200) {
     return Response.json({ error: 'مادة غير صحيحة' }, { status: 400 })
   }
+  // Resolved against the catalogue, never used as sent: the subject is
+  // interpolated into the system prompt, so a free string is a steering wheel.
+  const subject = resolveSubject(body.subject)
   if (!Array.isArray(messages) || messages.length === 0 || messages.length > 30) {
     return Response.json({ error: 'الرسائل غير صحيحة' }, { status: 400 })
   }
