@@ -8,6 +8,7 @@ import {
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
   Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard, MessageCircle,
+  Sparkles,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -101,6 +102,7 @@ const TABS = [
   { id: 'requests', label: 'طلبات المسار', Icon: Send },
   { id: 'subs', label: 'الاشتراكات', Icon: CreditCard },
   { id: 'messages', label: 'الرسائل', Icon: MessageCircle },
+  { id: 'bot', label: 'البوت', Icon: Sparkles },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
@@ -274,6 +276,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'requests' && <TrackRequestsTab flash={flash} />}
         {tab === 'subs' && <SubscriptionsTab flash={flash} />}
         {tab === 'messages' && <MessagesTab flash={flash} />}
+        {tab === 'bot' && <BotTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -1221,6 +1224,141 @@ function ThreadReply({ thread, busy, onSend }) {
           style={{ ...S.btn(P.green), flex: 1, opacity: text.trim() ? 1 : 0.5 }}>
           <Send size={14} /> إرسال الرد
         </button>
+      </div>
+    </div>
+  )
+}
+
+/* ══════════════ BOT ══════════════ */
+/**
+ * Run the site by describing what you want.
+ *
+ * The bot never writes on its own. It says what it would do, in plain Arabic,
+ * and waits. That is not caution for its own sake: a language model reading
+ * "اختبارات الميدترم بعد أسبوعين" will sometimes produce the wrong date, and
+ * the difference between catching that and not is whether a human saw the line
+ * before it became a calendar every student reads.
+ */
+function BotTab({ flash }) {
+  const [text, setText] = useState('')
+  const [thinking, setThinking] = useState(false)
+  const [proposal, setProposal] = useState(null)   // { actions, preview, errors }
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState(null)       // { done, failed }
+
+  async function propose() {
+    if (!text.trim()) return
+    setThinking(true); setProposal(null); setResult(null)
+    const { ok, data } = await apiJSON('/api/admin/bot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.trim() }),
+    })
+    setThinking(false)
+    if (!ok) { flash(data.error || 'تعذّر الفهم', 'error'); return }
+    setProposal(data)
+  }
+
+  async function run() {
+    setRunning(true)
+    const { ok, data } = await apiJSON('/api/admin/bot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true, actions: proposal.actions }),
+    })
+    setRunning(false)
+    if (!ok) { flash(data.error || 'تعذّر التنفيذ', 'error'); return }
+    setResult(data)
+    setProposal(null)
+    setText('')
+    flash(data.failed?.length ? 'نُفِّذ بعضها' : 'تم التنفيذ', data.failed?.length ? 'error' : 'success')
+  }
+
+  const box = {
+    width: '100%', boxSizing: 'border-box', background: 'var(--bg)',
+    border: '1px solid var(--bd)', borderRadius: 10, padding: '11px 13px',
+    fontSize: 13, color: 'var(--tx)', fontFamily: 'inherit',
+    direction: 'rtl', outline: 'none', resize: 'vertical',
+  }
+
+  return (
+    <div>
+      <SectionHeader title="البوت" />
+
+      <div style={S.card}>
+        <div style={{ fontSize: 12, color: 'var(--mu)', lineHeight: 1.85, marginBottom: 12 }}>
+          اكتب ما تريد بلغتك، وسأعرض عليك ما سأفعله قبل أن أفعله. مثال:
+          <br /><span style={{ color: 'var(--tx)' }}>«أضف اختبارات الميدترم لطلاب التحضيري يوم ٢٥ أكتوبر ٢٠٢٦»</span>
+          <br /><span style={{ color: 'var(--tx)' }}>«أرسل إعلاناً لكل الطلاب أن التسجيل يفتح غداً»</span>
+        </div>
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={3}
+          placeholder="اكتب طلبك…" style={{ ...box, marginBottom: 10 }} />
+        <button onClick={propose} disabled={thinking || !text.trim()}
+          style={{ ...S.btn(P.blue2), width: '100%', opacity: text.trim() ? 1 : 0.5 }}>
+          <Sparkles size={14} /> {thinking ? 'أفكّر…' : 'اعرض ما ستفعله'}
+        </button>
+      </div>
+
+      {proposal && (
+        <div style={{ ...S.card, borderColor: `${P.gold}55` }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tx)', marginBottom: 10 }}>
+            سأفعل هذا — راجعه قبل التأكيد
+          </div>
+
+          {(proposal.preview || []).map((line, i) => (
+            <div key={i} style={{
+              display: 'flex', gap: 9, alignItems: 'flex-start',
+              background: 'var(--s2)', border: '1px solid var(--bd)',
+              borderRadius: 10, padding: '10px 12px', marginBottom: 8,
+            }}>
+              <span style={{ color: P.green, fontWeight: 900, flexShrink: 0 }}>{i + 1}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.8 }}>{line}</span>
+            </div>
+          ))}
+
+          {(proposal.errors || []).map((e, i) => (
+            <div key={i} style={{
+              fontSize: 12, color: P.red, background: `${P.red}0d`,
+              border: `1px solid ${P.red}30`, borderRadius: 10,
+              padding: '9px 11px', marginBottom: 8, lineHeight: 1.7,
+            }}>{e}</div>
+          ))}
+
+          {(proposal.actions || []).length > 0 ? (
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button onClick={run} disabled={running} style={{ ...S.btn(P.green), flex: 2 }}>
+                <CheckCircle size={14} /> {running ? 'جارٍ التنفيذ…' : 'نفّذ'}
+              </button>
+              <button onClick={() => setProposal(null)} style={{ ...S.btn(P.red), flex: 1 }}>
+                إلغاء
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--mu)', lineHeight: 1.8 }}>
+              لا يوجد إجراء قابل للتنفيذ — أعد صياغة طلبك.
+            </div>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div style={S.card}>
+          {(result.done || []).map((line, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 7 }}>
+              <CheckCircle size={15} color={P.green} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.75 }}>{line}</span>
+            </div>
+          ))}
+          {(result.failed || []).map((line, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 7 }}>
+              <X size={15} color={P.red} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.75 }}>{line}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ ...S.card, fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.85 }}>
+        البوت لا يكتب شيئاً قبل تأكيدك. ويقتصر على ما تستطيع فعله من اللوحة نفسها:
+        إضافة أحداث للتقويم، وإرسال إعلانات. لا يحذف ولا يعدّل ولا يمسّ حسابات الطلاب.
       </div>
     </div>
   )
