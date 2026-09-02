@@ -956,20 +956,9 @@ function NeedAccountSheet({ t, what, onClose, accounts }) {
           <div style={{ fontSize: 16, fontWeight: 900, color: t.tx }}>{lines[0]}</div>
         </div>
         <div style={{ fontSize: 13, color: t.mu, lineHeight: 1.9, marginBottom: 16 }}>{lines[1]}</div>
-        {accounts ? (
-          <>
-            <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
-              <User size={15} /> إنشاء حساب مجاني
-            </Btn>
-            <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
-              <LogIn size={15} /> لدي حساب — تسجيل الدخول
-            </Btn>
-          </>
-        ) : (
-          <Btn variant="gold" onClick={onClose} style={{ width: "100%" }}>
-            <User size={15} /> أكمل ملفك من «حسابي»
-          </Btn>
-        )}
+        <Btn variant="gold" onClick={onClose} style={{ width: "100%" }}>
+          <User size={15} /> أكمل ملفك من «حسابي»
+        </Btn>
         <button onClick={onClose} style={{ width: "100%", background: "none", border: "none", marginTop: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu }}>
           أكمل التصفّح
         </button>
@@ -5245,72 +5234,17 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
             <Compass size={17} color={P.gold} />
-            <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>أنت تتصفّح بدون حساب</div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>أكمل ملفك</div>
           </div>
           <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 14 }}>
-            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. الحساب يضيف
-            <strong style={{ color: t.tx }}> مسارك وموادك ومهامك ومفضلتك</strong> — ويتبعك على أي جهاز.
+            كل شيء يعمل الآن: المواد، التقويم، الجدول، المساعد. أضف
+            <strong style={{ color: t.tx }}> اسمك ومسارك وخطتك</strong> ليُخصَّص لك كل شيء — بلا حساب ولا كلمة مرور.
           </div>
-          {/* A real account now, with an email behind it. The device-local
-              profile still opens for anyone who made one before accounts
-              existed — it is offered second, not instead. */}
-          {accounts ? (
-            <>
-              <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
-                <User size={15} /> إنشاء حساب
-              </Btn>
-              <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
-                <LogIn size={15} /> لدي حساب — تسجيل الدخول
-              </Btn>
-            </>
-          ) : savedAccount ? (
-            <>
-              <Btn variant="gold" onClick={() => onLogin?.()} style={{ width: "100%", marginBottom: 8 }}>
-                <LogIn size={15} /> دخول إلى «{savedAccount.name}»
-              </Btn>
-              <Btn variant="ghost" onClick={() => setEditing(true)} style={{ width: "100%" }}>
-                <Plus size={15} /> ملف جديد بدلاً منه
-              </Btn>
-            </>
-          ) : (
-            <Btn variant="gold" onClick={() => setEditing(true)} style={{ width: "100%" }}>
-              <User size={15} /> إنشاء حساب
-            </Btn>
-          )}
-          <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
-            {accounts
-              ? "الاسم والبريد وكلمة المرور — ويصلك رمز تأكيد على بريدك."
-              : savedAccount
-                ? "حسابك محفوظ على هذا الجهاز."
-                : "الاسم فقط — ويُحفظ على جهازك."}
-          </div>
-        </div>
-      )}
-
-      {/* A device profile is not an account, and until now there was no way to
-          say so. The sign-in card above is gated on `!profile`, so everyone who
-          made a profile before accounts existed — which is every current
-          student — had no route to /login or /signup at all: they would have
-          had to sign out first, destroying the profile, just to find the door.
-          This is that door, and it keeps their profile while they walk through. */}
-      {!editing && profile && accounts && !signedIn && (
-        <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.blue2}45`, boxShadow: t.shSm }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
-            <LogIn size={17} color={P.blue2} />
-            <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>ملفك محفوظ على هذا الجهاز فقط</div>
-          </div>
-          <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 14 }}>
-            لو مسحت بيانات المتصفح أو فتحت الموقع من جهاز آخر، لن تجده. الحساب
-            <strong style={{ color: t.tx }}> يحفظه ببريدك</strong> ويتبعك على أي جهاز — وملفك الحالي يبقى كما هو.
-          </div>
-          <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
-            <User size={15} /> إنشاء حساب بالبريد
-          </Btn>
-          <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
-            <LogIn size={15} /> لدي حساب — تسجيل الدخول
+          <Btn variant="gold" onClick={() => setEditing(true)} style={{ width: "100%" }}>
+            <User size={15} /> أكمل ملفي
           </Btn>
           <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
-            يصلك رمز من ٦ أرقام على بريدك للتأكد منه.
+            الاسم والمسار والخطة — تُحفظ على جهازك، بلا تسجيل دخول.
           </div>
         </div>
       )}
@@ -5910,18 +5844,9 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSo
           </div>
 
           {profile && (
-            <>
-              <Row Icon={Save} label="حفظ حسابي بعد تسجيل الخروج" color={P.gold}
-                desc={rememberAccount
-                  ? "عند العودة تظهر لك شاشة دخول باسمك ورقمك الجامعي"
-                  : "تسجيل الخروج سيحذف ملفك من هذا الجهاز نهائياً"}>
-                <Toggle on={rememberAccount} onChange={setRememberAccount} />
-              </Row>
-
-              <Btn variant="ghost" onClick={() => { onSignOut?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
-                <LogOut size={14} /> تسجيل الخروج
-              </Btn>
-            </>
+            <Btn variant="ghost" onClick={() => { onSignOut?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
+              <LogOut size={14} /> حذف ملفي والبدء من جديد
+            </Btn>
           )}
 
           <Btn variant="ghost" onClick={() => { onSupport?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
@@ -6880,25 +6805,14 @@ export default function App() {
    * it off, the profile is gone from this device for good.
    */
   const signOut = async () => {
-    // The hold outlives the sign-out: it is anchored on a stamp kept outside
-    // the profile precisely so signing out cannot be used to escape it.
+    // Not a logout — there are no student logins anymore. This clears the
+    // device profile so a student can start over. The 15-day track hold is
+    // anchored on a stamp kept outside the profile, so clearing it here cannot
+    // be used to escape the hold.
     setTrackLock(lockStampOf(profile) || trackLock);
-    if (account.signedIn) {
-      await account.signOut();
-      toasts.push("تم تسجيل الخروج — يمكنك الدخول مرة أخرى من «حسابي»", "info");
-    } else {
-      if (rememberAccount && profile) {
-        setSavedAccount(profile);
-        setSignedOut(true);
-        toasts.push("تم تسجيل الخروج — للدخول مرة أخرى افتح «حسابي»", "info");
-      } else {
-        setSavedAccount(null);
-        setSignedOut(false);
-        toasts.push("تم تسجيل الخروج وحُذف ملفك — يمكنك إنشاء حساب من «حسابي»", "info");
-      }
-      setLocalProfile(null);
-    }
+    setLocalProfile(null);
     setTab("home"); setCourse(null);
+    toasts.push("تم حذف ملفك — أكمل ملفاً جديداً من «حسابي»", "info");
   };
 
   const resetCounts = useMemo(() => ({
@@ -7152,24 +7066,6 @@ export default function App() {
         email={profile?.email || aiEmail} onSaveEmail={setAiEmail} gate={subOpen} onToast={toasts.push} />}
 
       {showOnboard && <Onboarding onClose={finishOnboard} skipWalkthrough={seen} t={t} />}
-
-      {/* Came back after signing out with an account saved on this device */}
-      {signedOut && savedAccount && !showOnboard && (
-        <WelcomeBack
-          saved={savedAccount} t={t}
-          onEnter={(p) => {
-            setProfile(p);
-            setSavedAccount(p);
-            setSignedOut(false);
-            toasts.push(`أهلاً بعودتك ${p.name} 👋`, "success");
-          }}
-          onForget={() => {
-            setSavedAccount(null); setSignedOut(false);
-            toasts.push("حُذف الحساب المحفوظ من هذا الجهاز", "info");
-          }}
-          onSkip={() => setSignedOut(false)}
-        />
-      )}
 
       {showAI && (
         <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex", flexDirection: "column", background: t.bg }}>
