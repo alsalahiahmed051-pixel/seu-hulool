@@ -244,32 +244,6 @@ const ALL_SUBJECTS_LIST = (() => {
   return [...out];
 })();
 
-const TIPS = [
-  "راجع ملاحظاتك يومياً بدلاً من الدراسة المكثفة قبل الاختبار",
-  "استخدم تقنية بومودورو: 25 دقيقة دراسة ثم 5 دقائق راحة",
-  "اشرح المادة لشخص آخر — أفضل طريقة لترسيخ الفهم",
-  "حوّل ملاحظاتك إلى خرائط ذهنية لتسهيل المراجعة",
-  "ابدأ بالأسئلة السهلة في الاختبار لبناء الثقة",
-  "النوم الكافي ليلة الاختبار يرفع الأداء أكثر من المذاكرة المتأخرة",
-  "اشرب الماء بانتظام أثناء الدراسة — الجفاف يقلّل التركيز",
-  "خصّص مكاناً ثابتاً للدراسة — يساعد دماغك على الدخول في وضع التركيز سريعاً",
-  "القراءة بالصوت العالي تُحسّن الحفظ بنسبة 50% مقارنةً بالقراءة الصامتة",
-  "راجع الوحدة الجديدة بعد ساعة من تعلمها لترسيخها في الذاكرة طويلة المدى",
-  "استخدم بطاقات التعلم (Flashcards) لحفظ التعريفات والمصطلحات بسرعة",
-  "فصل الهاتف عنك أثناء الدراسة يرفع إنتاجيتك بنسبة 26% تقريباً",
-  "كتابة الملاحظات بخط اليد تُحسّن الفهم العميق أكثر من الطباعة",
-  "حل أسئلة الاختبارات القديمة هو أفضل طريقة للتحضير للاختبار",
-  "ابدأ المشاريع مبكراً — يوم واحد إضافي يصنع فارقاً كبيراً",
-  "ضع أهدافاً صغيرة لكل جلسة دراسية لتشعر بالإنجاز والدافعية",
-  "لا تدرس وأنت متعب — خذ قيلولة 20 دقيقة ثم عد بتركيز كامل",
-  "اربط المادة الجديدة بشيء تعرفه مسبقاً لتسهيل الاسترجاع",
-  "أخذ استراحة رياضية 10 دقائق يُنشّط الدماغ ويرفع التركيز",
-  "راجع المادة قبل النوم مباشرة — الدماغ يُعزّز المعلومات أثناء النوم",
-  "اكتب ملخصاً بكلماتك الخاصة — هذا يُثبت أنك فهمت المادة حقاً",
-  "المجموعات الدراسية فعّالة إذا كان لكل شخص دور واضح في النقاش",
-  "تعلّم تقنية الإعادة الموزّعة: راجع بعد يوم، أسبوع، ثم شهر",
-  "ثق بنفسك يوم الاختبار — التوتر الخفيف يزيد الأداء، الذعر يخفضه",
-];
 
 const NOTIF_ICONS = { book: Book, file: FileText, calendar: Calendar, star: Star, bell: Bell };
 
@@ -358,6 +332,43 @@ function useCountUp(target, dur = 1200) {
     return () => cancelAnimationFrame(raf);
   }, [target, dur]);
   return v;
+}
+
+/**
+ * A ring that keeps going until someone acknowledges it, then stops on its own.
+ *
+ * The owner asked for thirty seconds of sound and then quiet. Two things make
+ * that safe rather than maddening: a single module-level handle, so a second
+ * notification replaces the first rather than ringing over it, and a hard
+ * ceiling that fires even if nothing ever acknowledges it — an alarm with no
+ * off switch is the one people disable permanently.
+ */
+let ringTimer = null;
+let ringStopAt = 0;
+
+export function stopRinging() {
+  if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+  ringStopAt = 0;
+}
+
+// playChime, not playBell: this is the sound reminders already made, and
+// changing what an alarm sounds like is not a side effect anyone asked for.
+function startRinging(seconds = 30) {
+  stopRinging();
+  ringStopAt = Date.now() + seconds * 1000;
+  playChime();
+  ringTimer = setInterval(() => {
+    if (Date.now() >= ringStopAt) { stopRinging(); return; }
+    playChime();
+  }, 3000);
+}
+
+// Touching the page at all counts as hearing it. An alarm that keeps sounding
+// after you have picked up the phone is the reason people mute an app for good.
+if (typeof window !== "undefined") {
+  const ack = () => stopRinging();
+  window.addEventListener("pointerdown", ack, { passive: true });
+  window.addEventListener("keydown", ack);
 }
 
 function playBell() {
@@ -464,22 +475,6 @@ function Btn({ children, onClick, variant = "primary", size = "md", style = {}, 
   );
 }
 
-function StatCard({ Icon, value, suffix = "", label, color, t }) {
-  const v = useCountUp(value);
-  return (
-    <div style={{
-      background: t.s1, borderRadius: 16, padding: "16px 14px", border: `1px solid ${t.bd}`,
-      boxShadow: t.shSm, textAlign: "center", position: "relative", overflow: "hidden",
-    }}>
-      <div style={{ position: "absolute", top: -20, right: -20, width: 60, height: 60, borderRadius: "50%", background: `${color}10`, pointerEvents: "none" }} />
-      <div style={{ width: 40, height: 40, borderRadius: 12, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", position: "relative" }}>
-        <Icon size={20} color={color} strokeWidth={2.5} />
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 900, color: color, letterSpacing: -0.5, position: "relative" }}>{v.toLocaleString()}{suffix}</div>
-      <div style={{ fontSize: 12, color: t.mu, marginTop: 4, fontWeight: 500, position: "relative" }}>{label}</div>
-    </div>
-  );
-}
 
 function EmptyState({ Icon, title, desc, action, t }) {
   return (
@@ -637,7 +632,7 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           topic, message: message.trim(), page,
-          name: profile?.name, studentId: profile?.studentId, email,
+          name: profile?.name, email,
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -690,7 +685,7 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
 
             <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.8, marginBottom: 14 }}>
               {profile?.name || email
-                ? <>يُرسَل معها: {[profile?.name, profile?.studentId, email].filter(Boolean).join(" · ")}</>
+                ? <>يُرسَل معها: {[profile?.name, email].filter(Boolean).join(" · ")}</>
                 : "لم تُكمل ملفك — أرسل بريدك داخل الرسالة إن أردت ردّاً."}
             </div>
 
@@ -699,6 +694,239 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
             </Btn>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════ MESSAGES ══════════════ */
+
+/** How a thread labels itself, by what opened it. */
+const THREAD_KINDS = {
+  support:      { label: "رسالة",  color: P.blue2 },
+  subscription: { label: "اشتراك", color: P.gold },
+  track:        { label: "مسار",   color: "#7c3aed" },
+  system:       { label: "من الإدارة", color: P.green },
+};
+
+const relTime = (iso) => {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "الآن";
+  if (m < 60) return `قبل ${m} د`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `قبل ${h} س`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "أمس" : `قبل ${d} يوم`;
+};
+
+/**
+ * The student's side of the correspondence.
+ *
+ * This replaces a send-only form. The form could deliver a question and had
+ * nowhere to deliver an answer, so every reply the owner wrote — and every
+ * decision the site made about a person — arrived as silence. A student who
+ * hears nothing asks again, which is why the old inbox filled with repeats.
+ *
+ * One surface for all of it on purpose: a rejected subscription and a
+ * question about a missing file are both "something I need to hear about",
+ * and splitting them across pages is how people miss things.
+ */
+function MessagesSheet({ t, onClose, profile, email, onToast, onUnread }) {
+  const [threads, setThreads] = useState(null);
+  const [open, setOpen] = useState(null);      // thread id being read
+  const [composing, setComposing] = useState(false);
+  const [topic, setTopic] = useState("سؤال");
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/messages");
+      const d = await r.json().catch(() => ({}));
+      setThreads(d.threads || []);
+      onUnread?.(d.unread || 0);
+    } catch { setThreads([]); }
+  }, [onUnread]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const thread = threads?.find(x => x.id === open) || null;
+
+  // Opening a conversation is reading it. Clearing the badge here rather than
+  // on a button keeps the count honest: it says "things you have not looked
+  // at", which is the only meaning anybody reads into it.
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/messages", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId: open }),
+    }).then(() => {
+      setThreads(ts => (ts || []).map(x => x.id === open ? { ...x, student_unread: 0 } : x));
+      onUnread?.((threads || []).reduce((n, x) => n + (x.id === open ? 0 : x.student_unread || 0), 0));
+    }).catch(() => {});
+    // `threads` is deliberately not a dependency: it changes on every load and
+    // would re-fire this write in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const send = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setSending(true);
+    try {
+      const r = await fetch("/api/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body, threadId: open || undefined, topic,
+          name: profile?.name, email,
+        }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setDraft(""); setComposing(false);
+        if (!open && d.threadId) setOpen(d.threadId);
+        await load();
+        onToast?.("أُرسلت رسالتك ✅", "success");
+      } else onToast?.(safeText(d.error, "تعذّر الإرسال"), "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setSending(false);
+  };
+
+  const header = (title, back) => (
+    <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+      <button onClick={back} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+        <ArrowLeft size={15} /> رجوع
+      </button>
+      <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+        <Mail size={17} color={P.gold} /> {title}
+      </div>
+    </div>
+  );
+
+  const box = { width: "100%", boxSizing: "border-box", background: t.s2, border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "11px 13px", fontSize: 13.5, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", resize: "vertical" };
+
+  /* ── one conversation ─────────────────────────────────────────── */
+  if (thread) {
+    const k = THREAD_KINDS[thread.kind] || THREAD_KINDS.support;
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+        {header(safeText(thread.subject, "محادثة"), () => setOpen(null))}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+          <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 800, color: k.color, background: `${k.color}15`, border: `1px solid ${k.color}35`, borderRadius: 7, padding: "3px 8px", marginBottom: 14 }}>
+            {k.label}
+          </div>
+          {(thread.messages || []).map(m => {
+            const mine = m.sender === "student";
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-start" : "flex-end", marginBottom: 10 }}>
+                <div style={{
+                  maxWidth: "85%",
+                  background: mine ? t.s2 : `${P.green}12`,
+                  border: `1px solid ${mine ? t.bd : `${P.green}35`}`,
+                  borderRadius: 14, padding: "10px 13px",
+                }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 800, color: mine ? t.dim : P.green, marginBottom: 4 }}>
+                    {mine ? "أنت" : "الإدارة"} · {relTime(m.created_at)}
+                  </div>
+                  <div style={{ fontSize: 13.5, color: t.tx, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
+                    {safeText(m.body, "")}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding: 14, borderTop: `1px solid ${t.bd}`, background: t.s1, maxWidth: 620, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2}
+            placeholder="اكتب ردّك…" style={{ ...box, marginBottom: 8 }} />
+          <Btn variant="primary" onClick={send} disabled={sending || !draft.trim()} style={{ width: "100%" }}>
+            <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال"}
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── writing a new one ────────────────────────────────────────── */
+  if (composing) {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+        {header("رسالة جديدة", () => setComposing(false))}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+          <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 6 }}>الموضوع</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+            {SUPPORT_TOPICS.map(x => (
+              <button key={x} onClick={() => setTopic(x)} style={{
+                background: topic === x ? `${P.blue2}18` : t.s2,
+                border: `1.5px solid ${topic === x ? P.blue2 : t.bd}`,
+                borderRadius: 9, padding: "7px 12px", cursor: "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 800, color: topic === x ? P.blue2 : t.mu,
+              }}>{x}</button>
+            ))}
+          </div>
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={6}
+            placeholder="اكتب رسالتك…" style={{ ...box, marginBottom: 12 }} />
+          <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.8, marginBottom: 14 }}>
+            {profile?.name || email
+              ? <>يُرسَل معها: {[profile?.name, email].filter(Boolean).join(" · ")}</>
+              : "لم تُكمل ملفك — الرد سيصلك هنا في هذه الصفحة على أي حال."}
+          </div>
+          <Btn variant="primary" onClick={send} disabled={sending || !draft.trim()} style={{ width: "100%" }}>
+            <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال"}
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── the list ─────────────────────────────────────────────────── */
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      {header("الرسائل", onClose)}
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        <Btn variant="gold" onClick={() => { setDraft(""); setComposing(true); }} style={{ width: "100%", marginBottom: 14 }}>
+          <MessageCircle size={15} /> راسل الإدارة
+        </Btn>
+
+        {threads === null ? (
+          <div style={{ fontSize: 13, color: t.mu, textAlign: "center", padding: 30 }}>جارٍ التحميل…</div>
+        ) : threads.length === 0 ? (
+          <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 22, textAlign: "center" }}>
+            <Mail size={26} color={t.dim} style={{ marginBottom: 10 }} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 5 }}>لا رسائل بعد</div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85 }}>
+              أي سؤال أو مشكلة أو ملف ناقص — اكتب لنا. وكل ردّ على طلباتك يصلك هنا.
+            </div>
+          </div>
+        ) : threads.map(x => {
+          const k = THREAD_KINDS[x.kind] || THREAD_KINDS.support;
+          const last = (x.messages || [])[x.messages.length - 1];
+          return (
+            <button key={x.id} onClick={() => setOpen(x.id)} style={{
+              width: "100%", textAlign: "right", background: t.s1,
+              border: `1.5px solid ${x.student_unread > 0 ? `${P.blue2}55` : t.bd}`,
+              borderRadius: 14, padding: 14, marginBottom: 9, cursor: "pointer",
+              fontFamily: "inherit", display: "block",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: k.color, background: `${k.color}15`, borderRadius: 6, padding: "2px 7px" }}>{k.label}</span>
+                {x.student_unread > 0 && (
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: P.blue2 }} />
+                )}
+                <span style={{ marginRight: "auto", fontSize: 11, color: t.dim }}>{relTime(x.last_message_at)}</span>
+              </div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 3 }}>
+                {safeText(x.subject, "محادثة")}
+              </div>
+              {last && (
+                <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {last.sender === "admin" ? "الإدارة: " : "أنت: "}{safeText(last.body, "")}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -888,7 +1116,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
       const res = await fetch("/api/subscription", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: profile?.name, studentId: profile?.studentId,
+          name: profile?.name,
           email: savedEmail, note: note.trim(), receiptUrl: receipt.trim(),
         }),
       });
@@ -964,7 +1192,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             </div>
             {justSent && (
               <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.9, marginTop: 10, background: t.s2, borderRadius: 10, padding: "10px 12px" }}>
-                أُرسل مع الطلب: {profile?.name || "—"} · {profile?.studentId || "—"} · {savedEmail || "—"}
+                أُرسل مع الطلب: {profile?.name || "—"} · {savedEmail || "—"}
                 {receipt ? " · صورة الإيصال ✅" : " · بدون صورة إيصال"}
                 <br />ستظهر حالة الطلب هنا، ويصلك الرد على بريدك.
               </div>
@@ -1016,7 +1244,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
 
             {!profileComplete(profile) && (
               <div style={{ fontSize: 12, color: P.orange, background: `${P.orange}10`, border: `1px solid ${P.orange}30`, borderRadius: 10, padding: "9px 11px", marginBottom: 10, lineHeight: 1.7 }}>
-                أكمل اسمك ورقمك الجامعي في «حسابي» أولاً — يُرسَلان مع الطلب.
+                أكمل اسمك في «حسابي» أولاً — يُرسَل مع الطلب.
               </div>
             )}
 
@@ -1077,7 +1305,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             )}
 
             <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "8px 0 12px" }}>
-              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {profile?.studentId || "رقمك الجامعي"} · {savedEmail || "بريدك"}.
+              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {savedEmail || "بريدك"}.
             </div>
 
             {sendErr && (
@@ -1260,9 +1488,53 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
 
   const resendMsg = (id, text) => {
     const idx = msgs.findIndex(m => m.id === id);
-    setMsgs(ms => ms.slice(0, idx));
+    if (idx < 0) return;
+    const base = msgs.slice(0, idx);
+    setMsgs(base);
     setMenuId(null);
-    setTimeout(() => send(text), 50);
+    setTimeout(() => send(text, base), 50);
+  };
+
+  /**
+   * Ask the same question again.
+   *
+   * Offered on the *answer*, because that is where you are standing when you
+   * decide the answer was no good — the alternative is scrolling up to your own
+   * message and re-sending it, which is the same act with extra steps. It walks
+   * back to the question above this reply and re-asks it, dropping the reply so
+   * the new one takes its place rather than stacking underneath.
+   */
+  const retryAnswer = (id) => {
+    const idx = msgs.findIndex(m => m.id === id);
+    if (idx < 1) return;
+    let q = idx - 1;
+    while (q >= 0 && msgs[q].r !== "u") q--;
+    if (q < 0) return;
+    const text = msgs[q].text;
+    const base = msgs.slice(0, q);
+    setMsgs(base);
+    setMenuId(null);
+    setTimeout(() => send(text, base), 50);
+  };
+
+  /**
+   * Change what you asked, and ask that instead.
+   *
+   * Everything after the edited message goes: the replies below it answered a
+   * question that no longer exists, and leaving them would make the thread read
+   * as though the assistant had answered something nobody asked.
+   */
+  const editMsg = (id, text) => {
+    setMenuId(null);
+    const next = window.prompt("عدّل رسالتك:", text);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === text) return;
+    const idx = msgs.findIndex(m => m.id === id);
+    if (idx < 0) return;
+    const base = msgs.slice(0, idx);
+    setMsgs(base);
+    setTimeout(() => send(trimmed, base), 50);
   };
 
   const defaultSugs = [
@@ -1307,7 +1579,19 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     return <div key={i} style={{ lineHeight: 1.8 }}>{renderInline(line)}</div>;
   });
 
-  const send = async (q) => {
+  /**
+   * Send a question.
+   *
+   * `base` is the thread to append to. It exists because "ask this again from
+   * here" — resend, edit, another answer — has to drop everything below the
+   * point it rewinds to, and `msgs` in this closure is whatever it was when
+   * this function was created. Truncating with setMsgs and then calling send
+   * looked right and did nothing: send rebuilt the list from its own stale
+   * copy and appended, so the old question and its answer stayed and the new
+   * pair piled up underneath. Resend has been doing that since it was written.
+   * Passing the base explicitly is what makes the rewind real.
+   */
+  const send = async (q, base) => {
     const text = (q || inp).trim();
     if (!text || loading) return;
     // The email is asked for once and kept locally; the server checks its
@@ -1316,7 +1600,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     if (gate && gate.blocked) { onSubscribe?.(gate); return; }
     setInp("");
     const newMsg = { r: "u", id: mkId(), text, ts: Date.now() };
-    const newMsgs = [...msgs, newMsg];
+    const newMsgs = [...(base || msgs), newMsg];
     setMsgs(newMsgs);
     setLoading(true);
     onChat?.();
@@ -1398,7 +1682,11 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
               <FileText size={11} /> {fileCount}
             </div>
           )}
-          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
+          {/* "مسح" read as deleting something of yours; it starts a fresh
+              conversation, which is a different promise. */}
+          <button onClick={clearChat} title="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+            <Plus size={13} /> محادثة جديدة
+          </button>
         </div>
       )}
 
@@ -1457,8 +1745,18 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
                     <Copy size={14} color={P.blue2} /> نسخ النص
                   </button>
                   {isUser && !loading && (
+                    <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => editMsg(m.id, m.text)}>
+                      <Edit3 size={14} color={P.gold} /> تعديل وإعادة الإرسال
+                    </button>
+                  )}
+                  {isUser && !loading && (
                     <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => resendMsg(m.id, m.text)}>
                       <RotateCcw size={14} color={P.green} /> إعادة الإرسال
+                    </button>
+                  )}
+                  {!isUser && i > 0 && !loading && (
+                    <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => retryAnswer(m.id)}>
+                      <RotateCcw size={14} color={P.green} /> إجابة أخرى
                     </button>
                   )}
                   {i > 0 && (
@@ -3006,12 +3304,33 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
     return best;
   }, [schedule, nowTick]);
 
-  const enableNotifs = async () => {
+  // Off is a local preference, not a permission: a browser will not hand back
+  // an already-granted permission, so "turn it off" has to mean "stop sending
+  // them" rather than "revoke". And once a browser has been told no, asking
+  // again silently does nothing — so say where the setting lives instead of
+  // firing a request that cannot succeed and looks broken.
+  const toggleNotifs = async () => {
     if (typeof Notification === "undefined") { onToast?.("متصفحك لا يدعم التنبيهات", "warn"); return; }
+    if (notifPerm === "granted") {
+      setNotifPerm("off");
+      stopRinging();
+      onToast?.("أُوقفت تنبيهات المحاضرات — اضغط مرة أخرى لإعادتها", "info");
+      return;
+    }
+    if (notifPerm === "denied") {
+      onToast?.("المتصفح يمنع التنبيهات — فعّلها من إعدادات الموقع في متصفحك", "warn");
+      return;
+    }
+    if (notifPerm === "off") {
+      // Permission is still granted underneath; this only lifts our own pause.
+      setNotifPerm(Notification.permission);
+      onToast?.("عادت تنبيهات المحاضرات ✅", "success");
+      return;
+    }
     try {
       const p = await Notification.requestPermission();
       setNotifPerm(p);
-      onToast?.(p === "granted" ? "تم تفعيل التنبيهات ✅" : "لم يتم منح إذن التنبيهات", p === "granted" ? "success" : "warn");
+      onToast?.(p === "granted" ? "تم تفعيل التنبيهات ✅" : "لم يُمنح إذن التنبيهات", p === "granted" ? "success" : "warn");
     } catch { onToast?.("تعذّر تفعيل التنبيهات", "error"); }
   };
 
@@ -3068,11 +3387,46 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
       )}
 
       {/* Notifications enable prompt */}
-      {notifPerm !== "granted" && notifPerm !== "unsupported" && (schedule || []).length > 0 && (
-        <button onClick={enableNotifs} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: `${P.gold}15`, border: `1px solid ${P.gold}40`, color: t.tx, borderRadius: 12, padding: "10px 14px", marginBottom: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700 }}>
-          <Bell size={15} color={P.gold} /> فعّل تنبيهات المحاضرات على هذا الجهاز
-        </button>
-      )}
+      {/* A switch, not a one-off prompt.
+          This used to render only while permission was ungranted and then
+          vanish for good: no way to turn reminders off afterwards, and no way
+          back on for anyone who dismissed the browser dialog once. The owner's
+          objection — that it tells you to go and enable something instead of
+          letting you — was about exactly that. It stays put and reads its own
+          state, so the answer to "are reminders on?" is always on screen. */}
+      {notifPerm !== "unsupported" && (schedule || []).length > 0 && (() => {
+        const on = notifPerm === "granted";
+        const denied = notifPerm === "denied";
+        return (
+          <button onClick={toggleNotifs} style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 10, textAlign: "right",
+            background: on ? `${P.green}12` : `${P.gold}12`,
+            border: `1px solid ${on ? P.green + "45" : P.gold + "40"}`,
+            color: t.tx, borderRadius: 12, padding: "11px 14px", marginBottom: 14,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            <Bell size={16} color={on ? P.green : P.gold} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800 }}>
+                {on ? "تنبيهات المحاضرات مفعّلة" : "تنبيهات المحاضرات متوقّفة"}
+              </div>
+              <div style={{ fontSize: 11, color: t.mu, marginTop: 2, lineHeight: 1.5 }}>
+                {on ? "اضغط للإيقاف" : denied ? "المتصفح رافضها — اضغط لمعرفة كيف تسمح بها" : "اضغط للتفعيل"}
+              </div>
+            </div>
+            <div style={{
+              width: 42, height: 24, borderRadius: 12, flexShrink: 0, position: "relative",
+              background: on ? P.green : t.bd, transition: "background .2s",
+            }}>
+              <div style={{
+                position: "absolute", top: 3, insetInlineStart: on ? 21 : 3,
+                width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                transition: "inset-inline-start .2s",
+              }} />
+            </div>
+          </button>
+        );
+      })()}
 
       {view === "list" && DAYS.map(day => {
         // Sort on parsed minutes: a lecture saved without a time would make
@@ -4065,17 +4419,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
   // Tips are drawn without repeating: the card starts as an invitation rather
   // than a fact nobody asked for, and every tip in the deck is shown once
   // before any comes round again. The deck is remembered across visits, so
-  // "أعطني نصيحة" keeps giving you something new, not the same three.
-  const [tipSeen, setTipSeen] = useStored("tipsSeen", []);
-  const [tipIdx, setTipIdx] = useState(null);
-  const drawTip = useCallback(() => {
-    const pool = TIPS.map((_, i) => i).filter(i => !(tipSeen || []).includes(i) && i !== tipIdx);
-    // Deck exhausted — reshuffle, but never hand back the one on screen.
-    const from = pool.length ? pool : TIPS.map((_, i) => i).filter(i => i !== tipIdx);
-    const pick = from[Math.floor(Math.random() * from.length)];
-    setTipIdx(pick);
-    setTipSeen(pool.length ? [...(tipSeen || []), pick] : [pick]);
-  }, [tipSeen, tipIdx, setTipSeen]);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   // (A timer here used to force a tip on screen and swap it on the hour,
   //  which is exactly the "it just repeats at me" behaviour being fixed —
@@ -4090,7 +4433,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
     pwaPrompt.prompt();
     pwaPrompt.userChoice.then(() => setPwaPrompt(null));
   };
-  const tip = tipIdx == null ? null : TIPS[tipIdx];
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
@@ -4172,57 +4514,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
       {/* Unified tasks + exams hub */}
       <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} profile={profile} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
-        <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
-        <StatCard Icon={Bookmark} value={6000} suffix="+" label="تجميع وملخص" color={P.gold} t={t} />
-        <StatCard Icon={Users} value={5000} suffix="+" label="طالب نشط" color={P.green} t={t} />
-      </div>
-
-
-      {/* Study tip — an invitation, not a fact nobody asked for */}
-      <div style={{
-        background: `linear-gradient(135deg, ${P.gold}14, ${P.gold}05)`, borderRadius: 18,
-        padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
-        boxShadow: `0 4px 20px ${P.gold}12`, position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: -24, left: -14, width: 90, height: 90, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: tip ? 12 : 12, position: "relative" }}>
-          <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40`, flexShrink: 0 }}>
-            <Lightbulb size={17} color="#3a2e05" />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
-            <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>
-              {tip ? `${Math.min((tipSeen || []).length, TIPS.length)} من ${TIPS.length}` : `${TIPS.length} نصيحة بانتظارك`}
-            </div>
-          </div>
-        </div>
-
-        {tip && (
-          <p style={{ margin: "0 0 12px", fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative", animation: "fadeUp .3s ease" }}>{tip}</p>
-        )}
-
-        <div style={{ display: "flex", gap: 8, position: "relative" }}>
-          <button onClick={drawTip} style={{
-            flex: tip ? 1 : "1 1 100%", background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none",
-            borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#3a2e05",
-            fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
-          }}>
-            {tip ? <><RotateCcw size={13} /> نصيحة أخرى</> : <><Lightbulb size={14} /> أعطني نصيحة</>}
-          </button>
-          {tip && (
-            /* The tip is a starting point, not the end of it — one tap hands
-               it to the assistant so you can actually ask about it. */
-            <button onClick={() => onOpenAI?.(`اشرح لي هذه النصيحة الدراسية وكيف أطبّقها عملياً على موادي:\n«${tip}»`)} style={{
-              flex: 1, background: t.s1, border: `1.5px solid ${P.blue2}45`, borderRadius: 12, padding: "10px 14px",
-              cursor: "pointer", fontSize: 13, color: P.blue2, fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
-            }}>
-              <Sparkles size={13} /> اسأل المساعد عنها
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Pick up where you left off — the most likely next tap, and the one
           thing here the bottom nav cannot already do in one press. The old
@@ -4635,13 +4926,12 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "" }) {
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "", onMessages = null, msgUnread = 0 }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
     name: profile?.name || "",
-    studentId: profile?.studentId || "",
     email: profile?.email || aiEmail || "",
     // Empty, not "تحضيري": a preselected track made the plan chips (خطة أ/ب)
     // appear before the student had chosen anything.
@@ -4672,7 +4962,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // While the track is locked, a change goes to the admin as a request the
   // student explains, rather than silently editing the profile.
   const requestTrackChange = async () => {
-    const reason = window.prompt("سبب تغيير المسار؟ (سيصل للإدارة مع اسمك ورقمك الجامعي)");
+    const reason = window.prompt("سبب تغيير المسار؟ (سيصل للإدارة مع اسمك)");
     if (reason == null) return;
     if (!reason.trim()) { onToast?.("اكتب سبب التغيير", "warn"); return; }
     setRequesting(true);
@@ -4682,7 +4972,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profile?.name || draft.name.trim(),
-          studentId: profile?.studentId || draft.studentId.trim(),
           currentTrack: trackLabel(heldTrack), reason: reason.trim(),
         }),
       });
@@ -4698,7 +4987,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
-    if (!draft.studentId.trim()) { onToast?.("اكتب رقمك الجامعي", "warn"); return; }
     if (draft.email.trim() && !looksLikeEmail(draft.email)) { onToast?.("صيغة البريد غير صحيحة", "warn"); return; }
     if (!draft.track) { onToast?.("اختر مسارك أولاً", "warn"); return; }
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
@@ -4719,7 +5007,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     const next = {
       ...profile,
       name: draft.name.trim(),
-      studentId: draft.studentId.trim().toUpperCase(),
       email: draft.email.trim(),
       track: draft.track,
       college: draft.college || "",
@@ -4741,7 +5028,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     fetch("/api/student/identity", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: next.name, studentId: next.studentId, email: next.email || aiEmail || "",
+        name: next.name, email: next.email || aiEmail || "",
         track: next.track, college: next.college, plan: next.plan,
       }),
     })
@@ -4757,11 +5044,15 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
   const initial = (profile?.name || "ط").trim()[0] || "ط";
 
+  // One grid, not two. There were a row of links and a row of numbers, and
+  // both listed المفضلة and مهامي — the same things counted in one place and
+  // opened in another, so neither row was worth reading. A count you can tap
+  // is both.
   const quickActions = [
-    { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.blue2 },
-    { Icon: CheckCircle, label: "مهامي", tab: "home", color: P.green },
-    { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold },
-    { Icon: Compass, label: "استكشاف", tab: "explore", color: P.purple },
+    { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.blue2, n: (schedule || []).length },
+    { Icon: CheckCircle, label: "مهامي", tab: "home", color: P.green, n: (tasks || []).filter(x => !x.done).length },
+    { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold, n: favorites.length },
+    { Icon: Compass, label: "استكشاف", tab: "explore", color: P.purple, n: null },
   ];
 
   return (
@@ -4791,11 +5082,10 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               {studentCode && (
                 <span title="رقمك في الموقع" style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: "rgba(255,255,255,.85)", borderRadius: 7, padding: "2px 8px", fontFamily: "monospace", direction: "ltr" }}>{studentCode}</span>
               )}
-              {profile?.studentId && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.75)", fontFamily: "monospace", direction: "ltr" }}>{profile.studentId}</span>}
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => { setDraft({ name: profile?.name || "", studentId: profile?.studentId || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
               <Edit3 size={16} />
             </button>
             <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
@@ -4847,8 +5137,8 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             {accounts
               ? "الاسم والبريد وكلمة المرور — ويصلك رمز تأكيد على بريدك."
               : savedAccount
-                ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
-                : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
+                ? "حسابك محفوظ على هذا الجهاز."
+                : "الاسم فقط — ويُحفظ على جهازك."}
           </div>
         </div>
       )}
@@ -4881,19 +5171,102 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         </div>
       )}
 
+      {/* What to do next.
+          The owner's verdict on this page was that it proposes nothing — a
+          wall of boxes reporting state, with no view about any of it. That is
+          fair: everything here waited to be read. This is the page's one
+          opinion, and it earns its place at the top by only appearing when
+          there is genuinely something: an unread reply, a track never chosen,
+          an email never added. When there is nothing it says so in a line and
+          gets out of the way, because a permanent banner is furniture. */}
+      {!editing && profile && (() => {
+        const todo = [];
+        if (msgUnread > 0) todo.push({
+          Icon: Mail, color: P.gold,
+          text: msgUnread === 1 ? "عندك رسالة لم تقرأها" : `عندك ${msgUnread} رسائل لم تقرأها`,
+          cta: "افتح الرسائل", act: () => onMessages?.(),
+        });
+        if (!profile.track) todo.push({
+          Icon: Compass, color: P.blue2,
+          text: "لم تختر مسارك بعد — الموقع كله يتخصّص عليه",
+          cta: "اختر مسارك", act: () => setEditing(true),
+        });
+        if (!(profile.email || aiEmail)) todo.push({
+          Icon: Mail, color: P.purple,
+          text: "أضف بريدك ليصلك ردّ الإدارة وتفعيل اشتراكك",
+          cta: "أضف بريدك", act: () => setEditing(true),
+        });
+        if (todo.length === 0) return (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, padding: "10px 14px", background: `${P.green}0d`, border: `1px solid ${P.green}30`, borderRadius: 12 }}>
+            <CheckCircle size={15} color={P.green} />
+            <span style={{ fontSize: 12.5, color: t.mu, fontWeight: 700 }}>ملفك مكتمل ولا شيء ينتظرك.</span>
+          </div>
+        );
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, marginBottom: 7 }}>يحتاج انتباهك</div>
+            {todo.map((x, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 11, marginBottom: 8,
+                background: t.s1, border: `1.5px solid ${x.color}40`, borderRadius: 14, padding: "12px 14px",
+              }}>
+                <div style={{ width: 34, height: 34, borderRadius: 11, background: `${x.color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <x.Icon size={16} color={x.color} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: t.tx, lineHeight: 1.65, fontWeight: 700 }}>{x.text}</div>
+                <button onClick={x.act} style={{
+                  flexShrink: 0, background: `${x.color}18`, border: `1px solid ${x.color}45`, borderRadius: 10,
+                  padding: "7px 11px", cursor: "pointer", fontFamily: "inherit",
+                  fontSize: 11.5, fontWeight: 800, color: x.color,
+                }}>{x.cta}</button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Settings, said out loud.
+          It was a bare gear on a coloured header, one of two unlabelled icons
+          — the owner's word for it was "lost". An icon is a reminder for
+          someone who already knows the thing is there; it is not a way to
+          find it. The gear stays for whoever has learned it; this is for
+          everyone else. */}
+      {!editing && (
+        <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
+          <button onClick={openSettings} style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
+            cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
+          }}>
+            <Settings size={16} color={P.blue2} /> الإعدادات
+          </button>
+          <button onClick={() => onMessages?.()} style={{
+            flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            background: t.s1, border: `1.5px solid ${msgUnread > 0 ? `${P.gold}55` : t.bd}`,
+            borderRadius: 14, padding: "13px 10px",
+            cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
+          }}>
+            <Mail size={16} color={P.gold} /> الرسائل
+            {msgUnread > 0 && (
+              <span style={{
+                minWidth: 18, height: 18, borderRadius: 9, padding: "0 4px", background: P.gold,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 900, color: "#1a1a1a",
+              }}>{msgUnread > 9 ? "9+" : msgUnread}</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Setup / edit card (no email, no password) */}
       {editing && (
         <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, marginBottom: 4 }}>{profile ? "تعديل ملفك الدراسي" : "أنشئ ملفك الدراسي"}</div>
-          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>اسمك ورقمك الجامعي ومسارك — تُحفظ على جهازك، وتُستخدم لتخصيص موادك وتقويمك ومهامك.</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>اسمك ومسارك — لتخصيص موادك وتقويمك ومهامك.</div>
 
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
           <input value={draft.name} onChange={e => patch({ name: e.target.value })} placeholder="اكتب اسمك"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
-
-          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="رقمك الجامعي"
-            style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
 
           {/* One place to set the email, shared with the assistant — it used
               to be asked for separately in the chat and nowhere else. */}
@@ -4957,7 +5330,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
           <div style={{ display: "flex", gap: 8 }}>
             {profile && <Btn variant="ghost" size="sm" onClick={() => setEditing(false)} style={{ flex: 1 }}>إلغاء</Btn>}
-            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim() || !draft.studentId.trim()}>
+            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim()}>
               <CheckCircle size={15} /> {profile ? "حفظ" : "تأكيد وإنشاء الملف"}
             </Btn>
           </div>
@@ -4967,20 +5340,21 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {/* Quick actions dashboard */}
       {!editing && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
-          {quickActions.map(({ Icon, label, tab, color }) => (
-            // Centred as a column and given more room: the icon was small and
-            // sat off-centre above a label that was wider than it.
+          {quickActions.map(({ Icon, label, tab, color, n }) => (
             <button key={label} onClick={() => setActiveTab(tab)} style={{
-              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "16px 6px",
+              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "14px 6px",
               cursor: "pointer", fontFamily: "inherit", boxShadow: t.shSm, transition: "all .2s",
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 9,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
             }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-              <div style={{ width: 50, height: 50, borderRadius: 15, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon size={24} color={color} strokeWidth={2} />
+              <div style={{ width: 42, height: 42, borderRadius: 13, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon size={20} color={color} strokeWidth={2} />
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, textAlign: "center", lineHeight: 1.3 }}>{label}</div>
+              {n !== null && (
+                <div style={{ fontSize: 18, fontWeight: 900, color, lineHeight: 1 }}>{n}</div>
+              )}
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: t.tx, textAlign: "center", lineHeight: 1.3 }}>{label}</div>
             </button>
           ))}
         </div>
@@ -5052,23 +5426,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           </div>
         );
       })()}
-
-      {/* Snapshot stats */}
-      {!editing && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
-          {[
-            { Icon: Star, label: "المفضلة", value: favorites.length, color: P.gold },
-            { Icon: CheckCircle, label: "مهامي", value: (tasks || []).length, color: P.green },
-            { Icon: CalendarDays, label: "محاضراتي", value: (schedule || []).length, color: P.blue2 },
-          ].map(({ Icon, label, value, color }) => (
-            <div key={label} style={{ background: t.s1, borderRadius: 16, padding: "14px 8px", border: `1px solid ${t.bd}`, textAlign: "center", boxShadow: t.shSm }}>
-              <Icon size={17} color={color} style={{ marginBottom: 6 }} />
-              <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
-              <div style={{ fontSize: 11, color: t.mu, marginTop: 3 }}>{label}</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* My study plan — shows the subjects of the student's chosen plan */}
       {!editing && profile?.track && (() => {
@@ -5885,7 +6242,7 @@ const planOptionsFor = (track, college) =>
   trackNeedsCollege(track) ? collegePrograms(college) : (TRACK_PLANS[track] || []);
 /** Is this profile complete enough to be saved/confirmed? */
 const profileComplete = (p) => {
-  if (!p?.name?.trim() || !p?.studentId?.trim() || !p?.track) return false;
+  if (!p?.name?.trim() || !p?.track) return false;
   if (trackNeedsCollege(p.track) && !p.college) return false;
   // Only require a plan/programme when the chosen track actually offers one.
   return planOptionsFor(p.track, p.college).length === 0 || !!p.plan;
@@ -5954,25 +6311,17 @@ const AUTH_PLANS = TRACK_PLANS;
  */
 function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
   const [name, setName] = useState("");
-  const [studentId, setStudentId] = useState("");
   const [err, setErr] = useState("");
 
-  const [tries, setTries] = useState(0);
 
+  // This screen was never authentication and pretending otherwise did harm.
+  // The profile it guards is already sitting in this browser's storage —
+  // anyone holding the phone has it whatever they type here. Checking a
+  // university number only ever locked out the person who mistyped their own.
+  // It picks up where they left off; that is the whole job.
   const submit = () => {
-    if (!name.trim() || !studentId.trim()) { setErr("اكتب اسمك ورقمك الجامعي"); return; }
-    const typed = studentId.trim().toUpperCase();
-    const kept = String(saved.studentId || "").trim().toUpperCase();
-    // The name is an alternative key on purpose: a student who mistyped their
-    // ID when creating the profile would otherwise be locked out of their own
-    // data for good, with no password and no email to recover through.
-    if (typed !== kept && name.trim() !== String(saved.name || "").trim()) {
-      setTries(n => n + 1);
-      setErr("الرقم الجامعي لا يطابق الحساب المحفوظ على هذا الجهاز");
-      return;
-    }
-    // Entering with the name lets a wrong stored ID be corrected in place.
-    onEnter({ ...saved, name: name.trim(), studentId: typed });
+    if (!name.trim()) { setErr("اكتب اسمك"); return; }
+    onEnter({ ...saved, name: name.trim() });
   };
 
   const field = {
@@ -5997,7 +6346,7 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
           </div>
           <div style={{ fontSize: 21, fontWeight: 900, color: t.tx }}>أهلاً بعودتك</div>
           <div style={{ fontSize: 13, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
-            أدخل اسمك والرقم الجامعي للمتابعة في ملفك
+            تابع في ملفك المحفوظ على هذا الجهاز
           </div>
         </div>
 
@@ -6012,25 +6361,21 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{saved.name}</div>
-            <div style={{ fontSize: 11.5, color: t.mu, fontFamily: "monospace", direction: "ltr", textAlign: "right" }}>{saved.studentId}</div>
+            <div style={{ fontSize: 11.5, color: t.mu }}>{saved.track || "متابعة ملفك"}</div>
           </div>
           <span style={{ fontSize: 12, fontWeight: 800, color: P.gold, flexShrink: 0 }}>متابعة</span>
         </button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
           <div style={{ flex: 1, height: 1, background: t.bd }} />
-          <span style={{ fontSize: 11.5, color: t.dim, fontWeight: 700 }}>أو أدخل بياناتك</span>
+          <span style={{ fontSize: 11.5, color: t.dim, fontWeight: 700 }}>أو اكتب اسماً آخر</span>
           <div style={{ flex: 1, height: 1, background: t.bd }} />
         </div>
 
         <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
         <input value={name} onChange={e => { setName(e.target.value); setErr(""); }} placeholder="اكتب اسمك"
-          style={{ ...field, direction: "rtl", marginBottom: 14 }} />
-
-        <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-        <input value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }} placeholder="رقمك الجامعي"
           onKeyDown={e => e.key === "Enter" && submit()}
-          style={{ ...field, direction: "ltr", textAlign: "left" }} />
+          style={{ ...field, direction: "rtl" }} />
 
         {err && (
           <div style={{ background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 10, padding: "10px 12px", marginTop: 12 }}>
@@ -6038,11 +6383,6 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
               <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
               <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.6 }}>{err}</span>
             </div>
-            {tries > 0 && (
-              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${P.red}22` }}>
-                نسيت الرقم؟ اكتب <strong style={{ color: t.tx }}>اسمك كما حفظته</strong> («{saved.name}») وادخل — ثم صحّح رقمك من «حسابي».
-              </div>
-            )}
           </div>
         )}
 
@@ -6112,7 +6452,10 @@ function useLectureReminders(schedule, notifSoundOn, push) {
           const when = diff <= 0 ? "تبدأ الآن" : `تبدأ خلال ${diff} دقيقة`;
           const body = `${lec.course} ${when}${where ? " • " + where : ""}`;
           push?.(`⏰ ${body}`, "warn");
-          if (notifSoundOn) playChime();
+          // Rings until acknowledged, capped at 30s. A single chime is missed
+          // by anyone not already looking at the phone, which is most of the
+          // reason a lecture reminder exists at all.
+          if (notifSoundOn) startRinging(30);
           try {
             if (typeof Notification !== "undefined" && Notification.permission === "granted") {
               new Notification("تذكير محاضرة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
@@ -6159,7 +6502,7 @@ function useTaskReminders(tasks, notifSoundOn, push) {
           : `يُغلق خلال ${Math.round(minsLeft / 1440)} يوم`;
         const body = `${tk.type ? tk.type + ": " : ""}${tk.title} — ${when}`;
         push?.(`🔔 ${body}`, "warn");
-        if (notifSoundOn && !chimed) { playChime(); chimed = true; }
+        if (notifSoundOn && !chimed) { startRinging(30); chimed = true; }
         try {
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
             new Notification("تذكير مهمة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
@@ -6243,6 +6586,22 @@ export default function App() {
     setAiClearKey(k => k + 1);
   };
   const [notifOpen, setNotifOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [msgUnread, setMsgUnread] = useState(0);
+
+  // The badge has to be right before the sheet is ever opened, or a reply
+  // waiting for someone is a reply they have no reason to go and look for.
+  // Cheap enough to repeat: one indexed count, not a scan of the messages.
+  useEffect(() => {
+    let alive = true;
+    const check = () => fetch("/api/messages")
+      .then(r => r.json())
+      .then(d => { if (alive) setMsgUnread(d.unread || 0); })
+      .catch(() => {});
+    check();
+    const id = setInterval(check, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -6486,6 +6845,21 @@ export default function App() {
         }}>
           {dark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
+        {/* Messages sit beside announcements, not inside settings. A reply is
+            something addressed to you; an announcement is not, and burying the
+            first behind a gear icon is how replies went unread. */}
+        <button onClick={() => setMessagesOpen(true)} title="الرسائل" aria-label="الرسائل" style={{
+          position: "relative", background: t.s2, border: `1px solid ${msgUnread > 0 ? `${P.gold}55` : t.bd}`,
+          borderRadius: 10, padding: 8, cursor: "pointer", display: "flex",
+          color: msgUnread > 0 ? P.gold : t.mu,
+        }}>
+          <Mail size={16} />
+          {msgUnread > 0 && <span style={{
+            position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8,
+            padding: "0 3px", background: P.gold, display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, fontWeight: 900, color: "#1a1a1a",
+          }}>{msgUnread > 9 ? "9+" : msgUnread}</span>}
+        </button>
         <button onClick={() => setNotifOpen(true)} title="الإشعارات" aria-label="الإشعارات" style={{
           position: "relative", background: t.s2, border: `1px solid ${t.bd}`,
           borderRadius: 10, padding: 8, cursor: "pointer", display: "flex", color: t.mu,
@@ -6548,6 +6922,7 @@ export default function App() {
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)}
           savedAccount={savedAccount} onLogin={() => setSignedOut(true)}
           accounts={account.configured} signedIn={account.signedIn}
+          onMessages={() => setMessagesOpen(true)} msgUnread={msgUnread}
           studentCode={profile?.studentCode || ""} />}
       </div>
 
@@ -6619,7 +6994,10 @@ export default function App() {
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
         onReset={resetStudyData} onResetAll={resetAll} resetCounts={resetCounts}
         profile={profile} rememberAccount={rememberAccount} setRememberAccount={setRememberAccount}
-        onSignOut={signOut} onSupport={() => setSupportOpen(true)} onToast={toasts.push} />}
+        onSignOut={signOut} onSupport={() => setMessagesOpen(true)} onToast={toasts.push} />}
+      {messagesOpen && <MessagesSheet t={t} onClose={() => setMessagesOpen(false)}
+        profile={profile} email={aiEmail || profile?.email || ""}
+        onToast={toasts.push} onUnread={setMsgUnread} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
@@ -6667,7 +7045,13 @@ export default function App() {
                   متصل — يجيب بالعربية
                 </div>
               </div>
-              <button onClick={clearGlobalAI} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
+              {/* The global panel keeps its own header, so the standalone
+                  one's rename does not reach here. Same promise, same words:
+                  "مسح" reads as deleting something of yours, which is not what
+                  this does. */}
+              <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                <Plus size={13} /> محادثة جديدة
+              </button>
             </div>
             {/* Subject Selector + Tab Toggle */}
             <div style={{ padding: "6px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>

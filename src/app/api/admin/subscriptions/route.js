@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin-guard'
 import { createAdminClient } from '@/lib/supabase/server'
+import { openSystemThread } from '@/lib/messages'
 
 export const runtime = 'nodejs'
 
@@ -47,8 +48,36 @@ export async function PATCH(request) {
   patch.expires_at = body.status === 'approved' ? new Date(Date.now() + days * DAY_MS).toISOString() : null
 
   const db = createAdminClient()
-  const { error } = await db.from('ai_subscriptions').update(patch).eq('id', body.id)
+  const { data: row, error } = await db
+    .from('ai_subscriptions').update(patch).eq('id', body.id)
+    .select('device_id, student_name, email').maybeSingle()
   if (error) return Response.json({ error: error.message }, { status: 500 })
+
+  // Tell them. A decision the student has to think to come back and re-read is
+  // a decision they hear as silence — and a rejection heard as silence is the
+  // one that gets asked about twice. It arrives as a message they can answer,
+  // which is the whole point of a reason being attached to it.
+  if (row?.device_id) {
+    const approved = body.status === 'approved'
+    const until = patch.expires_at
+      ? new Date(patch.expires_at).toLocaleDateString('ar-SA')
+      : null
+    const head = approved
+      ? `تم تفعيل اشتراكك في المساعد الذكي${until ? ` حتى ${until}` : ''}.`
+      : body.status === 'rejected'
+        ? 'لم نتمكّن من تفعيل اشتراكك.'
+        : 'طلب اشتراكك قيد المراجعة.'
+    const reply = patch.admin_reply ? `\n\nردّ الإدارة:\n${patch.admin_reply}` : ''
+    const tail = approved ? '' : '\n\nإن كان لديك استفسار، ردّ على هذه الرسالة.'
+    await openSystemThread({
+      deviceId: row.device_id,
+      name: row.student_name, email: row.email,
+      kind: 'subscription',
+      subject: approved ? 'تم تفعيل اشتراكك' : 'بخصوص اشتراكك',
+      body: head + reply + tail,
+    })
+  }
+
   return Response.json({ ok: true, expires_at: patch.expires_at })
 }
 
