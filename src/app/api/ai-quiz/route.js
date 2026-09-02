@@ -1,6 +1,10 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota } from '@/lib/ai-quota'
 import { quizScope, isGeneral, resolveSubject } from '@/lib/ai-scope'
+import { QUIZ_SOURCES, resolveSource, clampQuestions } from '@/lib/quiz-options'
+import { isSubscribed } from '@/lib/ai-usage'
+import { ownerKey } from '@/lib/ai-points'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -17,10 +21,12 @@ ${quizScope(subject)}
 }
 
 /** What we ask for — the general assistant must not produce trivia. */
-function quizAsk(subject) {
+function quizAsk(subject, count = 5, source = 'all') {
+  const from = QUIZ_SOURCES[source]?.ask || ''
+  const tail = from ? ` ${from}.` : ''
   return isGeneral(subject)
-    ? 'أنشئ 5 أسئلة اختيار من متعدد لطلاب الجامعة السعودية الإلكترونية عن الدراسة الجامعية وأنظمتها ومهارات المذاكرة'
-    : `أنشئ 5 أسئلة اختيار من متعدد عن مادة "${subject}"`
+    ? `أنشئ ${count} أسئلة اختيار من متعدد لطلاب الجامعة السعودية الإلكترونية عن الدراسة الجامعية وأنظمتها ومهارات المذاكرة.${tail}`
+    : `أنشئ ${count} أسئلة اختيار من متعدد عن مادة "${subject}".${tail}`
 }
 
 function parseQuiz(text) {
@@ -30,14 +36,14 @@ function parseQuiz(text) {
   return null
 }
 
-async function callAnthropic(subject) {
+async function callAnthropic(subject, count, source) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
     system: buildQuizSystem(subject),
-    messages: [{ role: 'user', content: quizAsk(subject) }],
+    messages: [{ role: 'user', content: quizAsk(subject, count, source) }],
   })
   return parseQuiz(res.content[0]?.text || '')
 }
@@ -56,10 +62,10 @@ async function getFreeModels() {
   } catch { return [] }
 }
 
-async function callOpenRouter(subject) {
+async function callOpenRouter(subject, count, source) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models')
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of freeModels.slice(0, 5)) {
     try {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -76,9 +82,9 @@ async function callOpenRouter(subject) {
   throw new Error('OpenRouter all failed')
 }
 
-async function callGroq(subject) {
+async function callGroq(subject, count, source) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of models) {
     try {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -95,11 +101,11 @@ async function callGroq(subject) {
   throw new Error('all Groq models failed')
 }
 
-async function callGemini(subject) {
+async function callGemini(subject, count, source) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject) }] },
-    contents: [{ role: 'user', parts: [{ text: quizAsk(subject) }] }],
+    contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
   const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -124,6 +130,11 @@ export async function POST(request) {
     return Response.json({ error: 'مادة غير صحيحة' }, { status: 400 })
   }
   const subject = resolveSubject(body.subject)
+  // Free text from a number field, so it can arrive as "", "abc", 0, -4 or
+  // 500. Unclamped, that is either a request that produces nothing or one
+  // asking a provider for hundreds of questions.
+  const count = clampQuestions(body.count)
+  const source = resolveSource(body.source)
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)
@@ -141,18 +152,62 @@ export async function POST(request) {
     )
   }
 
+  const { deviceId, setCookie } = deviceIdentity(request)
+
+  // ── One free quiz per person ────────────────────────────────────────
+  // The owner's rule: everyone gets exactly one, then it is a subscription.
+  // Keyed on the account when there is one and the signed device cookie
+  // otherwise — the same key the points balance uses, so signing up after
+  // spending the trial anonymously does not hand out a second one.
+  let userId = null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    userId = user?.id || null
+  } catch { /* no session — the device key stands in */ }
+  const owner = ownerKey({ userId, deviceId })
+
+  const replyWith = (obj, status = 200) => {
+    const res = Response.json(obj, { status })
+    if (setCookie) res.headers.append('Set-Cookie', setCookie)
+    return res
+  }
+
+  const subscribed = await isSubscribed(deviceId)
+  if (!subscribed) {
+    let db = null
+    try { db = createAdminClient() } catch { /* unconfigured */ }
+    if (db) {
+      // Claimed in one statement. Two quizzes started together would
+      // otherwise both read "no row" and both proceed.
+      const { data: claimed, error } = await db.rpc('claim_quiz_trial', {
+        p_owner: owner, p_subject: subject, p_source: source, p_questions: count,
+      })
+      // A database that cannot answer must not become a free pass, but it must
+      // not lock out a paying student either: the error is reported rather
+      // than silently allowing or silently refusing.
+      if (error) return replyWith({ error: 'تعذّر التحقق من رصيدك — حاول بعد قليل.' }, 503)
+      if (claimed === false) {
+        return replyWith({
+          error: 'استخدمت اختبارك التجريبي المجاني. اشترك للاختبارات غير المحدودة.',
+          need: 'subscription',
+          trialUsed: true,
+        }, 402)
+      }
+    }
+  }
+
   // Providers FREE FIRST — paid Anthropic only when this visitor still has
   // paid allowance left today, and only a successful paid reply spends it.
-  const { deviceId, setCookie } = deviceIdentity(request)
   const providers = []
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject) })
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
-    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject) })
+    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source) })
 
   const reply = (bodyObj, status = 200) => {
     const res = Response.json(bodyObj, { status })

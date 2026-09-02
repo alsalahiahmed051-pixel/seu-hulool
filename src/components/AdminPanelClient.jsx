@@ -1432,7 +1432,7 @@ function SubscriptionsTab({ flash }) {
   // The prices of the assistant itself. Kept here rather than in the code
   // because the owner asked to be able to change them, and a number that
   // needs a deploy to adjust is a number nobody adjusts.
-  const [pts, setPts] = useState({ free: 20, message: 1, image: 2, quiz: 5 })
+  const [pts, setPts] = useState({ free: 20, message: 1, image: 2 })
   const [savingPts, setSavingPts] = useState(false)
   const [items, setItems] = useState([])
   const [tableReady, setTableReady] = useState(true)
@@ -1460,7 +1460,6 @@ function SubscriptionsTab({ flash }) {
       free: Math.max(0, Math.round(Number(pts.free) || 0)),
       message: Math.max(0, Math.round(Number(pts.message) || 0)),
       image: Math.max(0, Math.round(Number(pts.image) || 0)),
-      quiz: Math.max(0, Math.round(Number(pts.quiz) || 0)),
     }
     const { ok, data } = await apiJSON('/api/admin/site-content', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1538,7 +1537,6 @@ function SubscriptionsTab({ flash }) {
             ['free', 'الرصيد المجاني'],
             ['message', 'سؤال عادي'],
             ['image', 'سؤال بصورة'],
-            ['quiz', 'إنشاء اختبار'],
           ].map(([k, label]) => (
             <div key={k}>
               <div style={{ fontSize: 11.5, color: 'var(--mu)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
@@ -1558,7 +1556,8 @@ function SubscriptionsTab({ flash }) {
         </button>
         <div style={{ fontSize: 11, color: 'var(--mu2)', lineHeight: 1.75, marginTop: 10 }}>
           مثال: رصيد {pts.free} يكفي {pts.message > 0 ? Math.floor(pts.free / pts.message) : '∞'} سؤالاً عادياً،
-          أو {pts.quiz > 0 ? Math.floor(pts.free / pts.quiz) : '∞'} اختباراً.
+          أو {pts.image > 0 ? Math.floor(pts.free / pts.image) : '∞'} سؤالاً بصورة.
+          <br />الاختبارات لا تُخصم من النقاط — لكل مستخدم اختبار تجريبي واحد ثم بالاشتراك.
         </div>
       </div>
 
