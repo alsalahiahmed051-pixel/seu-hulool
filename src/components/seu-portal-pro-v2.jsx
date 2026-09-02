@@ -1620,8 +1620,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
    * Passing the base explicitly is what makes the rewind real.
    */
   const send = async (q, base) => {
-    const text = (q || inp).trim();
-    if (!text || loading) return;
+    let text = (q || inp).trim();
+    // An attached image is a complete question on its own — a photo of an
+    // exercise with nothing typed. Allow it, and give the model a default
+    // instruction so it knows what to do with the picture.
+    if ((!text && !image) || loading) return;
+    if (!text && image) text = "حل هذا السؤال الموجود في الصورة واشرح الخطوات بالعربية.";
     // The email is asked for once and kept locally; the server checks its
     // shape and records it, so there is no point sending a question without it.
     if (!looksLikeEmail(aiEmail)) { setAskEmail(true); return; }
@@ -1675,17 +1679,28 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       setRecording(false);
       return;
     }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const r = new SR();
+    const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    // No silent no-op: iOS Safari has no speech recognition, and a dead button
+    // reads as a bug. Say why instead.
+    if (!SR) { onToast?.("الإدخال الصوتي غير مدعوم في هذا المتصفح — جرّب كروم على الجوال", "warn"); return; }
+    let r;
+    try { r = new SR(); } catch { onToast?.("تعذّر تشغيل الميكروفون", "error"); return; }
     r.lang = "ar-SA";
     r.interimResults = false;
-    r.onresult = (e) => { const t = e.results[0][0].transcript; setInp(prev => prev + t); };
+    r.onresult = (e) => { const tx = e.results[0][0].transcript; setInp(prev => (prev ? prev + " " : "") + tx); };
     r.onend = () => setRecording(false);
-    r.onerror = () => setRecording(false);
+    // Errors were swallowed — a denied mic permission just looked broken. The
+    // common cases now say what to do.
+    r.onerror = (e) => {
+      setRecording(false);
+      const err = e?.error;
+      if (err === "not-allowed" || err === "service-not-allowed") onToast?.("امنح إذن الميكروفون من إعدادات المتصفح", "warn");
+      else if (err === "no-speech") onToast?.("لم أسمع شيئاً — حاول مرة أخرى", "info");
+      else if (err && err !== "aborted") onToast?.("تعذّر الإدخال الصوتي — حاول مجدداً", "error");
+    };
     recogRef.current = r;
-    r.start();
-    setRecording(true);
+    try { r.start(); setRecording(true); }
+    catch { setRecording(false); onToast?.("تعذّر بدء التسجيل — حاول مجدداً", "error"); }
   };
 
   const menuBtnSt = (danger) => ({
@@ -1949,7 +1964,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
           onFocus={e => e.target.style.borderColor = P.blue2}
           onBlur={e => e.target.style.borderColor = t.bd} />
-        {hasSpeech && (
+        {(
           <button onClick={toggleRecording} style={{
             width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
             background: recording ? P.red : t.s3,
@@ -1961,13 +1976,13 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
             {recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
           </button>
         )}
-        <button onClick={() => send()} disabled={loading || !inp.trim()} style={{
-          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || !inp.trim() ? "not-allowed" : "pointer",
-          background: loading || !inp.trim() ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
+        <button onClick={() => send()} disabled={loading || (!inp.trim() && !image)} style={{
+          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || (!inp.trim() && !image) ? "not-allowed" : "pointer",
+          background: loading || (!inp.trim() && !image) ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          boxShadow: loading || !inp.trim() ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
+          boxShadow: loading || (!inp.trim() && !image) ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
         }}>
-          <Send size={17} color={loading || !inp.trim() ? t.dim : "#fff"} />
+          <Send size={17} color={loading || (!inp.trim() && !image) ? t.dim : "#fff"} />
         </button>
       </div>
     </div>
@@ -5118,6 +5133,8 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   const [backup, setBackup] = useState(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreCode, setRestoreCode] = useState("");
+  const [restoreId, setRestoreId] = useState("");   // recover by the minted ID
+  const [syncing, setSyncing] = useState(false);
   useEffect(() => {
     let alive = true;
     fetch("/api/track-request")
@@ -5217,6 +5234,10 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     setTrackLock?.(lockStampOf(next));
     setEditing(false);
     onToast?.("تم حفظ ملفك ✅", "success");
+    // Mirror to the server keyed by the ID, so the account can be recovered on
+    // another device. Best-effort and passing `next` directly, because the
+    // localStorage write for this save hasn't happened yet.
+    pushBackup(next.studentCode, next);
 
     // Record it server-side too, keyed on the signed device cookie. This is
     // what makes the track hold real: clearing the browser no longer hands
@@ -5265,6 +5286,52 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       onToast?.("تمت الاستعادة — يُعاد تحميل الصفحة", "success");
       setTimeout(() => window.location.reload(), 700);
     } catch { onToast?.("تعذّرت الاستعادة", "error"); }
+  };
+
+  // Mirror the whole local store to the server, keyed by the minted ID, so it
+  // can be pulled back on another device. `override` lets the caller pass the
+  // just-saved profile, because setProfile hasn't written to localStorage yet
+  // at the moment save() calls this.
+  const pushBackup = async (code, override) => {
+    const id = String(code || "").trim();
+    if (!id) return { ok: false };
+    let store = {};
+    try { store = JSON.parse((typeof window !== "undefined" && window.localStorage.getItem(STORE_KEY)) || "{}") || {}; } catch { store = {}; }
+    if (override) store.student_profile = override;
+    try {
+      const res = await fetch("/api/profile-backup", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: id, data: store, name: override?.name || store?.student_profile?.name || "" }),
+      });
+      return { ok: res.ok };
+    } catch { return { ok: false }; }
+  };
+
+  // Manual "sync now" from the backup card.
+  const syncNow = async () => {
+    if (!profile?.studentCode) { onToast?.("أكمل ملفك أولاً", "warn"); return; }
+    setSyncing(true);
+    const r = await pushBackup(profile.studentCode);
+    setSyncing(false);
+    onToast?.(r.ok ? "حُفظت نسختك على الخادم — استعدها بمعرّفك على أي جهاز" : "تعذّر الحفظ — تحقق من الإنترنت", r.ok ? "success" : "error");
+  };
+
+  // Recover an account by the minted ID: pull the stored store and swap it in.
+  const restoreById = async () => {
+    const id = restoreId.trim();
+    if (!id) { onToast?.("أدخل معرّفك أولاً", "warn"); return; }
+    setSyncing(true);
+    try {
+      const res = await fetch(`/api/profile-backup?code=${encodeURIComponent(id)}`);
+      const d = await res.json().catch(() => ({}));
+      setSyncing(false);
+      if (!res.ok) { onToast?.(d.error || "تعذّر الاسترجاع", "error"); return; }
+      if (!d.data || !d.data.student_profile) { onToast?.("لا يوجد حساب بهذا المعرّف", "warn"); return; }
+      if (profile && !confirm("سيحلّ الحساب المستعاد محلّ بياناتك الحالية على هذا الجهاز. متابعة؟")) return;
+      window.localStorage.setItem(STORE_KEY, JSON.stringify(d.data));
+      onToast?.("تم استرجاع حسابك — يُعاد تحميل الصفحة", "success");
+      setTimeout(() => window.location.reload(), 800);
+    } catch { setSyncing(false); onToast?.("تعذّر الاتصال", "error"); }
   };
 
   // Share the app with classmates — native share sheet where it exists (phones),
@@ -5376,6 +5443,23 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           </Btn>
           <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
             الاسم والمسار والخطة — تُحفظ على جهازك، بلا تسجيل دخول.
+          </div>
+
+          {/* Recovery for a returning student: enter the ID the site gave you
+              and your account comes back. No password, no email. */}
+          <div style={{ height: 1, background: t.bd, margin: "16px 0 12px" }} />
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, marginBottom: 7, display: "flex", alignItems: "center", gap: 6 }}>
+            <LogIn size={14} color={P.blue2} /> لديك حساب سابق؟
+          </div>
+          <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 8 }}>
+            أدخل معرّفك (SEU-XXXXXX) لاستعادة حسابك على هذا الجهاز.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input value={restoreId} onChange={e => setRestoreId(e.target.value)} placeholder="SEU-XXXXXX"
+              style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "monospace", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", minWidth: 0 }} />
+            <Btn variant="ghost" size="sm" onClick={restoreById} disabled={syncing || !restoreId.trim()} style={{ flexShrink: 0 }}>
+              <LogIn size={14} /> استعادة
+            </Btn>
           </div>
         </div>
       )}
@@ -5749,10 +5833,23 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {!editing && profile && (
         <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4, display: "flex", alignItems: "center", gap: 7 }}>
-            <Shield size={15} color={P.gold} /> نسخة احتياطية
+            <Shield size={15} color={P.gold} /> النسخة الاحتياطية والاستعادة
           </div>
-          <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.8, marginBottom: 12 }}>
-            ملفك محفوظ على هذا الجهاز فقط. احفظ نسخة لتستعيد بياناتك لو غيّرت جهازك أو مسحت المتصفّح.
+          <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.8, marginBottom: 10 }}>
+            بياناتك تُحفظ تلقائياً على الخادم بمعرّفك <strong style={{ color: t.tx, fontFamily: "monospace", direction: "ltr" }}>{profile?.studentCode}</strong>.
+            على جهاز جديد، افتح «حسابي» وأدخل هذا المعرّف لاستعادة حسابك — بلا بريد ولا كلمة مرور.
+          </div>
+
+          <button onClick={syncNow} disabled={syncing} style={{
+            width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            background: `${P.green}18`, border: `1px solid ${P.green}55`, borderRadius: 10, padding: "11px",
+            cursor: syncing ? "wait" : "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: P.green, marginBottom: 12,
+          }}>
+            <Save size={14} /> {syncing ? "جارٍ الحفظ…" : "احفظ نسختي الآن"}
+          </button>
+
+          <div style={{ fontSize: 10.5, color: t.dim, textAlign: "center", marginBottom: 10, lineHeight: 1.7 }}>
+            أو احتفظ بنسخة بكود تعمل بلا إنترنت:
           </div>
 
           {backup && (
@@ -7094,7 +7191,7 @@ export default function App() {
     setTrackLock(lockStampOf(profile) || trackLock);
     setLocalProfile(null);
     setTab("home"); setCourse(null);
-    toasts.push("تم حذف ملفك — أكمل ملفاً جديداً من «حسابي»", "info");
+    toasts.push("بدأت من جديد — تقدر تستعيد حسابك بمعرّفك من «حسابي»", "info");
   };
 
   const resetCounts = useMemo(() => ({
