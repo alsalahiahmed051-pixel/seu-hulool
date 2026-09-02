@@ -244,32 +244,6 @@ const ALL_SUBJECTS_LIST = (() => {
   return [...out];
 })();
 
-const TIPS = [
-  "راجع ملاحظاتك يومياً بدلاً من الدراسة المكثفة قبل الاختبار",
-  "استخدم تقنية بومودورو: 25 دقيقة دراسة ثم 5 دقائق راحة",
-  "اشرح المادة لشخص آخر — أفضل طريقة لترسيخ الفهم",
-  "حوّل ملاحظاتك إلى خرائط ذهنية لتسهيل المراجعة",
-  "ابدأ بالأسئلة السهلة في الاختبار لبناء الثقة",
-  "النوم الكافي ليلة الاختبار يرفع الأداء أكثر من المذاكرة المتأخرة",
-  "اشرب الماء بانتظام أثناء الدراسة — الجفاف يقلّل التركيز",
-  "خصّص مكاناً ثابتاً للدراسة — يساعد دماغك على الدخول في وضع التركيز سريعاً",
-  "القراءة بالصوت العالي تُحسّن الحفظ بنسبة 50% مقارنةً بالقراءة الصامتة",
-  "راجع الوحدة الجديدة بعد ساعة من تعلمها لترسيخها في الذاكرة طويلة المدى",
-  "استخدم بطاقات التعلم (Flashcards) لحفظ التعريفات والمصطلحات بسرعة",
-  "فصل الهاتف عنك أثناء الدراسة يرفع إنتاجيتك بنسبة 26% تقريباً",
-  "كتابة الملاحظات بخط اليد تُحسّن الفهم العميق أكثر من الطباعة",
-  "حل أسئلة الاختبارات القديمة هو أفضل طريقة للتحضير للاختبار",
-  "ابدأ المشاريع مبكراً — يوم واحد إضافي يصنع فارقاً كبيراً",
-  "ضع أهدافاً صغيرة لكل جلسة دراسية لتشعر بالإنجاز والدافعية",
-  "لا تدرس وأنت متعب — خذ قيلولة 20 دقيقة ثم عد بتركيز كامل",
-  "اربط المادة الجديدة بشيء تعرفه مسبقاً لتسهيل الاسترجاع",
-  "أخذ استراحة رياضية 10 دقائق يُنشّط الدماغ ويرفع التركيز",
-  "راجع المادة قبل النوم مباشرة — الدماغ يُعزّز المعلومات أثناء النوم",
-  "اكتب ملخصاً بكلماتك الخاصة — هذا يُثبت أنك فهمت المادة حقاً",
-  "المجموعات الدراسية فعّالة إذا كان لكل شخص دور واضح في النقاش",
-  "تعلّم تقنية الإعادة الموزّعة: راجع بعد يوم، أسبوع، ثم شهر",
-  "ثق بنفسك يوم الاختبار — التوتر الخفيف يزيد الأداء، الذعر يخفضه",
-];
 
 const NOTIF_ICONS = { book: Book, file: FileText, calendar: Calendar, star: Star, bell: Bell };
 
@@ -501,22 +475,6 @@ function Btn({ children, onClick, variant = "primary", size = "md", style = {}, 
   );
 }
 
-function StatCard({ Icon, value, suffix = "", label, color, t }) {
-  const v = useCountUp(value);
-  return (
-    <div style={{
-      background: t.s1, borderRadius: 16, padding: "16px 14px", border: `1px solid ${t.bd}`,
-      boxShadow: t.shSm, textAlign: "center", position: "relative", overflow: "hidden",
-    }}>
-      <div style={{ position: "absolute", top: -20, right: -20, width: 60, height: 60, borderRadius: "50%", background: `${color}10`, pointerEvents: "none" }} />
-      <div style={{ width: 40, height: 40, borderRadius: 12, background: `${color}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px", position: "relative" }}>
-        <Icon size={20} color={color} strokeWidth={2.5} />
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 900, color: color, letterSpacing: -0.5, position: "relative" }}>{v.toLocaleString()}{suffix}</div>
-      <div style={{ fontSize: 12, color: t.mu, marginTop: 4, fontWeight: 500, position: "relative" }}>{label}</div>
-    </div>
-  );
-}
 
 function EmptyState({ Icon, title, desc, action, t }) {
   return (
@@ -4391,17 +4349,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
   // Tips are drawn without repeating: the card starts as an invitation rather
   // than a fact nobody asked for, and every tip in the deck is shown once
   // before any comes round again. The deck is remembered across visits, so
-  // "أعطني نصيحة" keeps giving you something new, not the same three.
-  const [tipSeen, setTipSeen] = useStored("tipsSeen", []);
-  const [tipIdx, setTipIdx] = useState(null);
-  const drawTip = useCallback(() => {
-    const pool = TIPS.map((_, i) => i).filter(i => !(tipSeen || []).includes(i) && i !== tipIdx);
-    // Deck exhausted — reshuffle, but never hand back the one on screen.
-    const from = pool.length ? pool : TIPS.map((_, i) => i).filter(i => i !== tipIdx);
-    const pick = from[Math.floor(Math.random() * from.length)];
-    setTipIdx(pick);
-    setTipSeen(pool.length ? [...(tipSeen || []), pick] : [pick]);
-  }, [tipSeen, tipIdx, setTipSeen]);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   // (A timer here used to force a tip on screen and swap it on the hour,
   //  which is exactly the "it just repeats at me" behaviour being fixed —
@@ -4416,7 +4363,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
     pwaPrompt.prompt();
     pwaPrompt.userChoice.then(() => setPwaPrompt(null));
   };
-  const tip = tipIdx == null ? null : TIPS[tipIdx];
   const todayAr = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][new Date().getDay()];
   const todayLectures = (schedule || []).filter(l => l.day === todayAr).sort((a, b) => a.time.localeCompare(b.time));
   const examDays = Math.ceil((new Date("2026-06-07") - new Date()) / (1000 * 60 * 60 * 24));
@@ -4498,57 +4444,6 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
       {/* Unified tasks + exams hub */}
       <TasksHub t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams} onToast={onToast} profile={profile} />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
-        <StatCard Icon={Book} value={4200} suffix="+" label="مادة دراسية" color={P.blue2} t={t} />
-        <StatCard Icon={Bookmark} value={6000} suffix="+" label="تجميع وملخص" color={P.gold} t={t} />
-        <StatCard Icon={Users} value={5000} suffix="+" label="طالب نشط" color={P.green} t={t} />
-      </div>
-
-
-      {/* Study tip — an invitation, not a fact nobody asked for */}
-      <div style={{
-        background: `linear-gradient(135deg, ${P.gold}14, ${P.gold}05)`, borderRadius: 18,
-        padding: "16px", marginBottom: 16, border: `1.5px solid ${P.gold}40`,
-        boxShadow: `0 4px 20px ${P.gold}12`, position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position: "absolute", top: -24, left: -14, width: 90, height: 90, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: tip ? 12 : 12, position: "relative" }}>
-          <div style={{ width: 34, height: 34, borderRadius: 11, background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 12px ${P.gold}40`, flexShrink: 0 }}>
-            <Lightbulb size={17} color="#3a2e05" />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx }}>نصيحة دراسية</div>
-            <div style={{ fontSize: 10.5, color: t.mu, fontWeight: 600 }}>
-              {tip ? `${Math.min((tipSeen || []).length, TIPS.length)} من ${TIPS.length}` : `${TIPS.length} نصيحة بانتظارك`}
-            </div>
-          </div>
-        </div>
-
-        {tip && (
-          <p style={{ margin: "0 0 12px", fontSize: 14.5, color: t.tx, lineHeight: 1.85, fontWeight: 600, borderRight: `3px solid ${P.gold}`, paddingRight: 12, position: "relative", animation: "fadeUp .3s ease" }}>{tip}</p>
-        )}
-
-        <div style={{ display: "flex", gap: 8, position: "relative" }}>
-          <button onClick={drawTip} style={{
-            flex: tip ? 1 : "1 1 100%", background: `linear-gradient(135deg,${P.gold},${P.goldRich})`, border: "none",
-            borderRadius: 12, padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "#3a2e05",
-            fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
-          }}>
-            {tip ? <><RotateCcw size={13} /> نصيحة أخرى</> : <><Lightbulb size={14} /> أعطني نصيحة</>}
-          </button>
-          {tip && (
-            /* The tip is a starting point, not the end of it — one tap hands
-               it to the assistant so you can actually ask about it. */
-            <button onClick={() => onOpenAI?.(`اشرح لي هذه النصيحة الدراسية وكيف أطبّقها عملياً على موادي:\n«${tip}»`)} style={{
-              flex: 1, background: t.s1, border: `1.5px solid ${P.blue2}45`, borderRadius: 12, padding: "10px 14px",
-              cursor: "pointer", fontSize: 13, color: P.blue2, fontFamily: "inherit",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800,
-            }}>
-              <Sparkles size={13} /> اسأل المساعد عنها
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Pick up where you left off — the most likely next tap, and the one
           thing here the bottom nav cannot already do in one press. The old
