@@ -4986,11 +4986,15 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
   const initial = (profile?.name || "ط").trim()[0] || "ط";
 
+  // One grid, not two. There were a row of links and a row of numbers, and
+  // both listed المفضلة and مهامي — the same things counted in one place and
+  // opened in another, so neither row was worth reading. A count you can tap
+  // is both.
   const quickActions = [
-    { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.blue2 },
-    { Icon: CheckCircle, label: "مهامي", tab: "home", color: P.green },
-    { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold },
-    { Icon: Compass, label: "استكشاف", tab: "explore", color: P.purple },
+    { Icon: CalendarDays, label: "جدولي", tab: "schedule", color: P.blue2, n: (schedule || []).length },
+    { Icon: CheckCircle, label: "مهامي", tab: "home", color: P.green, n: (tasks || []).filter(x => !x.done).length },
+    { Icon: Star, label: "المفضلة", tab: "fav", color: P.gold, n: favorites.length },
+    { Icon: Compass, label: "استكشاف", tab: "explore", color: P.purple, n: null },
   ];
 
   return (
@@ -5109,6 +5113,60 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         </div>
       )}
 
+      {/* What to do next.
+          The owner's verdict on this page was that it proposes nothing — a
+          wall of boxes reporting state, with no view about any of it. That is
+          fair: everything here waited to be read. This is the page's one
+          opinion, and it earns its place at the top by only appearing when
+          there is genuinely something: an unread reply, a track never chosen,
+          an email never added. When there is nothing it says so in a line and
+          gets out of the way, because a permanent banner is furniture. */}
+      {!editing && profile && (() => {
+        const todo = [];
+        if (msgUnread > 0) todo.push({
+          Icon: Mail, color: P.gold,
+          text: msgUnread === 1 ? "عندك رسالة لم تقرأها" : `عندك ${msgUnread} رسائل لم تقرأها`,
+          cta: "افتح الرسائل", act: () => onMessages?.(),
+        });
+        if (!profile.track) todo.push({
+          Icon: Compass, color: P.blue2,
+          text: "لم تختر مسارك بعد — الموقع كله يتخصّص عليه",
+          cta: "اختر مسارك", act: () => setEditing(true),
+        });
+        if (!(profile.email || aiEmail)) todo.push({
+          Icon: Mail, color: P.purple,
+          text: "أضف بريدك ليصلك ردّ الإدارة وتفعيل اشتراكك",
+          cta: "أضف بريدك", act: () => setEditing(true),
+        });
+        if (todo.length === 0) return (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, padding: "10px 14px", background: `${P.green}0d`, border: `1px solid ${P.green}30`, borderRadius: 12 }}>
+            <CheckCircle size={15} color={P.green} />
+            <span style={{ fontSize: 12.5, color: t.mu, fontWeight: 700 }}>ملفك مكتمل ولا شيء ينتظرك.</span>
+          </div>
+        );
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, marginBottom: 7 }}>يحتاج انتباهك</div>
+            {todo.map((x, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 11, marginBottom: 8,
+                background: t.s1, border: `1.5px solid ${x.color}40`, borderRadius: 14, padding: "12px 14px",
+              }}>
+                <div style={{ width: 34, height: 34, borderRadius: 11, background: `${x.color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <x.Icon size={16} color={x.color} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: t.tx, lineHeight: 1.65, fontWeight: 700 }}>{x.text}</div>
+                <button onClick={x.act} style={{
+                  flexShrink: 0, background: `${x.color}18`, border: `1px solid ${x.color}45`, borderRadius: 10,
+                  padding: "7px 11px", cursor: "pointer", fontFamily: "inherit",
+                  fontSize: 11.5, fontWeight: 800, color: x.color,
+                }}>{x.cta}</button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Settings, said out loud.
           It was a bare gear on a coloured header, one of two unlabelled icons
           — the owner's word for it was "lost". An icon is a reminder for
@@ -5224,20 +5282,21 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {/* Quick actions dashboard */}
       {!editing && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
-          {quickActions.map(({ Icon, label, tab, color }) => (
-            // Centred as a column and given more room: the icon was small and
-            // sat off-centre above a label that was wider than it.
+          {quickActions.map(({ Icon, label, tab, color, n }) => (
             <button key={label} onClick={() => setActiveTab(tab)} style={{
-              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "16px 6px",
+              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "14px 6px",
               cursor: "pointer", fontFamily: "inherit", boxShadow: t.shSm, transition: "all .2s",
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 9,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
             }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-              <div style={{ width: 50, height: 50, borderRadius: 15, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon size={24} color={color} strokeWidth={2} />
+              <div style={{ width: 42, height: 42, borderRadius: 13, background: `${color}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon size={20} color={color} strokeWidth={2} />
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: t.tx, textAlign: "center", lineHeight: 1.3 }}>{label}</div>
+              {n !== null && (
+                <div style={{ fontSize: 18, fontWeight: 900, color, lineHeight: 1 }}>{n}</div>
+              )}
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: t.tx, textAlign: "center", lineHeight: 1.3 }}>{label}</div>
             </button>
           ))}
         </div>
@@ -5309,23 +5368,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           </div>
         );
       })()}
-
-      {/* Snapshot stats */}
-      {!editing && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
-          {[
-            { Icon: Star, label: "المفضلة", value: favorites.length, color: P.gold },
-            { Icon: CheckCircle, label: "مهامي", value: (tasks || []).length, color: P.green },
-            { Icon: CalendarDays, label: "محاضراتي", value: (schedule || []).length, color: P.blue2 },
-          ].map(({ Icon, label, value, color }) => (
-            <div key={label} style={{ background: t.s1, borderRadius: 16, padding: "14px 8px", border: `1px solid ${t.bd}`, textAlign: "center", boxShadow: t.shSm }}>
-              <Icon size={17} color={color} style={{ marginBottom: 6 }} />
-              <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value}</div>
-              <div style={{ fontSize: 11, color: t.mu, marginTop: 3 }}>{label}</div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* My study plan — shows the subjects of the student's chosen plan */}
       {!editing && profile?.track && (() => {
