@@ -11,6 +11,7 @@ import { useSiteContent } from "@/lib/hooks/useSiteContent";
 import { pushSupported, pushState, enablePush, disablePush, registerServiceWorker } from "@/lib/push-client";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
+  Image as ImageIcon,
   ChevronDown, Book, FileText, MessageCircle, Phone, Play, Pause,
   RotateCcw, Award, TrendingUp, Users, CheckCircle, X, Plus, Copy,
   Minus, Calendar, ArrowLeft, GraduationCap, Eye, Download,
@@ -1376,6 +1377,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           remaining: d.subscribed ? Infinity : (d.remaining ?? d.limit ?? 5),
           resetAt: d.resetAt || 0,
           blocked: !d.subscribed && (d.remaining ?? 1) <= 0,
+          costs: d.costs || null,
         });
       })
       .catch(() => {});
@@ -1407,6 +1409,43 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   const [hasSpeech, setHasSpeech] = useState(false);
   const recogRef = useRef(null);
   const endRef = useRef(null);
+  // A photo of a question, waiting to be sent with the next message.
+  const [image, setImage] = useState(null);
+  const fileRef = useRef(null);
+
+  /**
+   * Read a chosen photo into a data URL, shrinking it first.
+   *
+   * A modern phone camera produces 4–12MB, which base64 inflates by a third —
+   * far past what the request will carry. Downscaling to 1280px keeps the
+   * writing on a page of a textbook legible while bringing the payload to a
+   * few hundred KB, and it happens here so the student never meets a size
+   * error for doing the obvious thing.
+   */
+  const pickImage = (file) => {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { onToast?.("اختر صورة", "warn"); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1280;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        try {
+          setImage(c.toDataURL("image/jpeg", 0.82));
+        } catch {
+          setImage(String(reader.result || ""));
+        }
+      };
+      img.onerror = () => setImage(String(reader.result || ""));
+      img.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     setHasSpeech(!!(typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)));
@@ -1599,7 +1638,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     if (!looksLikeEmail(aiEmail)) { setAskEmail(true); return; }
     if (gate && gate.blocked) { onSubscribe?.(gate); return; }
     setInp("");
-    const newMsg = { r: "u", id: mkId(), text, ts: Date.now() };
+    // The picture belongs to this question only; clearing it here stops the
+    // next, unrelated question from silently carrying it — and being charged
+    // the image price for it.
+    const sentImage = image;
+    setImage(null);
+    const newMsg = { r: "u", id: mkId(), text, ts: Date.now(), image: sentImage || undefined };
     const newMsgs = [...(base || msgs), newMsg];
     setMsgs(newMsgs);
     setLoading(true);
@@ -1608,7 +1652,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail }),
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined }),
       });
       const d = await res.json();
       // The server is the authority on what is left; mirror whatever it says.
@@ -1885,8 +1929,32 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         </div>
       )}
 
+      {/* The attached photo, shown before it is sent. An attachment you cannot
+          see is one you cannot tell you attached twice, or attached by mistake. */}
+      {image && !blocked && (
+        <div style={{ padding: "8px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <img src={image} alt="الصورة المرفقة" style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 10, border: `1px solid ${t.bd}` }} />
+          <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: t.mu, lineHeight: 1.6 }}>
+            صورة مرفقة — اكتب سؤالك عنها
+            {gate?.costs?.image ? <span style={{ color: t.dim }}> · {gate.costs.image} نقاط</span> : null}
+          </div>
+          <button onClick={() => setImage(null)} aria-label="إزالة الصورة" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex", color: P.red }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Input — hidden while blocked, since the card above has taken its place */}
       <div style={{ padding: "10px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, display: blocked ? "none" : "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
+          onChange={e => { pickImage(e.target.files?.[0]); e.target.value = ""; }} />
+        <button onClick={() => fileRef.current?.click()} title="أرفق صورة سؤال" aria-label="أرفق صورة" style={{
+          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
+          background: image ? `${P.gold}25` : t.s3,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <ImageIcon size={17} color={image ? P.gold : t.mu} />
+        </button>
         <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !e.shiftKey && send()}
           placeholder={fileContext ? `اسأل عن ملفات ${subject}...` : `اسأل عن ${subject}...`}
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
