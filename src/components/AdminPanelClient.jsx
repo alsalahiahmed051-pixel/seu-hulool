@@ -3,12 +3,13 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { COURSE_GROUPS } from '@/lib/courses'
+import { waLink, waNumber, inviteMessage } from '@/lib/wa'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
   Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard, MessageCircle,
-  Sparkles, KeyRound, Copy,
+  Sparkles, KeyRound, Copy, MessageSquare,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -1889,9 +1890,10 @@ function LoginCodesTab({ flash }) {
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [label, setLabel] = useState('')
+  const [phone, setPhone] = useState('')
   const [issuing, setIssuing] = useState(false)
-  const [fresh, setFresh] = useState(null)   // { code, email } — shown once
-  const [copied, setCopied] = useState(false)
+  const [fresh, setFresh] = useState(null)   // { code, email, phone, label }
+  const [copied, setCopied] = useState(null) // 'code' | 'message'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1911,9 +1913,11 @@ function LoginCodesTab({ flash }) {
     })
     setIssuing(false)
     if (!ok) { flash(data.error || 'تعذّر التوليد', 'error'); return }
-    setFresh({ code: data.code, email: data.email })
-    setCopied(false)
-    setEmail(''); setLabel('')
+    // The phone is not stored — it is only used to open the right WhatsApp
+    // conversation now. One less piece of a student's data on the server.
+    setFresh({ code: data.code, email: data.email, phone, label: label.trim() })
+    setCopied(null)
+    setEmail(''); setLabel(''); setPhone('')
     flash('تم توليد الكود')
     load()
   }
@@ -1927,11 +1931,11 @@ function LoginCodesTab({ flash }) {
 
   // navigator.clipboard is unavailable on plain http and in some in-app
   // browsers, so the code stays selectable on screen either way.
-  async function copy(text) {
+  async function copy(text, what) {
     try {
       await navigator.clipboard.writeText(text)
-      setCopied(true)
-      flash('نُسخ الكود')
+      setCopied(what)
+      flash(what === 'message' ? 'نُسخت الرسالة' : 'نُسخ الكود')
     } catch {
       flash('انسخه يدوياً من الأعلى', 'error')
     }
@@ -1956,9 +1960,11 @@ function LoginCodesTab({ flash }) {
 
       <div style={S.card}>
         <div style={{ fontSize: 12, color: 'var(--mu)', lineHeight: 1.85, marginBottom: 12 }}>
-          وَلِّد كوداً وأرسله للطالب بأي وسيلة (واتساب مثلاً). يفتح له الحساب مباشرة
-          بلا بريد ولا كلمة مرور — يدخل من صفحة تسجيل الدخول ← «لدي كود دخول من الإدارة».
-          <br />صالح سبعة أيام ولمرّة واحدة فقط.
+          وَلِّد كوداً وأرسله للطالب. يدخل به مباشرة بلا بريد ولا كلمة مرور، من
+          صفحة تسجيل الدخول ← «لدي كود دخول من الإدارة». صالح سبعة أيام ولمرّة واحدة.
+          <br /><strong style={{ color: 'var(--tx)' }}>ليس رمز التأكيد ذا الأرقام الستة</strong> —
+          ذاك يصل بالبريد عند إنشاء حساب، وهذا بديل عنه تماماً. لذلك تُرسَل معه
+          التعليمات والرابط، حتى لا يأخذه الطالب إلى الصفحة الخطأ.
         </div>
 
         <label style={S.label}>بريد الطالب</label>
@@ -1966,7 +1972,17 @@ function LoginCodesTab({ flash }) {
           placeholder="student@example.com"
           style={{ ...S.input, direction: 'ltr', textAlign: 'left', marginBottom: 10 }} />
 
-        <label style={S.label}>ملاحظة (اختياري)</label>
+        <label style={S.label}>رقم واتساب (اختياري)</label>
+        <input value={phone} onChange={e => setPhone(e.target.value)} type="tel"
+          placeholder="05xxxxxxxx"
+          style={{ ...S.input, direction: 'ltr', textAlign: 'left', marginBottom: 4 }} />
+        <div style={{ fontSize: 11, color: phone.trim() && !waNumber(phone) ? P.red : 'var(--mu)', marginBottom: 10, lineHeight: 1.7 }}>
+          {phone.trim() && !waNumber(phone)
+            ? 'الرقم غير مكتمل — لن يظهر زر واتساب'
+            : 'لا يُحفظ في قاعدة البيانات — يُستخدم لفتح محادثة واتساب فقط.'}
+        </div>
+
+        <label style={S.label}>اسم أو ملاحظة (اختياري)</label>
         <input value={label} onChange={e => setLabel(e.target.value)}
           placeholder="مثال: نينيز — تحضيري"
           style={{ ...S.input, marginBottom: 12 }} />
@@ -1991,14 +2007,42 @@ function LoginCodesTab({ flash }) {
             background: 'var(--card)', border: '1px dashed #c8a84b88', borderRadius: 12,
             padding: '14px 10px', marginBottom: 10, userSelect: 'all', wordBreak: 'break-all',
           }}>{fresh.code}</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => copy(fresh.code)} style={{ ...S.btn(copied ? P.green : P.blue2), flex: 2 }}>
-              {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'نُسخ' : 'نسخ الكود'}
-            </button>
-            <button onClick={() => setFresh(null)} style={{ ...S.btn('#6b8c7d'), flex: 1 }}>
-              أخفِه
-            </button>
-          </div>
+          {/* The whole message, not just the code. The site has two codes —
+              the six digits that confirm an email at sign-up, and this one —
+              and nothing on screen told them apart, so a student who took an
+              admin code to the sign-up page was stuck through no fault of
+              their own. Sending the instructions with it ends that. */}
+          {(() => {
+            const text = inviteMessage({
+              code: fresh.code,
+              origin: typeof window === 'undefined' ? '' : window.location.origin,
+              name: (fresh.label || '').split('—')[0].trim(),
+            })
+            const wa = waLink(fresh.phone, text)
+            return (
+              <>
+                {wa && (
+                  <a href={wa} target="_blank" rel="noopener noreferrer"
+                    style={{ ...S.btn('#25D366'), width: '100%', textDecoration: 'none', marginBottom: 8 }}>
+                    <MessageSquare size={14} /> أرسله بواتساب إلى {waNumber(fresh.phone)}
+                  </a>
+                )}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button onClick={() => copy(text, 'message')}
+                    style={{ ...S.btn(copied === 'message' ? P.green : P.blue2), flex: 1 }}>
+                    {copied === 'message' ? <Check size={14} /> : <Copy size={14} />} نسخ الرسالة كاملة
+                  </button>
+                  <button onClick={() => copy(fresh.code, 'code')}
+                    style={{ ...S.btn(copied === 'code' ? P.green : '#6b8c7d'), flex: 1 }}>
+                    {copied === 'code' ? <Check size={14} /> : <Copy size={14} />} الكود فقط
+                  </button>
+                </div>
+                <button onClick={() => setFresh(null)} style={{ ...S.btn('#6b8c7d'), width: '100%' }}>
+                  أخفِه
+                </button>
+              </>
+            )
+          })()}
         </div>
       )}
 
