@@ -5059,6 +5059,24 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
+// A small palette for personalising the profile avatar — a gradient pair per
+// swatch, and a few study-flavoured emoji. Purely cosmetic, stored on the
+// profile so it follows the student's backup.
+const AVATAR_COLORS = [
+  ["#c8a84b", "#e8bf5c"], // gold (default)
+  ["#0a8a58", "#34d399"], // green
+  ["#2563eb", "#60a5fa"], // blue
+  ["#7c3aed", "#a78bfa"], // purple
+  ["#e11d48", "#fb7185"], // rose
+  ["#0891b2", "#22d3ee"], // teal
+  ["#ea580c", "#fb923c"], // orange
+];
+const AVATAR_EMOJIS = ["📚", "🎓", "✏️", "💡", "🚀", "⭐", "🔥", "🧠", "🌟", "📖"];
+const avatarGradient = (c) => {
+  const pair = AVATAR_COLORS.find(p => p[0] === c) || AVATAR_COLORS[0];
+  return `linear-gradient(135deg,${pair[0]},${pair[1]})`;
+};
+
 // A short identifier minted for a student the first time they complete their
 // profile. There are no accounts, so this is how the owner tells one student
 // from another when a track-change request arrives: the code travels with the
@@ -5083,6 +5101,8 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     track: profile?.track || "",
     college: profile?.college || "",
     plan: profile?.plan || "",
+    avatarColor: profile?.avatarColor || AVATAR_COLORS[0][0],
+    avatarEmoji: profile?.avatarEmoji || "",
   });
   const patch = (p) => setDraft(d => ({ ...d, ...p }));
   const [requesting, setRequesting] = useState(false);
@@ -5139,9 +5159,12 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // The track is fixed for 15 days after it is confirmed; name and ID stay
   // editable throughout.
   const trackLocked = lockDaysLeft > 0;
-  // An approved request is the owner lifting the hold: the picker opens even
-  // though the 15 days haven't passed.
-  const changeApproved = myRequest?.status === "approved";
+  // An approved request lifts the hold ONCE: the picker opens even though the
+  // 15 days haven't passed, but only until a change is saved under it. After
+  // that its created_at is recorded on the profile, the hold returns, and a
+  // further change needs a new request.
+  const approvalConsumed = myRequest?.status === "approved" && profile?.approvalUsedAt === myRequest?.created_at;
+  const changeApproved = myRequest?.status === "approved" && !approvalConsumed;
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
@@ -5150,8 +5173,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
 
     // A stamp left over from a sign-out or a reset still holds — unless the
-    // owner just approved a change, which is exactly permission to re-pick.
-    if (lockConflicts(heldTrack, draft) && myRequest?.status !== "approved") {
+    // owner just approved a change, which is permission to re-pick exactly
+    // once. An approval already spent (its created_at recorded on the profile)
+    // no longer opens the lock.
+    const approvalUsable = myRequest?.status === "approved" && profile?.approvalUsedAt !== myRequest?.created_at;
+    if (lockConflicts(heldTrack, draft) && !approvalUsable) {
       onToast?.(`مسارك مثبَّت على «${trackLabel(heldTrack)}» — يتبقّى ${lockDaysLeft} يوم`, "warn");
       return;
     }
@@ -5170,9 +5196,15 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       track: draft.track,
       college: draft.college || "",
       plan: draft.plan || "",
+      avatarColor: draft.avatarColor || AVATAR_COLORS[0][0],
+      avatarEmoji: draft.avatarEmoji || "",
       // Minted once and kept for the life of the profile — the owner's handle
       // for this student when a request comes in.
       studentCode: profile?.studentCode || genStudentCode(),
+      // Spend the approval: once a change is saved under it the hold returns,
+      // and changing again needs a fresh request. Keyed to the request's
+      // created_at so a later, new approval is not seen as already used.
+      approvalUsedAt: (approvalUsable && trackChanged) ? (myRequest?.created_at || Date.now()) : (profile?.approvalUsedAt || null),
       // Only restart the lock when the track actually changed.
       confirmedAt,
       created: profile?.created || Date.now(),
@@ -5235,6 +5267,18 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     } catch { onToast?.("تعذّرت الاستعادة", "error"); }
   };
 
+  // Share the app with classmates — native share sheet where it exists (phones),
+  // otherwise copy the link. Growth costs nothing when a student does it.
+  const shareApp = async () => {
+    const url = (typeof window !== "undefined" && window.location.origin) || "";
+    const text = `منصة «حلول SEU» — تجميعات وملخصات وخطط دراسية ومساعد ذكي لطلاب الجامعة السعودية الإلكترونية:\n${url}`;
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) { await navigator.share({ title: "حلول SEU", text, url }); return; }
+      await navigator.clipboard.writeText(url);
+      onToast?.("نُسخ رابط الموقع — أرسله لزملائك", "success");
+    } catch { /* user dismissed the share sheet, or clipboard blocked */ }
+  };
+
   const initial = (profile?.name || "ط").trim()[0] || "ط";
 
   // Latest saved GPA, for the summary card. Semesters carry a `.gpa` string.
@@ -5287,11 +5331,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         <div style={{ position: "absolute", bottom: -30, left: -20, width: 120, height: 120, borderRadius: "50%", background: `${P.gold}12`, pointerEvents: "none" }} />
         <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{
-            width: 66, height: 66, borderRadius: 22, background: `linear-gradient(135deg,${P.gold},#e8bf5c)`,
+            width: 66, height: 66, borderRadius: 22, background: avatarGradient(profile?.avatarColor),
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: `0 8px 24px ${P.gold}55`, fontSize: 30, fontWeight: 900, color: "#3a2e05",
+            boxShadow: `0 8px 24px ${(profile?.avatarColor || P.gold)}55`, fontSize: profile?.avatarEmoji ? 34 : 30, fontWeight: 900, color: "#fff",
           }}>
-            {profile?.name ? initial : <User size={32} color="#3a2e05" />}
+            {profile?.avatarEmoji ? profile.avatarEmoji : (profile?.name ? initial : <User size={32} color="#fff" />)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
@@ -5399,7 +5443,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {!editing && (
         <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
           {profile && (
-            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} style={{
+            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "", avatarColor: profile?.avatarColor || AVATAR_COLORS[0][0], avatarEmoji: profile?.avatarEmoji || "" }); setEditing(true); }} style={{
               flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
               background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
               cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
@@ -5441,6 +5485,34 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
           <input value={draft.name} onChange={e => patch({ name: e.target.value })} placeholder="اكتب اسمك"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+
+          {/* Avatar personalisation — a colour and, optionally, an emoji. */}
+          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>شكل الأفتار</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <div style={{ width: 52, height: 52, borderRadius: 16, background: avatarGradient(draft.avatarColor), display: "flex", alignItems: "center", justifyContent: "center", fontSize: draft.avatarEmoji ? 26 : 22, fontWeight: 900, color: "#fff", flexShrink: 0 }}>
+              {draft.avatarEmoji || (draft.name.trim()[0] || "ط")}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+              {AVATAR_COLORS.map(([c]) => (
+                <button key={c} type="button" onClick={() => patch({ avatarColor: c })} style={{
+                  width: 26, height: 26, borderRadius: "50%", background: avatarGradient(c), cursor: "pointer",
+                  border: draft.avatarColor === c ? "2.5px solid var(--tx)" : "2px solid transparent", padding: 0,
+                }} />
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+            <button type="button" onClick={() => patch({ avatarEmoji: "" })} title="بلا إيموجي" style={{
+              minWidth: 34, height: 34, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+              background: t.s2, border: `1.5px solid ${!draft.avatarEmoji ? P.blue2 : t.bd}`, color: t.mu,
+            }}>الحرف</button>
+            {AVATAR_EMOJIS.map(em => (
+              <button key={em} type="button" onClick={() => patch({ avatarEmoji: em })} style={{
+                width: 34, height: 34, borderRadius: 10, cursor: "pointer", fontSize: 18, lineHeight: 1,
+                background: t.s2, border: `1.5px solid ${draft.avatarEmoji === em ? P.blue2 : t.bd}`,
+              }}>{em}</button>
+            ))}
+          </div>
 
           {/* One place to set the email, shared with the assistant — it used
               to be asked for separately in the chat and nowhere else. */}
@@ -5491,7 +5563,9 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
                   )}
                   {myRequest.status === "approved" && (
                     <div style={{ fontSize: 11.5, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
-                      يمكنك الآن اختيار مسارك من جديد.
+                      {approvalConsumed
+                        ? "استُخدمت الموافقة وتغيّر مسارك — لتغييره ثانية أرسل طلباً جديداً."
+                        : "يمكنك الآن اختيار مسارك من جديد."}
                     </div>
                   )}
                 </div>
@@ -5646,6 +5720,24 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             ) : (
               <div style={{ fontSize: 13, fontWeight: 700, color: t.mu }}>احسب معدّلك التراكمي والمستهدف</div>
             )}
+          </div>
+          <ChevronLeft size={16} color={t.dim} />
+        </button>
+      )}
+
+      {/* Share the app with classmates. */}
+      {!editing && profile && (
+        <button onClick={shareApp} style={{
+          width: "100%", textAlign: "right", display: "flex", alignItems: "center", gap: 12,
+          background: t.s1, border: `1.5px solid ${P.purple}35`, borderRadius: 18, padding: "14px 16px",
+          marginBottom: 16, cursor: "pointer", fontFamily: "inherit", boxShadow: t.shSm,
+        }}>
+          <div style={{ width: 42, height: 42, borderRadius: 13, background: `${P.purple}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Share2 size={19} color={P.purple} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>شارك حلول مع زملائك</div>
+            <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>أرسل رابط الموقع في ثانية</div>
           </div>
           <ChevronLeft size={16} color={t.dim} />
         </button>
