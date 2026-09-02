@@ -64,17 +64,29 @@ export async function enablePush(profile) {
 
   const reg = (await navigator.serviceWorker.getRegistration()) || (await registerServiceWorker())
   if (!reg) return { ok: false, reason: 'sw' }
-  await navigator.serviceWorker.ready
 
-  let sub = await reg.pushManager.getSubscription()
-  if (!sub) {
-    sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(cfg.publicKey),
-    })
-  }
-
+  // Everything past permission is wrapped so the caller always gets a result.
+  // Two of these can otherwise leave the toggle spinning for good:
+  // `serviceWorker.ready` never resolves if the worker fails to activate, and
+  // `pushManager.subscribe` rejects on a bad key or a push-service error. The
+  // button that awaits this must never be left stuck, so neither is allowed to
+  // hang or throw out of here.
   try {
+    // Cap the wait on activation — a worker that never activates would hang
+    // this forever otherwise.
+    await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('sw-timeout')), 8000)),
+    ])
+
+    let sub = await reg.pushManager.getSubscription()
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(cfg.publicKey),
+      })
+    }
+
     await fetch('/api/push/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -85,8 +97,10 @@ export async function enablePush(profile) {
         name: profile?.name || null,
       }),
     })
-  } catch { return { ok: false, reason: 'save' } }
-  return { ok: true }
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, reason: e?.message === 'sw-timeout' ? 'sw' : 'subscribe' }
+  }
 }
 
 // Opt out: unsubscribe locally and forget on the server.

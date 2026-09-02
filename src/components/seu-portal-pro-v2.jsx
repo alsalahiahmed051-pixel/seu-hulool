@@ -5659,18 +5659,27 @@ function PushToggle({ t, profile, onToast }) {
 
   const on = state.subscribed && state.permission === "granted";
   const toggle = async () => {
+    if (busy) return;
     setBusy(true);
-    if (on) {
-      await disablePush();
-      setState(s => ({ ...s, subscribed: false }));
-      onToast?.("أُوقفت إشعارات الجهاز", "info");
-    } else {
-      const r = await enablePush(profile);
-      if (r.ok) { setState(s => ({ ...s, subscribed: true, permission: "granted" })); onToast?.("تم تفعيل إشعارات الجهاز 🔔", "success"); }
-      else if (r.reason === "denied") onToast?.("لم يُمنح إذن الإشعارات من المتصفح", "warn");
-      else onToast?.("تعذّر تفعيل الإشعارات", "warn");
+    // try/finally so the button always comes back: enablePush/disablePush can
+    // reject (a service worker that won't activate, a push-service error), and
+    // without this the control stayed disabled and greyed — the "stuck" button.
+    try {
+      if (on) {
+        await disablePush();
+        setState(s => ({ ...s, subscribed: false }));
+        onToast?.("أُوقفت إشعارات الجهاز", "info");
+      } else {
+        const r = await enablePush(profile);
+        if (r.ok) { setState(s => ({ ...s, subscribed: true, permission: "granted" })); onToast?.("تم تفعيل إشعارات الجهاز 🔔", "success"); }
+        else if (r.reason === "denied") onToast?.("لم يُمنح إذن الإشعارات — فعّلها من إعدادات الموقع في متصفحك", "warn");
+        else onToast?.("تعذّر تفعيل الإشعارات — حاول مجدداً", "warn");
+      }
+    } catch {
+      onToast?.("تعذّر تفعيل الإشعارات — حاول مجدداً", "warn");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   return (
