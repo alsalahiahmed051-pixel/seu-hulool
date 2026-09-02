@@ -131,16 +131,35 @@ async function callGroq(subject, messages, fileContext) {
   throw new Error('all Groq models failed')
 }
 
-async function callGemini(subject, messages, fileContext) {
+/**
+ * Split a data: URL into what Gemini's inline_data wants.
+ *
+ * Returns null for anything that is not an image data URL, so a malformed or
+ * unexpected value degrades to a text-only question rather than being passed
+ * through to the provider.
+ */
+function inlineImage(dataUrl) {
+  const m = /^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''))
+  if (!m) return null
+  return { mime_type: m[1], data: m[2] }
+}
+
+async function callGemini(subject, messages, fileContext, image) {
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
   }))
   const lastMsg = messages[messages.length - 1].content
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
+  // gemini-1.5-flash reads images on the free tier, which is why the picture
+  // goes here rather than to the paid provider.
+  const img = image ? inlineImage(image) : null
+  const lastParts = img
+    ? [{ text: lastMsg }, { inline_data: img }]
+    : [{ text: lastMsg }]
   const body = {
     system_instruction: { parts: [{ text: buildSystem(subject, fileContext) }] },
-    contents: [...history, { role: 'user', parts: [{ text: lastMsg }] }],
+    contents: [...history, { role: 'user', parts: lastParts }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
   const r = await fetch(url, {
@@ -261,8 +280,18 @@ export async function POST(request) {
   // request rather than assumed: the attachment UI lands next, and pricing
   // that ignores what was actually sent is pricing that will be wrong the day
   // it does.
-  const hasImage = Boolean(body.image) ||
-    (Array.isArray(body.messages) && body.messages.some(m => m && m.image))
+  // One image, capped. A base64 data URL is about a third larger than the file,
+  // so ~4MB of string is roughly a 3MB photo — enough for a page of a textbook
+  // and small enough not to blow up the request.
+  const MAX_IMAGE_CHARS = 4_000_000
+  const rawImage = typeof body.image === 'string' ? body.image : ''
+  const image = rawImage.startsWith('data:image/') && rawImage.length <= MAX_IMAGE_CHARS
+    ? rawImage
+    : ''
+  if (rawImage && !image) {
+    return reply({ error: 'الصورة كبيرة أو غير مدعومة — جرّب صورة أصغر (PNG أو JPG).' }, 400)
+  }
+  const hasImage = Boolean(image)
   const cost = costOf(hasImage ? 'image' : 'message', points)
 
   const subscribed = await isSubscribed(deviceId)
@@ -287,15 +316,32 @@ export async function POST(request) {
   // visitor still has paid allowance left today, so ordinary use costs
   // nothing and the paid key is a quality fallback rather than the default.
   const providers = []
-  if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, fileContext) })
-  if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext) })
-  if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, fileContext) })
+  // A question carrying an image may only go to a provider that can see it.
+  // Falling through to a text-only model would not fail — it would answer
+  // confidently about a picture it never received, which is worse than an
+  // error because nothing about the reply says it did not look.
+  const geminiUsable = GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20
+  if (hasImage) {
+    if (geminiUsable)
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext, image) })
+    if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
+      // Only if there is no free reader at all: this one costs money.
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
+    }
+    if (providers.length === 0) {
+      return reply({ error: 'قراءة الصور غير مفعّلة على هذا الموقع بعد — أرسل سؤالك نصاً.' }, 503)
+    }
+  } else {
+    if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
+      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, fileContext) })
+    if (geminiUsable)
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext) })
+    if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, fileContext) })
+  }
 
   let paidAllowed = false
-  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
+  if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
     paidAllowed = !(await paidQuotaExhausted(request, deviceId))
     if (paidAllowed) {
       providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
