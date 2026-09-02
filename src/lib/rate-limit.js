@@ -176,6 +176,18 @@ export const supportMessageLimit = hasUpstash
     })
   : memoryLimiter(Number(process.env.SUPPORT_HOURLY_LIMIT || 8), 3_600_000, 'support')
 
+// Profile backup/restore by the minted ID. Generous enough for a real
+// student (a save on each edit, a restore when switching devices), strict
+// enough that the short ID can't be enumerated: 887M codes against a few
+// dozen tries an hour per IP is not a search anyone finishes.
+export const profileBackupLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(Number(process.env.PROFILE_BACKUP_HOURLY_LIMIT || 40), '1 h'),
+      prefix: 'rl:pbak',
+    })
+  : memoryLimiter(Number(process.env.PROFILE_BACKUP_HOURLY_LIMIT || 40), 3_600_000, 'pbak')
+
 // Receipt uploads get their own budget rather than sharing the track-change
 // one. Three per hour, shared with track requests and support messages across
 // everyone behind a campus or carrier NAT, meant a student could be refused a
