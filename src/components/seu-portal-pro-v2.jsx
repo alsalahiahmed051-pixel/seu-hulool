@@ -938,7 +938,7 @@ function MessagesSheet({ t, onClose, profile, email, onToast, onUnread }) {
  * unlocks. Named for what it is rather than "upgrade": nothing is being sold
  * here, and the free part of the site is genuinely free.
  */
-function NeedAccountSheet({ t, what, onClose, accounts }) {
+function NeedAccountSheet({ t, what, onClose, accounts, onComplete }) {
   const lines = {
     file: ["الملفات للطلاب المسجّلين", "التصفّح مفتوح للجميع — أما فتح الملفات وتحميلها فيحتاج حساباً. مجاني، ودقيقة واحدة."],
     ai: ["المساعد الذكي للطلاب المسجّلين", "أنشئ حسابك لتسأل المساعد عن موادك — ويحفظ لك مسارك وجدولك ومهامك أيضاً."],
@@ -956,8 +956,8 @@ function NeedAccountSheet({ t, what, onClose, accounts }) {
           <div style={{ fontSize: 16, fontWeight: 900, color: t.tx }}>{lines[0]}</div>
         </div>
         <div style={{ fontSize: 13, color: t.mu, lineHeight: 1.9, marginBottom: 16 }}>{lines[1]}</div>
-        <Btn variant="gold" onClick={onClose} style={{ width: "100%" }}>
-          <User size={15} /> أكمل ملفك من «حسابي»
+        <Btn variant="gold" onClick={() => (onComplete ? onComplete() : onClose())} style={{ width: "100%" }}>
+          <User size={15} /> أكمل ملفك الآن
         </Btn>
         <button onClick={onClose} style={{ width: "100%", background: "none", border: "none", marginTop: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu }}>
           أكمل التصفّح
@@ -5059,7 +5059,19 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "", onMessages = null, msgUnread = 0 }) {
+// A short identifier minted for a student the first time they complete their
+// profile. There are no accounts, so this is how the owner tells one student
+// from another when a track-change request arrives: the code travels with the
+// request, and the student can read it out. Not a secret — an identifier.
+// No 0/O/1/I/L, because it gets typed and read aloud.
+function genStudentCode() {
+  const A = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < 6; i++) s += A[Math.floor(Math.random() * A.length)];
+  return `SEU-${s}`;
+}
+
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "", onMessages = null, msgUnread = 0, semesters = [] }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
@@ -5079,6 +5091,13 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // the caller. It is keyed on the signed device cookie now, so this asks for
   // "my request" and gets an answer.
   const [myRequest, setMyRequest] = useState(null);
+  // Backup lives here because the profile is device-only now: no account means
+  // clearing the browser loses everything, so a student needs a way to carry
+  // it. `backup` holds the exported code once made; the restore box is its own
+  // small open/closed state.
+  const [backup, setBackup] = useState(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreCode, setRestoreCode] = useState("");
   useEffect(() => {
     let alive = true;
     fetch("/api/track-request")
@@ -5105,6 +5124,9 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profile?.name || draft.name.trim(),
+          // The minted code goes in the studentId column so the owner can tell
+          // which student this is — the request has no account behind it.
+          studentId: profile?.studentCode || "",
           currentTrack: trackLabel(heldTrack), reason: reason.trim(),
         }),
       });
@@ -5117,6 +5139,9 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // The track is fixed for 15 days after it is confirmed; name and ID stay
   // editable throughout.
   const trackLocked = lockDaysLeft > 0;
+  // An approved request is the owner lifting the hold: the picker opens even
+  // though the 15 days haven't passed.
+  const changeApproved = myRequest?.status === "approved";
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
@@ -5124,8 +5149,9 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     if (!draft.track) { onToast?.("اختر مسارك أولاً", "warn"); return; }
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
 
-    // A stamp left over from a sign-out or a reset still holds.
-    if (lockConflicts(heldTrack, draft)) {
+    // A stamp left over from a sign-out or a reset still holds — unless the
+    // owner just approved a change, which is exactly permission to re-pick.
+    if (lockConflicts(heldTrack, draft) && myRequest?.status !== "approved") {
       onToast?.(`مسارك مثبَّت على «${trackLabel(heldTrack)}» — يتبقّى ${lockDaysLeft} يوم`, "warn");
       return;
     }
@@ -5144,11 +5170,17 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       track: draft.track,
       college: draft.college || "",
       plan: draft.plan || "",
+      // Minted once and kept for the life of the profile — the owner's handle
+      // for this student when a request comes in.
+      studentCode: profile?.studentCode || genStudentCode(),
       // Only restart the lock when the track actually changed.
       confirmedAt,
       created: profile?.created || Date.now(),
     };
     setProfile(next);
+    // Completing the profile should land the student on حسابي, not leave them
+    // wherever the "complete your profile" button was tapped.
+    setActiveTab?.("profile");
     if (next.email && next.email !== aiEmail) setAiEmail?.(next.email);
     setTrackLock?.(lockStampOf(next));
     setEditing(false);
@@ -5175,7 +5207,63 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       .catch(() => {});
   };
 
+  // Export everything this device holds as one code the student can paste on
+  // another device. base64 of the whole store — not for secrecy (there is
+  // none), only so a long JSON blob survives being copied into WhatsApp
+  // without newlines mangling it.
+  const makeBackup = async () => {
+    try {
+      const raw = (typeof window !== "undefined" && window.localStorage.getItem(STORE_KEY)) || "{}";
+      const code = btoa(encodeURIComponent(raw));
+      setBackup(code);
+      try { await navigator.clipboard.writeText(code); onToast?.("نُسخت نسختك الاحتياطية — احفظها في مكان آمن", "success"); }
+      catch { onToast?.("انسخ الكود من الصندوق واحفظه", "info"); }
+    } catch { onToast?.("تعذّر إنشاء النسخة", "error"); }
+  };
+
+  const restoreBackup = () => {
+    const code = restoreCode.trim();
+    if (!code) { onToast?.("الصق الكود أولاً", "warn"); return; }
+    let json;
+    try { json = decodeURIComponent(atob(code)); JSON.parse(json); }
+    catch { onToast?.("الكود غير صالح", "error"); return; }
+    if (!confirm("سيحلّ هذا محلّ بياناتك الحالية على هذا الجهاز. متابعة؟")) return;
+    try {
+      window.localStorage.setItem(STORE_KEY, json);
+      onToast?.("تمت الاستعادة — يُعاد تحميل الصفحة", "success");
+      setTimeout(() => window.location.reload(), 700);
+    } catch { onToast?.("تعذّرت الاستعادة", "error"); }
+  };
+
   const initial = (profile?.name || "ط").trim()[0] || "ط";
+
+  // Latest saved GPA, for the summary card. Semesters carry a `.gpa` string.
+  const gpaList = (semesters || []).map(s => parseFloat(s?.gpa)).filter(n => !isNaN(n));
+  const lastGpa = gpaList.length ? gpaList[gpaList.length - 1] : null;
+
+  // The next lecture and how far off it is, so حسابي answers "what's coming"
+  // without opening the schedule. Same rule the schedule page uses.
+  const nextLec = (() => {
+    const now = new Date();
+    const todayIdx = now.getDay();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    let best = null;
+    (schedule || []).forEach(lec => {
+      const di = WEEK_ORDER.indexOf(lec.day);
+      if (di < 0 || !lec.time) return;
+      const [h, m] = lec.time.split(":").map(Number);
+      if (isNaN(h)) return;
+      const lecMin = h * 60 + m;
+      let dd = (di - todayIdx + 7) % 7;
+      if (dd === 0 && lecMin <= nowMin) dd = 7;
+      const total = dd * 1440 + (lecMin - nowMin);
+      if (!best || total < best.total) best = { lec, total, dd };
+    });
+    return best;
+  })();
+  const nextLecWhen = nextLec
+    ? (nextLec.dd === 0 ? `اليوم ${nextLec.lec.time}` : nextLec.dd === 1 ? `غداً ${nextLec.lec.time}` : `${nextLec.lec.day} ${nextLec.lec.time}`)
+    : null;
 
   // One grid, not two. There were a row of links and a row of numbers, and
   // both listed المفضلة and مهامي — the same things counted in one place and
@@ -5208,23 +5296,22 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{trackLabel(profile)}</span>}
-              {/* The site's own handle, assigned at signup and never editable
-                  — it is what the admin quotes back when answering a request,
-                  so it has to be somewhere the student can read it out. */}
-              {studentCode && (
-                <span title="رقمك في الموقع" style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: "rgba(255,255,255,.85)", borderRadius: 7, padding: "2px 8px", fontFamily: "monospace", direction: "ltr" }}>{studentCode}</span>
+              {profile?.track && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: P.gold, borderRadius: 7, padding: "2px 9px" }}>{profile.track}</span>}
+              {profile?.plan && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff", background: "rgba(255,255,255,.2)", borderRadius: 7, padding: "2px 9px" }}>{profile.plan}</span>}
+              {profile?.college && !profile?.plan && <span style={{ fontSize: 11.5, fontWeight: 800, color: "#fff", background: "rgba(255,255,255,.2)", borderRadius: 7, padding: "2px 9px" }}>{profile.college}</span>}
+              {profile?.studentCode && (
+                <button
+                  onClick={() => { try { navigator.clipboard.writeText(profile.studentCode); onToast?.("نُسخ معرّفك", "success"); } catch { onToast?.("معرّفك: " + profile.studentCode, "info"); } }}
+                  title="معرّفك — انسخه عند طلب تغيير المسار"
+                  style={{ fontSize: 11, fontWeight: 800, color: "#fff", background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.25)", borderRadius: 7, padding: "2px 9px", cursor: "pointer", fontFamily: "monospace", direction: "ltr" }}>
+                  {profile.studentCode}
+                </button>
               )}
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
-              <Edit3 size={16} />
-            </button>
-            <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
-              <Settings size={16} />
-            </button>
-          </div>
+          <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff", flexShrink: 0 }}>
+            <Settings size={16} />
+          </button>
         </div>
       </div>
 
@@ -5311,6 +5398,15 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           everyone else. */}
       {!editing && (
         <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
+          {profile && (
+            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
+              cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
+            }}>
+              <Edit3 size={16} color={P.green} /> تعديل ملفي
+            </button>
+          )}
           <button onClick={openSettings} style={{
             flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
             background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
@@ -5357,7 +5453,14 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             <div style={{ fontSize: 11.5, color: P.red, marginBottom: 12 }}>صيغة البريد غير صحيحة</div>
           )}
 
-          {trackLocked ? (
+          {changeApproved && (
+            <div style={{ background: `${P.green}12`, border: `1px solid ${P.green}45`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: P.green, marginBottom: 3 }}>تمّت الموافقة على طلبك ✅</div>
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7 }}>اختر مسارك من جديد بالأسفل، ثم احفظ.</div>
+            </div>
+          )}
+
+          {trackLocked && !changeApproved ? (
             <div style={{ background: `${P.gold}12`, border: `1px solid ${P.gold}40`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: t.tx, marginBottom: 4 }}>مسارك: {trackLabel(heldTrack)}</div>
               <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 10 }}>
@@ -5504,6 +5607,102 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           </div>
         );
       })()}
+
+      {/* Next lecture — what's coming, without opening the schedule. */}
+      {!editing && profile && nextLec && (
+        <button onClick={() => setActiveTab("schedule")} style={{
+          width: "100%", textAlign: "right", display: "flex", alignItems: "center", gap: 12,
+          background: t.s1, border: `1.5px solid ${P.blue2}35`, borderRadius: 18, padding: "14px 16px",
+          marginBottom: 16, cursor: "pointer", fontFamily: "inherit", boxShadow: t.shSm,
+        }}>
+          <div style={{ width: 42, height: 42, borderRadius: 13, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <CalendarDays size={19} color={P.blue2} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: P.blue2, marginBottom: 2 }}>محاضرتك القادمة</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nextLec.lec.course || "محاضرة"}</div>
+            <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>{nextLecWhen}{nextLec.lec.room ? ` · ${nextLec.lec.room}` : ""}</div>
+          </div>
+          <ChevronLeft size={16} color={t.dim} />
+        </button>
+      )}
+
+      {/* My GPA — a summary that links to the full calculator. */}
+      {!editing && profile && (
+        <button onClick={() => setActiveTab("gpa")} style={{
+          width: "100%", textAlign: "right", display: "flex", alignItems: "center", gap: 12,
+          background: t.s1, border: `1.5px solid ${lastGpa != null ? `${P.green}35` : t.bd}`, borderRadius: 18,
+          padding: "14px 16px", marginBottom: 16, cursor: "pointer", fontFamily: "inherit", boxShadow: t.shSm,
+        }}>
+          <div style={{ width: 42, height: 42, borderRadius: 13, background: `${P.green}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Calculator size={19} color={P.green} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: P.green, marginBottom: 2 }}>معدّلي التراكمي</div>
+            {lastGpa != null ? (
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx }}>
+                {lastGpa.toFixed(2)} <span style={{ fontSize: 11.5, color: t.mu, fontWeight: 600 }}>· {gpaList.length} {gpaList.length === 1 ? "فصل محفوظ" : "فصول محفوظة"}</span>
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.mu }}>احسب معدّلك التراكمي والمستهدف</div>
+            )}
+          </div>
+          <ChevronLeft size={16} color={t.dim} />
+        </button>
+      )}
+
+      {/* Backup — the safety net for a device-only profile. Export a code,
+          restore it anywhere. Without this, clearing the browser wipes the
+          student's whole account with no way back. */}
+      {!editing && profile && (
+        <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1px solid ${t.bd}`, boxShadow: t.shSm }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 4, display: "flex", alignItems: "center", gap: 7 }}>
+            <Shield size={15} color={P.gold} /> نسخة احتياطية
+          </div>
+          <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.8, marginBottom: 12 }}>
+            ملفك محفوظ على هذا الجهاز فقط. احفظ نسخة لتستعيد بياناتك لو غيّرت جهازك أو مسحت المتصفّح.
+          </div>
+
+          {backup && (
+            <textarea readOnly value={backup} onFocus={e => e.target.select()} rows={3} style={{
+              width: "100%", boxSizing: "border-box", border: `1px solid ${P.gold}55`, borderRadius: 10,
+              padding: "10px 12px", fontSize: 11, background: t.s2, color: t.tx, fontFamily: "monospace",
+              direction: "ltr", textAlign: "left", marginBottom: 10, resize: "none", wordBreak: "break-all",
+            }} />
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={makeBackup} style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              background: `${P.gold}18`, border: `1px solid ${P.gold}55`, borderRadius: 10, padding: "10px",
+              cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: P.gold,
+            }}>
+              <Save size={14} /> احفظ نسخة
+            </button>
+            <button onClick={() => setRestoreOpen(o => !o)} style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px",
+              cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: t.tx,
+            }}>
+              <RotateCcw size={14} color={P.blue2} /> استعادة
+            </button>
+          </div>
+
+          {restoreOpen && (
+            <div style={{ marginTop: 10 }}>
+              <textarea value={restoreCode} onChange={e => setRestoreCode(e.target.value)}
+                placeholder="الصق كود النسخة الاحتياطية هنا" rows={3} style={{
+                  width: "100%", boxSizing: "border-box", border: `1px solid ${t.bd}`, borderRadius: 10,
+                  padding: "10px 12px", fontSize: 11, background: t.s2, color: t.tx, fontFamily: "monospace",
+                  direction: "ltr", textAlign: "left", marginBottom: 8, resize: "none", outline: "none",
+                }} />
+              <Btn variant="primary" size="sm" onClick={restoreBackup} style={{ width: "100%" }} disabled={!restoreCode.trim()}>
+                <RotateCcw size={14} /> استعِد بياناتي
+              </Btn>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* My study plan — shows the subjects of the student's chosen plan */}
       {!editing && profile?.track && (() => {
@@ -5823,24 +6022,6 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSo
           <Row Icon={soundOn ? Volume2 : VolumeX} label="أصوات المؤقت" desc="تنبيه صوتي عند انتهاء الجلسة" color={P.green}>
             <Toggle on={soundOn} onChange={setSoundOn} />
           </Row>
-
-          <div style={{ background: t.s2, borderRadius: 14, padding: "14px 16px", marginBottom: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: `${P.orange}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Target size={16} color={P.orange} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>الهدف الأسبوعي</div>
-                <div style={{ fontSize: 12, color: t.mu, marginTop: 2 }}>{weeklyGoal} جلسة بومودورو/أسبوع</div>
-              </div>
-            </div>
-            <input type="range" min={3} max={50} value={weeklyGoal}
-              onChange={e => setWeeklyGoal(+e.target.value)}
-              style={{ width: "100%", accentColor: P.orange }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: t.dim, marginTop: 4 }}>
-              <span>3</span><span>50</span>
-            </div>
-          </div>
 
           <div style={{ height: 1, background: t.bd, margin: "16px 0" }} />
 
@@ -6990,6 +7171,7 @@ export default function App() {
           savedAccount={savedAccount} onLogin={() => setSignedOut(true)}
           accounts={account.configured} signedIn={account.signedIn}
           onMessages={() => setMessagesOpen(true)} msgUnread={msgUnread}
+          semesters={semesters}
           studentCode={profile?.studentCode || ""} />}
       </div>
 
@@ -7187,7 +7369,8 @@ export default function App() {
       )}
       {needAccount && (
         <NeedAccountSheet t={t} what={needAccount} accounts={account.configured}
-          onClose={() => setNeedAccount(null)} />
+          onClose={() => setNeedAccount(null)}
+          onComplete={() => { setNeedAccount(null); setCourse(null); setTab("profile"); }} />
       )}
       <ToastStack list={toasts.list} />
     </div>
