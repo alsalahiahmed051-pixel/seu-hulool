@@ -29,7 +29,10 @@ export async function POST(request) {
   const currentTrack = String(body.currentTrack || '').trim().slice(0, 200)
   const reason = String(body.reason || '').trim().slice(0, 1000)
 
-  if (!name || !studentId) return reply({ error: 'أكمل ملفك أولاً' }, 400)
+  // The university number is no longer asked for anywhere, so requiring it
+  // here would reject every request the site is now capable of sending. The
+  // column stays for the rows that already carry one.
+  if (!name) return reply({ error: 'أكمل ملفك أولاً' }, 400)
   if (!reason) return reply({ error: 'سبب التغيير مطلوب' }, 400)
 
   let db

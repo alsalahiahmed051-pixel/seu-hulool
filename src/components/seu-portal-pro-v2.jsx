@@ -637,7 +637,7 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           topic, message: message.trim(), page,
-          name: profile?.name, studentId: profile?.studentId, email,
+          name: profile?.name, email,
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -690,7 +690,7 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
 
             <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.8, marginBottom: 14 }}>
               {profile?.name || email
-                ? <>يُرسَل معها: {[profile?.name, profile?.studentId, email].filter(Boolean).join(" · ")}</>
+                ? <>يُرسَل معها: {[profile?.name, email].filter(Boolean).join(" · ")}</>
                 : "لم تُكمل ملفك — أرسل بريدك داخل الرسالة إن أردت ردّاً."}
             </div>
 
@@ -784,7 +784,7 @@ function MessagesSheet({ t, onClose, profile, email, onToast, onUnread }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           body, threadId: open || undefined, topic,
-          name: profile?.name, studentId: profile?.studentId, email,
+          name: profile?.name, email,
         }),
       });
       const d = await r.json().catch(() => ({}));
@@ -874,7 +874,7 @@ function MessagesSheet({ t, onClose, profile, email, onToast, onUnread }) {
             placeholder="اكتب رسالتك…" style={{ ...box, marginBottom: 12 }} />
           <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.8, marginBottom: 14 }}>
             {profile?.name || email
-              ? <>يُرسَل معها: {[profile?.name, profile?.studentId, email].filter(Boolean).join(" · ")}</>
+              ? <>يُرسَل معها: {[profile?.name, email].filter(Boolean).join(" · ")}</>
               : "لم تُكمل ملفك — الرد سيصلك هنا في هذه الصفحة على أي حال."}
           </div>
           <Btn variant="primary" onClick={send} disabled={sending || !draft.trim()} style={{ width: "100%" }}>
@@ -1121,7 +1121,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
       const res = await fetch("/api/subscription", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: profile?.name, studentId: profile?.studentId,
+          name: profile?.name,
           email: savedEmail, note: note.trim(), receiptUrl: receipt.trim(),
         }),
       });
@@ -1197,7 +1197,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             </div>
             {justSent && (
               <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.9, marginTop: 10, background: t.s2, borderRadius: 10, padding: "10px 12px" }}>
-                أُرسل مع الطلب: {profile?.name || "—"} · {profile?.studentId || "—"} · {savedEmail || "—"}
+                أُرسل مع الطلب: {profile?.name || "—"} · {savedEmail || "—"}
                 {receipt ? " · صورة الإيصال ✅" : " · بدون صورة إيصال"}
                 <br />ستظهر حالة الطلب هنا، ويصلك الرد على بريدك.
               </div>
@@ -1249,7 +1249,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
 
             {!profileComplete(profile) && (
               <div style={{ fontSize: 12, color: P.orange, background: `${P.orange}10`, border: `1px solid ${P.orange}30`, borderRadius: 10, padding: "9px 11px", marginBottom: 10, lineHeight: 1.7 }}>
-                أكمل اسمك ورقمك الجامعي في «حسابي» أولاً — يُرسَلان مع الطلب.
+                أكمل اسمك في «حسابي» أولاً — يُرسَل مع الطلب.
               </div>
             )}
 
@@ -1310,7 +1310,7 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             )}
 
             <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "8px 0 12px" }}>
-              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {profile?.studentId || "رقمك الجامعي"} · {savedEmail || "بريدك"}.
+              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {savedEmail || "بريدك"}.
             </div>
 
             {sendErr && (
@@ -4874,7 +4874,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
     name: profile?.name || "",
-    studentId: profile?.studentId || "",
     email: profile?.email || aiEmail || "",
     // Empty, not "تحضيري": a preselected track made the plan chips (خطة أ/ب)
     // appear before the student had chosen anything.
@@ -4905,7 +4904,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // While the track is locked, a change goes to the admin as a request the
   // student explains, rather than silently editing the profile.
   const requestTrackChange = async () => {
-    const reason = window.prompt("سبب تغيير المسار؟ (سيصل للإدارة مع اسمك ورقمك الجامعي)");
+    const reason = window.prompt("سبب تغيير المسار؟ (سيصل للإدارة مع اسمك)");
     if (reason == null) return;
     if (!reason.trim()) { onToast?.("اكتب سبب التغيير", "warn"); return; }
     setRequesting(true);
@@ -4915,7 +4914,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profile?.name || draft.name.trim(),
-          studentId: profile?.studentId || draft.studentId.trim(),
           currentTrack: trackLabel(heldTrack), reason: reason.trim(),
         }),
       });
@@ -4931,7 +4929,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
-    if (!draft.studentId.trim()) { onToast?.("اكتب رقمك الجامعي", "warn"); return; }
     if (draft.email.trim() && !looksLikeEmail(draft.email)) { onToast?.("صيغة البريد غير صحيحة", "warn"); return; }
     if (!draft.track) { onToast?.("اختر مسارك أولاً", "warn"); return; }
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
@@ -4952,7 +4949,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     const next = {
       ...profile,
       name: draft.name.trim(),
-      studentId: draft.studentId.trim().toUpperCase(),
       email: draft.email.trim(),
       track: draft.track,
       college: draft.college || "",
@@ -4974,7 +4970,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     fetch("/api/student/identity", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: next.name, studentId: next.studentId, email: next.email || aiEmail || "",
+        name: next.name, email: next.email || aiEmail || "",
         track: next.track, college: next.college, plan: next.plan,
       }),
     })
@@ -5024,11 +5020,10 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               {studentCode && (
                 <span title="رقمك في الموقع" style={{ fontSize: 11.5, fontWeight: 800, color: "#3a2e05", background: "rgba(255,255,255,.85)", borderRadius: 7, padding: "2px 8px", fontFamily: "monospace", direction: "ltr" }}>{studentCode}</span>
               )}
-              {profile?.studentId && <span style={{ fontSize: 11.5, color: "rgba(255,255,255,.75)", fontFamily: "monospace", direction: "ltr" }}>{profile.studentId}</span>}
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button onClick={() => { setDraft({ name: profile?.name || "", studentId: profile?.studentId || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
+            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "" }); setEditing(true); }} title="تعديل الملف" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
               <Edit3 size={16} />
             </button>
             <button onClick={openSettings} title="الإعدادات" style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: 12, padding: 9, cursor: "pointer", display: "flex", color: "#fff" }}>
@@ -5080,8 +5075,8 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             {accounts
               ? "الاسم والبريد وكلمة المرور — ويصلك رمز تأكيد على بريدك."
               : savedAccount
-                ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
-                : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
+                ? "حسابك محفوظ على هذا الجهاز."
+                : "الاسم فقط — ويُحفظ على جهازك."}
           </div>
         </div>
       )}
@@ -5151,15 +5146,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {editing && (
         <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.gold}45`, boxShadow: t.shSm, animation: "fadeUp .3s ease" }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, marginBottom: 4 }}>{profile ? "تعديل ملفك الدراسي" : "أنشئ ملفك الدراسي"}</div>
-          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>اسمك ورقمك الجامعي ومسارك — تُحفظ على جهازك، وتُستخدم لتخصيص موادك وتقويمك ومهامك.</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 14, lineHeight: 1.7 }}>اسمك ومسارك — لتخصيص موادك وتقويمك ومهامك.</div>
 
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
           <input value={draft.name} onChange={e => patch({ name: e.target.value })} placeholder="اكتب اسمك"
             style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
-
-          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-          <input value={draft.studentId} onChange={e => patch({ studentId: e.target.value })} placeholder="رقمك الجامعي"
-            style={{ width: "100%", border: `1.5px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
 
           {/* One place to set the email, shared with the assistant — it used
               to be asked for separately in the chat and nowhere else. */}
@@ -5223,7 +5214,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
           <div style={{ display: "flex", gap: 8 }}>
             {profile && <Btn variant="ghost" size="sm" onClick={() => setEditing(false)} style={{ flex: 1 }}>إلغاء</Btn>}
-            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim() || !draft.studentId.trim()}>
+            <Btn variant="primary" size="sm" onClick={save} style={{ flex: 2 }} disabled={!draft.name.trim()}>
               <CheckCircle size={15} /> {profile ? "حفظ" : "تأكيد وإنشاء الملف"}
             </Btn>
           </div>
@@ -6151,7 +6142,7 @@ const planOptionsFor = (track, college) =>
   trackNeedsCollege(track) ? collegePrograms(college) : (TRACK_PLANS[track] || []);
 /** Is this profile complete enough to be saved/confirmed? */
 const profileComplete = (p) => {
-  if (!p?.name?.trim() || !p?.studentId?.trim() || !p?.track) return false;
+  if (!p?.name?.trim() || !p?.track) return false;
   if (trackNeedsCollege(p.track) && !p.college) return false;
   // Only require a plan/programme when the chosen track actually offers one.
   return planOptionsFor(p.track, p.college).length === 0 || !!p.plan;
@@ -6220,25 +6211,17 @@ const AUTH_PLANS = TRACK_PLANS;
  */
 function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
   const [name, setName] = useState("");
-  const [studentId, setStudentId] = useState("");
   const [err, setErr] = useState("");
 
-  const [tries, setTries] = useState(0);
 
+  // This screen was never authentication and pretending otherwise did harm.
+  // The profile it guards is already sitting in this browser's storage —
+  // anyone holding the phone has it whatever they type here. Checking a
+  // university number only ever locked out the person who mistyped their own.
+  // It picks up where they left off; that is the whole job.
   const submit = () => {
-    if (!name.trim() || !studentId.trim()) { setErr("اكتب اسمك ورقمك الجامعي"); return; }
-    const typed = studentId.trim().toUpperCase();
-    const kept = String(saved.studentId || "").trim().toUpperCase();
-    // The name is an alternative key on purpose: a student who mistyped their
-    // ID when creating the profile would otherwise be locked out of their own
-    // data for good, with no password and no email to recover through.
-    if (typed !== kept && name.trim() !== String(saved.name || "").trim()) {
-      setTries(n => n + 1);
-      setErr("الرقم الجامعي لا يطابق الحساب المحفوظ على هذا الجهاز");
-      return;
-    }
-    // Entering with the name lets a wrong stored ID be corrected in place.
-    onEnter({ ...saved, name: name.trim(), studentId: typed });
+    if (!name.trim()) { setErr("اكتب اسمك"); return; }
+    onEnter({ ...saved, name: name.trim() });
   };
 
   const field = {
@@ -6263,7 +6246,7 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
           </div>
           <div style={{ fontSize: 21, fontWeight: 900, color: t.tx }}>أهلاً بعودتك</div>
           <div style={{ fontSize: 13, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
-            أدخل اسمك والرقم الجامعي للمتابعة في ملفك
+            تابع في ملفك المحفوظ على هذا الجهاز
           </div>
         </div>
 
@@ -6278,25 +6261,21 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{saved.name}</div>
-            <div style={{ fontSize: 11.5, color: t.mu, fontFamily: "monospace", direction: "ltr", textAlign: "right" }}>{saved.studentId}</div>
+            <div style={{ fontSize: 11.5, color: t.mu }}>{saved.track || "متابعة ملفك"}</div>
           </div>
           <span style={{ fontSize: 12, fontWeight: 800, color: P.gold, flexShrink: 0 }}>متابعة</span>
         </button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0" }}>
           <div style={{ flex: 1, height: 1, background: t.bd }} />
-          <span style={{ fontSize: 11.5, color: t.dim, fontWeight: 700 }}>أو أدخل بياناتك</span>
+          <span style={{ fontSize: 11.5, color: t.dim, fontWeight: 700 }}>أو اكتب اسماً آخر</span>
           <div style={{ flex: 1, height: 1, background: t.bd }} />
         </div>
 
         <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الاسم</label>
         <input value={name} onChange={e => { setName(e.target.value); setErr(""); }} placeholder="اكتب اسمك"
-          style={{ ...field, direction: "rtl", marginBottom: 14 }} />
-
-        <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>الرقم الجامعي</label>
-        <input value={studentId} onChange={e => { setStudentId(e.target.value); setErr(""); }} placeholder="رقمك الجامعي"
           onKeyDown={e => e.key === "Enter" && submit()}
-          style={{ ...field, direction: "ltr", textAlign: "left" }} />
+          style={{ ...field, direction: "rtl" }} />
 
         {err && (
           <div style={{ background: `${P.red}0d`, border: `1px solid ${P.red}35`, borderRadius: 10, padding: "10px 12px", marginTop: 12 }}>
@@ -6304,11 +6283,6 @@ function WelcomeBack({ saved, t, onEnter, onForget, onSkip }) {
               <AlertTriangle size={15} color={P.red} style={{ flexShrink: 0, marginTop: 1 }} />
               <span style={{ fontSize: 12.5, color: P.red, lineHeight: 1.6 }}>{err}</span>
             </div>
-            {tries > 0 && (
-              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${P.red}22` }}>
-                نسيت الرقم؟ اكتب <strong style={{ color: t.tx }}>اسمك كما حفظته</strong> («{saved.name}») وادخل — ثم صحّح رقمك من «حسابي».
-              </div>
-            )}
           </div>
         )}
 
