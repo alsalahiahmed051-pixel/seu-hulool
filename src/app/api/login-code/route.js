@@ -20,7 +20,7 @@ export const runtime = 'nodejs'
  *   guesses were once real.
  *
  * The session itself comes from Supabase's own magic-link machinery, used
- * without sending any mail: generateLink creates the user if they are new and
+ * without sending any mail: the account is created if it is new, generateLink
  * returns a token hash, and the browser exchanges that for a session. So a
  * student can be let in on a site whose outgoing email does not work at all —
  * which is exactly the situation this site is in.
@@ -49,6 +49,23 @@ export async function POST(request) {
   if (!email) {
     await db.rpc('bump_code_attempt', { p_hash: hash }).catch(() => {})
     return refuse()
+  }
+
+  // The account has to exist before a magic link can be built for it, and the
+  // students this feature is for are exactly the ones who never managed to
+  // sign up. So it is created here when it is missing, confirmed outright —
+  // confirming it is precisely what the broken email would have done, and an
+  // unconfirmed account would be another door that will not open.
+  //
+  // The address comes from the redeemed row, never from the request, so this
+  // can only ever create the account an admin already named.
+  const { error: createErr } = await db.auth.admin.createUser({
+    email,
+    email_confirm: true,
+  })
+  // Already registered is the ordinary case, not a failure.
+  if (createErr && !/already|exists|registered/i.test(createErr.message || '')) {
+    return Response.json({ error: 'تعذّر إنشاء الحساب' }, { status: 500 })
   }
 
   // No mail is sent; only the token is used.
