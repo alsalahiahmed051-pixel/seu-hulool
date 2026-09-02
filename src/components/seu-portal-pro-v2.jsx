@@ -1488,9 +1488,53 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
 
   const resendMsg = (id, text) => {
     const idx = msgs.findIndex(m => m.id === id);
-    setMsgs(ms => ms.slice(0, idx));
+    if (idx < 0) return;
+    const base = msgs.slice(0, idx);
+    setMsgs(base);
     setMenuId(null);
-    setTimeout(() => send(text), 50);
+    setTimeout(() => send(text, base), 50);
+  };
+
+  /**
+   * Ask the same question again.
+   *
+   * Offered on the *answer*, because that is where you are standing when you
+   * decide the answer was no good — the alternative is scrolling up to your own
+   * message and re-sending it, which is the same act with extra steps. It walks
+   * back to the question above this reply and re-asks it, dropping the reply so
+   * the new one takes its place rather than stacking underneath.
+   */
+  const retryAnswer = (id) => {
+    const idx = msgs.findIndex(m => m.id === id);
+    if (idx < 1) return;
+    let q = idx - 1;
+    while (q >= 0 && msgs[q].r !== "u") q--;
+    if (q < 0) return;
+    const text = msgs[q].text;
+    const base = msgs.slice(0, q);
+    setMsgs(base);
+    setMenuId(null);
+    setTimeout(() => send(text, base), 50);
+  };
+
+  /**
+   * Change what you asked, and ask that instead.
+   *
+   * Everything after the edited message goes: the replies below it answered a
+   * question that no longer exists, and leaving them would make the thread read
+   * as though the assistant had answered something nobody asked.
+   */
+  const editMsg = (id, text) => {
+    setMenuId(null);
+    const next = window.prompt("عدّل رسالتك:", text);
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === text) return;
+    const idx = msgs.findIndex(m => m.id === id);
+    if (idx < 0) return;
+    const base = msgs.slice(0, idx);
+    setMsgs(base);
+    setTimeout(() => send(trimmed, base), 50);
   };
 
   const defaultSugs = [
@@ -1535,7 +1579,19 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     return <div key={i} style={{ lineHeight: 1.8 }}>{renderInline(line)}</div>;
   });
 
-  const send = async (q) => {
+  /**
+   * Send a question.
+   *
+   * `base` is the thread to append to. It exists because "ask this again from
+   * here" — resend, edit, another answer — has to drop everything below the
+   * point it rewinds to, and `msgs` in this closure is whatever it was when
+   * this function was created. Truncating with setMsgs and then calling send
+   * looked right and did nothing: send rebuilt the list from its own stale
+   * copy and appended, so the old question and its answer stayed and the new
+   * pair piled up underneath. Resend has been doing that since it was written.
+   * Passing the base explicitly is what makes the rewind real.
+   */
+  const send = async (q, base) => {
     const text = (q || inp).trim();
     if (!text || loading) return;
     // The email is asked for once and kept locally; the server checks its
@@ -1544,7 +1600,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     if (gate && gate.blocked) { onSubscribe?.(gate); return; }
     setInp("");
     const newMsg = { r: "u", id: mkId(), text, ts: Date.now() };
-    const newMsgs = [...msgs, newMsg];
+    const newMsgs = [...(base || msgs), newMsg];
     setMsgs(newMsgs);
     setLoading(true);
     onChat?.();
@@ -1626,7 +1682,11 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
               <FileText size={11} /> {fileCount}
             </div>
           )}
-          <button onClick={clearChat} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
+          {/* "مسح" read as deleting something of yours; it starts a fresh
+              conversation, which is a different promise. */}
+          <button onClick={clearChat} title="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+            <Plus size={13} /> محادثة جديدة
+          </button>
         </div>
       )}
 
@@ -1685,8 +1745,18 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
                     <Copy size={14} color={P.blue2} /> نسخ النص
                   </button>
                   {isUser && !loading && (
+                    <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => editMsg(m.id, m.text)}>
+                      <Edit3 size={14} color={P.gold} /> تعديل وإعادة الإرسال
+                    </button>
+                  )}
+                  {isUser && !loading && (
                     <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => resendMsg(m.id, m.text)}>
                       <RotateCcw size={14} color={P.green} /> إعادة الإرسال
+                    </button>
+                  )}
+                  {!isUser && i > 0 && !loading && (
+                    <button style={menuBtnSt(false)} onMouseEnter={e => e.currentTarget.style.background = t.s2} onMouseLeave={e => e.currentTarget.style.background = "none"} onClick={() => retryAnswer(m.id)}>
+                      <RotateCcw size={14} color={P.green} /> إجابة أخرى
                     </button>
                   )}
                   {i > 0 && (
@@ -6975,7 +7045,13 @@ export default function App() {
                   متصل — يجيب بالعربية
                 </div>
               </div>
-              <button onClick={clearGlobalAI} style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0 }}>مسح</button>
+              {/* The global panel keeps its own header, so the standalone
+                  one's rename does not reach here. Same promise, same words:
+                  "مسح" reads as deleting something of yours, which is not what
+                  this does. */}
+              <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                <Plus size={13} /> محادثة جديدة
+              </button>
             </div>
             {/* Subject Selector + Tab Toggle */}
             <div style={{ padding: "6px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
