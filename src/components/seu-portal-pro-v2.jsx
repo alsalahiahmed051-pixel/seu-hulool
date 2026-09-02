@@ -4635,7 +4635,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, studentCode = "" }) {
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "" }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
@@ -4849,6 +4849,34 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               : savedAccount
                 ? "حسابك محفوظ على هذا الجهاز — الدخول باسمك ورقمك الجامعي."
                 : "لا حاجة لبريد أو كلمة مرور — الاسم والرقم الجامعي فقط، ويُحفظ على جهازك."}
+          </div>
+        </div>
+      )}
+
+      {/* A device profile is not an account, and until now there was no way to
+          say so. The sign-in card above is gated on `!profile`, so everyone who
+          made a profile before accounts existed — which is every current
+          student — had no route to /login or /signup at all: they would have
+          had to sign out first, destroying the profile, just to find the door.
+          This is that door, and it keeps their profile while they walk through. */}
+      {!editing && profile && accounts && !signedIn && (
+        <div style={{ background: t.s1, borderRadius: 18, padding: 18, marginBottom: 16, border: `1.5px solid ${P.blue2}45`, boxShadow: t.shSm }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
+            <LogIn size={17} color={P.blue2} />
+            <div style={{ fontSize: 15, fontWeight: 900, color: t.tx }}>ملفك محفوظ على هذا الجهاز فقط</div>
+          </div>
+          <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85, marginBottom: 14 }}>
+            لو مسحت بيانات المتصفح أو فتحت الموقع من جهاز آخر، لن تجده. الحساب
+            <strong style={{ color: t.tx }}> يحفظه ببريدك</strong> ويتبعك على أي جهاز — وملفك الحالي يبقى كما هو.
+          </div>
+          <Btn variant="gold" onClick={() => { window.location.href = "/signup"; }} style={{ width: "100%", marginBottom: 8 }}>
+            <User size={15} /> إنشاء حساب بالبريد
+          </Btn>
+          <Btn variant="ghost" onClick={() => { window.location.href = "/login"; }} style={{ width: "100%" }}>
+            <LogIn size={15} /> لدي حساب — تسجيل الدخول
+          </Btn>
+          <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
+            يصلك رمز من ٦ أرقام على بريدك للتأكد منه.
           </div>
         </div>
       )}
@@ -6519,7 +6547,8 @@ export default function App() {
           tasks={tasks} schedule={schedule} aiEmail={aiEmail} setAiEmail={setAiEmail}
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)}
           savedAccount={savedAccount} onLogin={() => setSignedOut(true)}
-          accounts={account.configured} studentCode={profile?.studentCode || ""} />}
+          accounts={account.configured} signedIn={account.signedIn}
+          studentCode={profile?.studentCode || ""} />}
       </div>
 
       {/* Floating AI assistant button — reachable from any main tab */}
