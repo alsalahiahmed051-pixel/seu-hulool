@@ -1988,21 +1988,41 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
 /* ══════════════════════════════════════════════════════════════
    AI QUIZ MODE
    ══════════════════════════════════════════════════════════════ */
-function QuizMode({ subject, t, onToast }) {
+const QUIZ_SOURCE_CHOICES = [
+  { id: "collections", label: "التجميعات المرفقة" },
+  { id: "curriculum", label: "المقرر الدراسي" },
+  { id: "summary", label: "التلخيص" },
+  { id: "all", label: "عشوائي من كل شيء" },
+];
+
+function QuizMode({ subject, t, onToast, onSubscribe }) {
   const [quiz, setQuiz] = useState(null);
   const [loading, setLoading] = useState(false);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState(null);
   const [score, setScore] = useState(0);
   const [done, setDone] = useState(false);
+  const [source, setSource] = useState("all");
+  // Free text, not a set of chips: the owner asked for 17 to be as easy to
+  // ask for as 10. The server clamps it as well — this field is a
+  // convenience, not the rule.
+  const [count, setCount] = useState("5");
+  const [trialSpent, setTrialSpent] = useState(false);
 
   const startQuiz = async () => {
+    const n = Math.min(30, Math.max(1, Math.round(Number(count) || 5)));
     setLoading(true); setQuiz(null); setCurrent(0); setSelected(null); setScore(0); setDone(false);
     try {
-      const res = await fetch("/api/ai-quiz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subject }) });
+      const res = await fetch("/api/ai-quiz", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, source, count: n }),
+      });
       const d = await res.json();
       if (d.quiz && Array.isArray(d.quiz)) { setQuiz(d.quiz); }
-      else { onToast?.(d.error || "تعذّر توليد الاختبار", "error"); }
+      else {
+        if (d.trialUsed || d.need === "subscription") setTrialSpent(true);
+        onToast?.(safeText(d.error, "تعذّر توليد الاختبار"), "error");
+      }
     } catch { onToast?.("خطأ في الاتصال", "error"); }
     setLoading(false);
   };
@@ -2036,10 +2056,66 @@ function QuizMode({ subject, t, onToast }) {
           <FileQuestion size={28} color={P.purple} />
         </div>
         <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, marginBottom: 8 }}>اختبار بالذكاء الاصطناعي</div>
-        <div style={{ fontSize: 13, color: t.mu, marginBottom: 20, lineHeight: 1.7 }}>سيولّد الذكاء الاصطناعي 5 أسئلة اختيار من متعدد عن مادة {subject}</div>
-        <Btn variant="primary" onClick={startQuiz}>
-          <Brain size={15} /> ابدأ اختبار جديد
-        </Btn>
+
+        {trialSpent ? (
+          <>
+            <div style={{ fontSize: 13, color: t.mu, marginBottom: 18, lineHeight: 1.85 }}>
+              استخدمت اختبارك التجريبي المجاني. الاشتراك يفتح الاختبارات بلا حدّ.
+            </div>
+            <Btn variant="primary" onClick={() => onSubscribe?.()} style={{ width: "100%" }}>
+              <Sparkles size={15} /> اشترك الآن
+            </Btn>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 16, lineHeight: 1.7 }}>
+              اختر مصدر الأسئلة وعددها — عن مادة {subject}
+            </div>
+
+            <div style={{ textAlign: "right", marginBottom: 14 }}>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 7 }}>من أين تُؤخذ الأسئلة؟</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                {QUIZ_SOURCE_CHOICES.map(x => (
+                  <button key={x.id} onClick={() => setSource(x.id)} style={{
+                    background: source === x.id ? `${P.purple}18` : t.s2,
+                    border: `1.5px solid ${source === x.id ? P.purple : t.bd}`,
+                    borderRadius: 9, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit",
+                    fontSize: 12.5, fontWeight: 800, color: source === x.id ? P.purple : t.mu,
+                  }}>{x.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ textAlign: "right", marginBottom: 18 }}>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 7 }}>كم سؤالاً؟ <span style={{ fontWeight: 600, color: t.dim }}>— حتى ٣٠</span></div>
+              <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+                <input type="number" min={1} max={30} value={count} inputMode="numeric"
+                  onChange={e => setCount(e.target.value)}
+                  aria-label="عدد الأسئلة"
+                  style={{
+                    width: 84, boxSizing: "border-box", border: `1.5px solid ${t.bd}`, borderRadius: 10,
+                    padding: "9px 12px", fontSize: 14, background: t.s2, color: t.tx,
+                    fontFamily: "inherit", direction: "ltr", textAlign: "center", outline: "none",
+                  }} />
+                {[5, 10, 15, 20, 30].map(n => (
+                  <button key={n} onClick={() => setCount(String(n))} style={{
+                    background: String(n) === String(count) ? `${P.purple}18` : t.s2,
+                    border: `1px solid ${String(n) === String(count) ? P.purple : t.bd}`,
+                    borderRadius: 8, padding: "7px 11px", cursor: "pointer", fontFamily: "inherit",
+                    fontSize: 12.5, fontWeight: 800, color: String(n) === String(count) ? P.purple : t.mu,
+                  }}>{n}</button>
+                ))}
+              </div>
+            </div>
+
+            <Btn variant="primary" onClick={startQuiz} style={{ width: "100%" }}>
+              <Brain size={15} /> ابدأ الاختبار
+            </Btn>
+            <div style={{ fontSize: 11, color: t.dim, marginTop: 10, lineHeight: 1.7 }}>
+              اختبار تجريبي واحد مجاناً لكل مستخدم، ثم بالاشتراك.
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -7199,7 +7275,7 @@ export default function App() {
               ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed}
                   profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
                   email={aiEmail} onSaveEmail={setAiEmail} />
-              : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} /></div>
+              : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} onSubscribe={() => setSubOpen({})} /></div>
             }
           </div>
         </div>

@@ -12,11 +12,14 @@
  */
 
 /** Used when the owner has not set anything yet. */
+// A quiz is deliberately absent. The owner's rule for quizzes is one free
+// trial per person and then a subscription — not a points cost — so a quiz
+// price would be a dial in the admin panel that changes nothing. See
+// quiz_trials and claim_quiz_trial.
 export const DEFAULT_POINTS = {
   free: 20,     // the balance a student starts each window with
   message: 1,   // an ordinary question
   image: 2,     // a question carrying an image — more to read, more to answer
-  quiz: 5,      // generating a whole quiz
 }
 
 /** How wide the window is before the balance refills. */
@@ -42,7 +45,6 @@ export function sanitisePoints(raw) {
     free: clampInt(d.free, 0, 10_000, DEFAULT_POINTS.free),
     message: clampInt(d.message, 0, 1000, DEFAULT_POINTS.message),
     image: clampInt(d.image, 0, 1000, DEFAULT_POINTS.image),
-    quiz: clampInt(d.quiz, 0, 1000, DEFAULT_POINTS.quiz),
   }
 }
 
@@ -66,5 +68,5 @@ export function ownerKey({ userId, deviceId }) {
 /** The cost of one action, from the owner's prices. */
 export function costOf(kind, cfg) {
   const c = cfg || DEFAULT_POINTS
-  return kind === 'image' ? c.image : kind === 'quiz' ? c.quiz : c.message
+  return kind === 'image' ? c.image : c.message
 }
