@@ -8,7 +8,7 @@ import {
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
   Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard, MessageCircle,
-  Sparkles,
+  Sparkles, KeyRound, Copy,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -99,6 +99,7 @@ const TABS = [
   { id: 'calendar', label: 'التقويم', Icon: CalendarDays },
   { id: 'theme', label: 'الثيم', Icon: Palette },
   { id: 'students', label: 'الطلاب', Icon: GraduationCap },
+  { id: 'codes', label: 'أكواد الدخول', Icon: KeyRound },
   { id: 'requests', label: 'طلبات المسار', Icon: Send },
   { id: 'subs', label: 'الاشتراكات', Icon: CreditCard },
   { id: 'messages', label: 'الرسائل', Icon: MessageCircle },
@@ -273,6 +274,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'calendar' && <CalendarTab flash={flash} />}
         {tab === 'theme' && <ThemeTab flash={flash} />}
         {tab === 'students' && <StudentsTab flash={flash} />}
+        {tab === 'codes' && <LoginCodesTab flash={flash} />}
         {tab === 'requests' && <TrackRequestsTab flash={flash} />}
         {tab === 'subs' && <SubscriptionsTab flash={flash} />}
         {tab === 'messages' && <MessagesTab flash={flash} />}
@@ -1861,6 +1863,166 @@ function StudentsTab({ flash }) {
               </div>
             </div>
             <button onClick={() => remove(s)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ══════════════ LOGIN CODES ══════════════ */
+/**
+ * A way in for a student whose email does not reach them.
+ *
+ * The site's outgoing mail is the weakest link in signing up, and a student
+ * who never receives the six-digit code has no route at all. This gives the
+ * owner one they can read out over WhatsApp.
+ *
+ * The code appears exactly once, here, right after it is issued. It is stored
+ * hashed, so it genuinely cannot be shown again — that is the point, not a
+ * limitation: a list of live codes the panel could re-read is a list worth
+ * stealing. If it is lost before it is delivered, revoke it and issue another.
+ */
+function LoginCodesTab({ flash }) {
+  const [codes, setCodes] = useState([])
+  const [tableReady, setTableReady] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+  const [label, setLabel] = useState('')
+  const [issuing, setIssuing] = useState(false)
+  const [fresh, setFresh] = useState(null)   // { code, email } — shown once
+  const [copied, setCopied] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { ok, data } = await apiJSON('/api/admin/login-codes')
+    if (ok) { setCodes(data.codes || []); setTableReady(data.tableReady !== false) }
+    else flash(data.error || 'تعذّر التحميل', 'error')
+    setLoading(false)
+  }, [flash])
+  useEffect(() => { load() }, [load])
+
+  async function issue() {
+    if (!email.trim()) return
+    setIssuing(true)
+    const { ok, data } = await apiJSON('/api/admin/login-codes', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim(), label: label.trim() }),
+    })
+    setIssuing(false)
+    if (!ok) { flash(data.error || 'تعذّر التوليد', 'error'); return }
+    setFresh({ code: data.code, email: data.email })
+    setCopied(false)
+    setEmail(''); setLabel('')
+    flash('تم توليد الكود')
+    load()
+  }
+
+  async function revoke(c) {
+    if (!confirm(`إلغاء كود ${c.email}؟ لن يعمل بعدها.`)) return
+    const { ok, data } = await apiJSON(`/api/admin/login-codes?id=${c.id}`, { method: 'DELETE' })
+    if (ok) { flash('تم الإلغاء'); setCodes(xs => xs.filter(x => x.id !== c.id)) }
+    else flash(data.error || 'فشل الإلغاء', 'error')
+  }
+
+  // navigator.clipboard is unavailable on plain http and in some in-app
+  // browsers, so the code stays selectable on screen either way.
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      flash('نُسخ الكود')
+    } catch {
+      flash('انسخه يدوياً من الأعلى', 'error')
+    }
+  }
+
+  const state = (c) => {
+    if (c.used_at) return { text: `استُخدم ${fmtDate(c.used_at)}`, color: P.green }
+    if (new Date(c.expires_at).getTime() < Date.now()) return { text: 'منتهٍ', color: '#93b0a1' }
+    return { text: `صالح حتى ${fmtDate(c.expires_at)}`, color: P.gold }
+  }
+
+  return (
+    <div>
+      <SectionHeader title={`أكواد الدخول (${codes.length})`} onRefresh={load} />
+
+      {!tableReady && (
+        <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
+          <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>شغّل migration <strong>020_login_codes.sql</strong> في Supabase أولاً.</div>
+        </div>
+      )}
+
+      <div style={S.card}>
+        <div style={{ fontSize: 12, color: 'var(--mu)', lineHeight: 1.85, marginBottom: 12 }}>
+          وَلِّد كوداً وأرسله للطالب بأي وسيلة (واتساب مثلاً). يفتح له الحساب مباشرة
+          بلا بريد ولا كلمة مرور — يدخل من صفحة تسجيل الدخول ← «لدي كود دخول من الإدارة».
+          <br />صالح سبعة أيام ولمرّة واحدة فقط.
+        </div>
+
+        <label style={S.label}>بريد الطالب</label>
+        <input value={email} onChange={e => setEmail(e.target.value)} type="email"
+          placeholder="student@example.com"
+          style={{ ...S.input, direction: 'ltr', textAlign: 'left', marginBottom: 10 }} />
+
+        <label style={S.label}>ملاحظة (اختياري)</label>
+        <input value={label} onChange={e => setLabel(e.target.value)}
+          placeholder="مثال: نينيز — تحضيري"
+          style={{ ...S.input, marginBottom: 12 }} />
+
+        <button onClick={issue} disabled={issuing || !email.trim()}
+          style={{ ...S.btn(P.blue2), width: '100%', opacity: email.trim() ? 1 : 0.5 }}>
+          <KeyRound size={14} /> {issuing ? 'جارٍ التوليد…' : 'وَلِّد كوداً'}
+        </button>
+      </div>
+
+      {fresh && (
+        <div style={{ ...S.card, borderColor: `${P.gold}66`, background: 'var(--warnBg)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--warnTx)', marginBottom: 4 }}>
+            انسخه الآن — لن يظهر مرة أخرى
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--warnTx)', marginBottom: 12, direction: 'ltr', textAlign: 'right' }}>
+            {fresh.email}
+          </div>
+          <div style={{
+            fontFamily: 'monospace', direction: 'ltr', textAlign: 'center',
+            fontSize: 20, fontWeight: 900, letterSpacing: 1.5, color: 'var(--tx)',
+            background: 'var(--card)', border: '1px dashed #c8a84b88', borderRadius: 12,
+            padding: '14px 10px', marginBottom: 10, userSelect: 'all', wordBreak: 'break-all',
+          }}>{fresh.code}</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => copy(fresh.code)} style={{ ...S.btn(copied ? P.green : P.blue2), flex: 2 }}>
+              {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'نُسخ' : 'نسخ الكود'}
+            </button>
+            <button onClick={() => setFresh(null)} style={{ ...S.btn('#6b8c7d'), flex: 1 }}>
+              أخفِه
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <Loader /> : codes.length === 0 ? (
+        <Empty text="لا أكواد بعد" />
+      ) : codes.map(c => {
+        const st = state(c)
+        return (
+          <div key={c.id} style={{ ...S.card, display: 'flex', gap: 11, alignItems: 'flex-start', padding: 15 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: `${st.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <KeyRound size={15} color={st.color} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--tx)', direction: 'ltr', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {c.email}
+              </div>
+              {c.label && <div style={{ fontSize: 11.5, color: 'var(--mu)', marginTop: 2 }}>{c.label}</div>}
+              <div style={{ fontSize: 11, color: st.color, fontWeight: 700, marginTop: 3 }}>{st.text}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--mu)', marginTop: 2 }}>
+                وُلِّد {fmtDate(c.created_at)}
+                {c.attempts > 0 && ` · ${c.attempts} محاولة فاشلة`}
+              </div>
+            </div>
+            <button onClick={() => revoke(c)} title="إلغاء" style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
           </div>
         )
       })}

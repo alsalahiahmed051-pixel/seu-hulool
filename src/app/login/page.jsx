@@ -15,6 +15,10 @@ function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  // A way in that does not need email to work. The owner hands a code over
+  // directly — WhatsApp, in person — and the student types it here.
+  const [mode, setMode] = useState('password')   // 'password' | 'code'
+  const [code, setCode] = useState('')
   // /auth/callback redirects here with ?error=auth_failed when a code exchange
   // fails, and this page ignored it — a failed sign-in landed on a blank form
   // with no hint that anything had gone wrong.
@@ -42,6 +46,41 @@ function LoginForm() {
 
     router.push(next)
     router.refresh()
+  }
+
+  /**
+   * Redeem a login code.
+   *
+   * The server checks the code and hands back a one-time token; the session is
+   * created here, in the browser, by exchanging it. Nothing is emailed at any
+   * point — which is the whole reason this exists.
+   */
+  const handleCode = async (e) => {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch('/api/login-code', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || !d.tokenHash) {
+        setLoading(false)
+        setError(d.error || 'الكود غير صحيح أو منتهي')
+        return
+      }
+      const { error: vErr } = await supabase.auth.verifyOtp({
+        token_hash: d.tokenHash, type: 'magiclink',
+      })
+      setLoading(false)
+      if (vErr) { setError('تعذّر إكمال الدخول — اطلب كوداً جديداً'); return }
+      router.push(next)
+      router.refresh()
+    } catch {
+      setLoading(false)
+      setError('تعذّر الاتصال')
+    }
   }
 
   const handleGoogle = async () => {
@@ -103,27 +142,55 @@ function LoginForm() {
         <div style={{ flex: 1, height: 1, background: '#1c2e48' }} />
       </div>
 
-      <form onSubmit={handleSubmit}>
-        <Input
-          label="البريد الإلكتروني"
-          type="email" required value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="name@example.com" dir="ltr"
-          style={{ textAlign: 'left' }}
-        />
-        <Input
-          label="كلمة المرور"
-          type="password" required value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••" minLength={8}
-        />
-        <div style={{ textAlign: 'left', marginBottom: 18 }}>
-          <Link href="/reset-password" style={{ fontSize: 12, color: '#7d97b8', textDecoration: 'none' }}>
-            نسيت كلمة المرور؟
-          </Link>
-        </div>
-        <SubmitBtn loading={loading} type="submit">تسجيل الدخول</SubmitBtn>
-      </form>
+      {mode === 'password' ? (
+        <form onSubmit={handleSubmit}>
+          <Input
+            label="البريد الإلكتروني"
+            type="email" required value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="name@example.com" dir="ltr"
+            style={{ textAlign: 'left' }}
+          />
+          <Input
+            label="كلمة المرور"
+            type="password" required value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••" minLength={8}
+          />
+          <div style={{ textAlign: 'left', marginBottom: 18 }}>
+            <Link href="/reset-password" style={{ fontSize: 12, color: '#7d97b8', textDecoration: 'none' }}>
+              نسيت كلمة المرور؟
+            </Link>
+          </div>
+          <SubmitBtn loading={loading} type="submit">تسجيل الدخول</SubmitBtn>
+        </form>
+      ) : (
+        <form onSubmit={handleCode}>
+          <Input
+            label="كود الدخول"
+            type="text" required value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="SEU-XXXX-XXXX-XXXX" dir="ltr"
+            style={{ textAlign: 'center', letterSpacing: 1, fontFamily: 'ui-monospace, monospace' }}
+          />
+          <div style={{ fontSize: 11.5, color: '#7d97b8', lineHeight: 1.8, marginBottom: 18 }}>
+            كود تحصل عليه من إدارة الموقع. صالح لمرة واحدة، وينتهي بعد ٧ أيام.
+          </div>
+          <SubmitBtn loading={loading} type="submit">دخول بالكود</SubmitBtn>
+        </form>
+      )}
+
+      <button
+        type="button"
+        onClick={() => { setError(null); setMode(mode === 'password' ? 'code' : 'password') }}
+        style={{
+          width: '100%', marginTop: 14, background: 'none', border: 'none',
+          color: '#7d97b8', fontSize: 12.5, fontWeight: 700,
+          fontFamily: 'inherit', cursor: 'pointer',
+        }}
+      >
+        {mode === 'password' ? 'لدي كود دخول من الإدارة' : 'الدخول بالبريد وكلمة المرور'}
+      </button>
     </AuthShell>
   )
 }
