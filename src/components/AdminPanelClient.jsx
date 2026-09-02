@@ -3,13 +3,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { COURSE_GROUPS } from '@/lib/courses'
-import { waLink, waNumber, inviteMessage } from '@/lib/wa'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
   Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard, MessageCircle,
-  Sparkles, KeyRound, Copy, MessageSquare,
+  Sparkles,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -100,7 +99,6 @@ const TABS = [
   { id: 'calendar', label: 'التقويم', Icon: CalendarDays },
   { id: 'theme', label: 'الثيم', Icon: Palette },
   { id: 'students', label: 'الطلاب', Icon: GraduationCap },
-  { id: 'codes', label: 'أكواد الدخول', Icon: KeyRound },
   { id: 'requests', label: 'طلبات المسار', Icon: Send },
   { id: 'subs', label: 'الاشتراكات', Icon: CreditCard },
   { id: 'messages', label: 'الرسائل', Icon: MessageCircle },
@@ -275,7 +273,6 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'calendar' && <CalendarTab flash={flash} />}
         {tab === 'theme' && <ThemeTab flash={flash} />}
         {tab === 'students' && <StudentsTab flash={flash} />}
-        {tab === 'codes' && <LoginCodesTab flash={flash} />}
         {tab === 'requests' && <TrackRequestsTab flash={flash} />}
         {tab === 'subs' && <SubscriptionsTab flash={flash} />}
         {tab === 'messages' && <MessagesTab flash={flash} />}
@@ -1864,209 +1861,6 @@ function StudentsTab({ flash }) {
               </div>
             </div>
             <button onClick={() => remove(s)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-/* ══════════════ LOGIN CODES ══════════════ */
-/**
- * A way in for a student whose email does not reach them.
- *
- * The site's outgoing mail is the weakest link in signing up, and a student
- * who never receives the six-digit code has no route at all. This gives the
- * owner one they can read out over WhatsApp.
- *
- * The code appears exactly once, here, right after it is issued. It is stored
- * hashed, so it genuinely cannot be shown again — that is the point, not a
- * limitation: a list of live codes the panel could re-read is a list worth
- * stealing. If it is lost before it is delivered, revoke it and issue another.
- */
-function LoginCodesTab({ flash }) {
-  const [codes, setCodes] = useState([])
-  const [tableReady, setTableReady] = useState(true)
-  const [loading, setLoading] = useState(true)
-  const [email, setEmail] = useState('')
-  const [label, setLabel] = useState('')
-  const [phone, setPhone] = useState('')
-  const [issuing, setIssuing] = useState(false)
-  const [fresh, setFresh] = useState(null)   // { code, email, phone, label }
-  const [copied, setCopied] = useState(null) // 'code' | 'message'
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    const { ok, data } = await apiJSON('/api/admin/login-codes')
-    if (ok) { setCodes(data.codes || []); setTableReady(data.tableReady !== false) }
-    else flash(data.error || 'تعذّر التحميل', 'error')
-    setLoading(false)
-  }, [flash])
-  useEffect(() => { load() }, [load])
-
-  async function issue() {
-    if (!email.trim()) return
-    setIssuing(true)
-    const { ok, data } = await apiJSON('/api/admin/login-codes', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), label: label.trim() }),
-    })
-    setIssuing(false)
-    if (!ok) { flash(data.error || 'تعذّر التوليد', 'error'); return }
-    // The phone is not stored — it is only used to open the right WhatsApp
-    // conversation now. One less piece of a student's data on the server.
-    setFresh({ code: data.code, email: data.email, phone, label: label.trim() })
-    setCopied(null)
-    setEmail(''); setLabel(''); setPhone('')
-    flash('تم توليد الكود')
-    load()
-  }
-
-  async function revoke(c) {
-    if (!confirm(`إلغاء كود ${c.email}؟ لن يعمل بعدها.`)) return
-    const { ok, data } = await apiJSON(`/api/admin/login-codes?id=${c.id}`, { method: 'DELETE' })
-    if (ok) { flash('تم الإلغاء'); setCodes(xs => xs.filter(x => x.id !== c.id)) }
-    else flash(data.error || 'فشل الإلغاء', 'error')
-  }
-
-  // navigator.clipboard is unavailable on plain http and in some in-app
-  // browsers, so the code stays selectable on screen either way.
-  async function copy(text, what) {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(what)
-      flash(what === 'message' ? 'نُسخت الرسالة' : 'نُسخ الكود')
-    } catch {
-      flash('انسخه يدوياً من الأعلى', 'error')
-    }
-  }
-
-  const state = (c) => {
-    if (c.used_at) return { text: `استُخدم ${fmtDate(c.used_at)}`, color: P.green }
-    if (new Date(c.expires_at).getTime() < Date.now()) return { text: 'منتهٍ', color: '#93b0a1' }
-    return { text: `صالح حتى ${fmtDate(c.expires_at)}`, color: P.gold }
-  }
-
-  return (
-    <div>
-      <SectionHeader title={`أكواد الدخول (${codes.length})`} onRefresh={load} />
-
-      {!tableReady && (
-        <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
-          <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div>شغّل migration <strong>020_login_codes.sql</strong> في Supabase أولاً.</div>
-        </div>
-      )}
-
-      <div style={S.card}>
-        <div style={{ fontSize: 12, color: 'var(--mu)', lineHeight: 1.85, marginBottom: 12 }}>
-          وَلِّد كوداً وأرسله للطالب. يدخل به مباشرة بلا بريد ولا كلمة مرور، من
-          صفحة تسجيل الدخول ← «لدي كود دخول من الإدارة». صالح سبعة أيام ولمرّة واحدة.
-          <br /><strong style={{ color: 'var(--tx)' }}>ليس رمز التأكيد ذا الأرقام الستة</strong> —
-          ذاك يصل بالبريد عند إنشاء حساب، وهذا بديل عنه تماماً. لذلك تُرسَل معه
-          التعليمات والرابط، حتى لا يأخذه الطالب إلى الصفحة الخطأ.
-        </div>
-
-        <label style={S.label}>بريد الطالب</label>
-        <input value={email} onChange={e => setEmail(e.target.value)} type="email"
-          placeholder="student@example.com"
-          style={{ ...S.input, direction: 'ltr', textAlign: 'left', marginBottom: 10 }} />
-
-        <label style={S.label}>رقم واتساب (اختياري)</label>
-        <input value={phone} onChange={e => setPhone(e.target.value)} type="tel"
-          placeholder="05xxxxxxxx"
-          style={{ ...S.input, direction: 'ltr', textAlign: 'left', marginBottom: 4 }} />
-        <div style={{ fontSize: 11, color: phone.trim() && !waNumber(phone) ? P.red : 'var(--mu)', marginBottom: 10, lineHeight: 1.7 }}>
-          {phone.trim() && !waNumber(phone)
-            ? 'الرقم غير مكتمل — لن يظهر زر واتساب'
-            : 'لا يُحفظ في قاعدة البيانات — يُستخدم لفتح محادثة واتساب فقط.'}
-        </div>
-
-        <label style={S.label}>اسم أو ملاحظة (اختياري)</label>
-        <input value={label} onChange={e => setLabel(e.target.value)}
-          placeholder="مثال: نينيز — تحضيري"
-          style={{ ...S.input, marginBottom: 12 }} />
-
-        <button onClick={issue} disabled={issuing || !email.trim()}
-          style={{ ...S.btn(P.blue2), width: '100%', opacity: email.trim() ? 1 : 0.5 }}>
-          <KeyRound size={14} /> {issuing ? 'جارٍ التوليد…' : 'وَلِّد كوداً'}
-        </button>
-      </div>
-
-      {fresh && (
-        <div style={{ ...S.card, borderColor: `${P.gold}66`, background: 'var(--warnBg)' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--warnTx)', marginBottom: 4 }}>
-            انسخه الآن — لن يظهر مرة أخرى
-          </div>
-          <div style={{ fontSize: 11.5, color: 'var(--warnTx)', marginBottom: 12, direction: 'ltr', textAlign: 'right' }}>
-            {fresh.email}
-          </div>
-          <div style={{
-            fontFamily: 'monospace', direction: 'ltr', textAlign: 'center',
-            fontSize: 20, fontWeight: 900, letterSpacing: 1.5, color: 'var(--tx)',
-            background: 'var(--card)', border: '1px dashed #c8a84b88', borderRadius: 12,
-            padding: '14px 10px', marginBottom: 10, userSelect: 'all', wordBreak: 'break-all',
-          }}>{fresh.code}</div>
-          {/* The whole message, not just the code. The site has two codes —
-              the six digits that confirm an email at sign-up, and this one —
-              and nothing on screen told them apart, so a student who took an
-              admin code to the sign-up page was stuck through no fault of
-              their own. Sending the instructions with it ends that. */}
-          {(() => {
-            const text = inviteMessage({
-              code: fresh.code,
-              origin: typeof window === 'undefined' ? '' : window.location.origin,
-              name: (fresh.label || '').split('—')[0].trim(),
-            })
-            const wa = waLink(fresh.phone, text)
-            return (
-              <>
-                {wa && (
-                  <a href={wa} target="_blank" rel="noopener noreferrer"
-                    style={{ ...S.btn('#25D366'), width: '100%', textDecoration: 'none', marginBottom: 8 }}>
-                    <MessageSquare size={14} /> أرسله بواتساب إلى {waNumber(fresh.phone)}
-                  </a>
-                )}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <button onClick={() => copy(text, 'message')}
-                    style={{ ...S.btn(copied === 'message' ? P.green : P.blue2), flex: 1 }}>
-                    {copied === 'message' ? <Check size={14} /> : <Copy size={14} />} نسخ الرسالة كاملة
-                  </button>
-                  <button onClick={() => copy(fresh.code, 'code')}
-                    style={{ ...S.btn(copied === 'code' ? P.green : '#6b8c7d'), flex: 1 }}>
-                    {copied === 'code' ? <Check size={14} /> : <Copy size={14} />} الكود فقط
-                  </button>
-                </div>
-                <button onClick={() => setFresh(null)} style={{ ...S.btn('#6b8c7d'), width: '100%' }}>
-                  أخفِه
-                </button>
-              </>
-            )
-          })()}
-        </div>
-      )}
-
-      {loading ? <Loader /> : codes.length === 0 ? (
-        <Empty text="لا أكواد بعد" />
-      ) : codes.map(c => {
-        const st = state(c)
-        return (
-          <div key={c.id} style={{ ...S.card, display: 'flex', gap: 11, alignItems: 'flex-start', padding: 15 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: `${st.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <KeyRound size={15} color={st.color} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--tx)', direction: 'ltr', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {c.email}
-              </div>
-              {c.label && <div style={{ fontSize: 11.5, color: 'var(--mu)', marginTop: 2 }}>{c.label}</div>}
-              <div style={{ fontSize: 11, color: st.color, fontWeight: 700, marginTop: 3 }}>{st.text}</div>
-              <div style={{ fontSize: 10.5, color: 'var(--mu)', marginTop: 2 }}>
-                وُلِّد {fmtDate(c.created_at)}
-                {c.attempts > 0 && ` · ${c.attempts} محاولة فاشلة`}
-              </div>
-            </div>
-            <button onClick={() => revoke(c)} title="إلغاء" style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
           </div>
         )
       })}
