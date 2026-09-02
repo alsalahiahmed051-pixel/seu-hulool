@@ -176,6 +176,21 @@ export const supportMessageLimit = hasUpstash
     })
   : memoryLimiter(Number(process.env.SUPPORT_HOURLY_LIMIT || 8), 3_600_000, 'support')
 
+// Login codes get their own budget. Sharing the track-change limiter would
+// have meant three tries an hour — and a student who mistypes a hyphenated
+// code twice is not an attacker, while three tries a shared NAT away is a
+// student locked out for an hour by someone else. Ten is generous to a human
+// and worthless to a script: the code is twelve characters from a 31-symbol
+// alphabet, so guessing was never the threat this bounds. Probing is, and the
+// attempts counter in the panel makes it visible.
+export const loginCodeLimit = hasUpstash
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.fixedWindow(Number(process.env.LOGIN_CODE_HOURLY_LIMIT || 10), '1 h'),
+      prefix: 'rl:logincode',
+    })
+  : memoryLimiter(Number(process.env.LOGIN_CODE_HOURLY_LIMIT || 10), 3_600_000, 'logincode')
+
 // Receipt uploads get their own budget rather than sharing the track-change
 // one. Three per hour, shared with track requests and support messages across
 // everyone behind a campus or carrier NAT, meant a student could be refused a
