@@ -5159,9 +5159,12 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // The track is fixed for 15 days after it is confirmed; name and ID stay
   // editable throughout.
   const trackLocked = lockDaysLeft > 0;
-  // An approved request is the owner lifting the hold: the picker opens even
-  // though the 15 days haven't passed.
-  const changeApproved = myRequest?.status === "approved";
+  // An approved request lifts the hold ONCE: the picker opens even though the
+  // 15 days haven't passed, but only until a change is saved under it. After
+  // that its created_at is recorded on the profile, the hold returns, and a
+  // further change needs a new request.
+  const approvalConsumed = myRequest?.status === "approved" && profile?.approvalUsedAt === myRequest?.created_at;
+  const changeApproved = myRequest?.status === "approved" && !approvalConsumed;
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
@@ -5170,8 +5173,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
 
     // A stamp left over from a sign-out or a reset still holds — unless the
-    // owner just approved a change, which is exactly permission to re-pick.
-    if (lockConflicts(heldTrack, draft) && myRequest?.status !== "approved") {
+    // owner just approved a change, which is permission to re-pick exactly
+    // once. An approval already spent (its created_at recorded on the profile)
+    // no longer opens the lock.
+    const approvalUsable = myRequest?.status === "approved" && profile?.approvalUsedAt !== myRequest?.created_at;
+    if (lockConflicts(heldTrack, draft) && !approvalUsable) {
       onToast?.(`مسارك مثبَّت على «${trackLabel(heldTrack)}» — يتبقّى ${lockDaysLeft} يوم`, "warn");
       return;
     }
@@ -5195,6 +5201,10 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       // Minted once and kept for the life of the profile — the owner's handle
       // for this student when a request comes in.
       studentCode: profile?.studentCode || genStudentCode(),
+      // Spend the approval: once a change is saved under it the hold returns,
+      // and changing again needs a fresh request. Keyed to the request's
+      // created_at so a later, new approval is not seen as already used.
+      approvalUsedAt: (approvalUsable && trackChanged) ? (myRequest?.created_at || Date.now()) : (profile?.approvalUsedAt || null),
       // Only restart the lock when the track actually changed.
       confirmedAt,
       created: profile?.created || Date.now(),
@@ -5553,7 +5563,9 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
                   )}
                   {myRequest.status === "approved" && (
                     <div style={{ fontSize: 11.5, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
-                      يمكنك الآن اختيار مسارك من جديد.
+                      {approvalConsumed
+                        ? "استُخدمت الموافقة وتغيّر مسارك — لتغييره ثانية أرسل طلباً جديداً."
+                        : "يمكنك الآن اختيار مسارك من جديد."}
                     </div>
                   )}
                 </div>
