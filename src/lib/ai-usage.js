@@ -1,6 +1,7 @@
 import { createHmac } from 'crypto'
 import { redis, hasUpstash } from '@/lib/rate-limit'
 import { createAdminClient } from '@/lib/supabase/server'
+import { sanitisePoints, DEFAULT_POINTS } from '@/lib/ai-points'
 
 /**
  * The student-facing allowance on the assistant.
@@ -14,15 +15,19 @@ import { createAdminClient } from '@/lib/supabase/server'
  * the client is told the numbers only so it can show them.
  */
 
-export const FREE_MESSAGES = Number(process.env.AI_FREE_MESSAGES || 5)
+// Kept as the fallback ceiling only. The real free balance is the owner's,
+// read from site_content — see ai-points.js. Anything importing this name for
+// display would be showing a number the owner may have changed.
+export const FREE_MESSAGES = Number(process.env.AI_FREE_MESSAGES || DEFAULT_POINTS.free)
 export const COOLDOWN_MS = Number(process.env.AI_COOLDOWN_MINUTES || 60) * 60_000
 
-const mem = new Map() // deviceId -> { count, resetAt }
+const mem = new Map() // ownerKey -> { count, resetAt }
 
-const shape = (used, resetAt) => ({
+const shape = (used, resetAt, free = FREE_MESSAGES) => ({
   used,
-  remaining: Math.max(0, FREE_MESSAGES - used),
+  remaining: Math.max(0, free - used),
   resetAt,
+  free,
 })
 
 /**
@@ -47,20 +52,41 @@ function db() {
 }
 
 /**
+ * The owner's prices, from site_content.
+ *
+ * The read lives here, with the other database access; the rules that make the
+ * numbers safe live in ai-points.js, where they can be checked without one.
+ * An unreachable database means the defaults, which is the safe direction:
+ * a working allowance rather than an unlimited one.
+ */
+export async function readPointsConfig() {
+  const sb = db()
+  if (!sb) return { ...DEFAULT_POINTS }
+  try {
+    const { data } = await sb
+      .from('site_content').select('data').eq('key', 'ai_points').maybeSingle()
+    return sanitisePoints(data?.data)
+  } catch {
+    return { ...DEFAULT_POINTS }
+  }
+}
+
+/**
  * Current usage for a device, without spending anything.
  * Returns { used, remaining, resetAt } where resetAt is when the window rolls.
  */
-export async function readUsage(deviceId) {
+export async function readUsage(deviceId, free) {
   const key = `aiuse:${deviceId}`
   const now = Date.now()
-  const fresh = shape(0, now + COOLDOWN_MS)
+  const limit = free ?? (await readPointsConfig()).free
+  const fresh = shape(0, now + COOLDOWN_MS, limit)
   if (!deviceId) return fresh
 
   if (useRedis()) {
     try {
       const raw = await redis.get(key)
       const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-      if (parsed && parsed.resetAt > now) return shape(parsed.count, parsed.resetAt)
+      if (parsed && parsed.resetAt > now) return shape(parsed.count, parsed.resetAt, limit)
       return fresh
     } catch { /* fall through */ }
   }
@@ -77,29 +103,37 @@ export async function readUsage(deviceId) {
         if (!data) return fresh
         const resetAt = new Date(data.reset_at).getTime()
         // An elapsed window is a fresh one; the row is rewritten on the next spend.
-        return resetAt > now ? shape(data.used, resetAt) : fresh
+        return resetAt > now ? shape(data.used, resetAt, limit) : fresh
       }
     } catch { /* fall through */ }
   }
 
   const e = mem.get(key)
-  if (e && e.resetAt > now) return shape(e.count, e.resetAt)
+  if (e && e.resetAt > now) return shape(e.count, e.resetAt, limit)
   return fresh
 }
 
-/** Record one question. Returns the usage *after* it. */
-export async function spendMessage(deviceId) {
-  const key = `aiuse:${deviceId}`
+/**
+ * Charge for one action. Returns the balance *after* it.
+ *
+ * `cost` is what the action is priced at, so a quiz and a one-line question
+ * are no longer the same spend. `owner` is a device id or 'u:<user>' — the
+ * account when there is one, so the balance follows the person.
+ */
+export async function spendPoints(owner, cost = 1, free) {
+  const key = `aiuse:${owner}`
   const now = Date.now()
-  if (!deviceId) return shape(1, now + COOLDOWN_MS)
+  const limit = free ?? (await readPointsConfig()).free
+  const amount = Math.max(0, Math.round(Number(cost) || 0))
+  if (!owner) return shape(amount, now + COOLDOWN_MS, limit)
 
   if (useRedis()) {
     try {
-      const cur = await readUsage(deviceId)
+      const cur = await readUsage(owner, limit)
       const resetAt = cur.used === 0 ? now + COOLDOWN_MS : cur.resetAt
-      const next = { count: cur.used + 1, resetAt }
+      const next = { count: cur.used + amount, resetAt }
       await redis.set(key, JSON.stringify(next), { ex: Math.ceil((resetAt - now) / 1000) })
-      return shape(next.count, resetAt)
+      return shape(next.count, resetAt, limit)
     } catch { /* fall through */ }
   }
 
@@ -107,27 +141,31 @@ export async function spendMessage(deviceId) {
   if (sb) {
     try {
       // One statement, server-side: read-then-write from here would let two
-      // questions sent at once both read the same count and both write
-      // count + 1, handing out a free question per race.
-      const { data, error } = await sb.rpc('spend_ai_message', {
-        p_device_id: deviceId,
+      // questions sent at once both read the same balance and both write it,
+      // handing out a free question per race.
+      const { data, error } = await sb.rpc('spend_ai_points', {
+        p_owner: owner,
+        p_cost: amount,
         p_window_secs: Math.round(COOLDOWN_MS / 1000),
       })
       const row = Array.isArray(data) ? data[0] : data
-      if (!error && row) return shape(row.used, new Date(row.reset_at).getTime())
+      if (!error && row) return shape(row.used, new Date(row.reset_at).getTime(), limit)
     } catch { /* fall through */ }
   }
 
   // Last resort. Per-instance, so it under-counts on serverless — but the
   // alternative is refusing to answer at all, and the paid-provider cap in
   // ai-quota.js is a separate, independent guard on what this can cost.
-  const cur = await readUsage(deviceId)
+  const cur = await readUsage(owner, limit)
   const resetAt = cur.used === 0 ? now + COOLDOWN_MS : cur.resetAt
-  const next = { count: cur.used + 1, resetAt }
+  const next = { count: cur.used + amount, resetAt }
   mem.set(key, next)
   if (mem.size > 5000) for (const [k, v] of mem) if (v.resetAt <= now) mem.delete(k)
-  return shape(next.count, resetAt)
+  return shape(next.count, resetAt, limit)
 }
+
+/** Back-compat: one ordinary question. */
+export const spendMessage = (owner) => spendPoints(owner, 1)
 
 /**
  * Is this device on an approved, unexpired subscription?

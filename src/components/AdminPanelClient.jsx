@@ -1429,6 +1429,11 @@ function PayField({ label, k, value, onChange, placeholder, ltr, mono }) {
 function SubscriptionsTab({ flash }) {
   const [pay, setPay] = useState({ title: '', price: '', bank: '', accountName: '', iban: '', terms: '', verifyNote: '' })
   const [savingPay, setSavingPay] = useState(false)
+  // The prices of the assistant itself. Kept here rather than in the code
+  // because the owner asked to be able to change them, and a number that
+  // needs a deploy to adjust is a number nobody adjusts.
+  const [pts, setPts] = useState({ free: 20, message: 1, image: 2, quiz: 5 })
+  const [savingPts, setSavingPts] = useState(false)
   const [items, setItems] = useState([])
   const [tableReady, setTableReady] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -1436,16 +1441,35 @@ function SubscriptionsTab({ flash }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: subs }, { data: content }] = await Promise.all([
+    const [{ data: subs }, { data: content }, { data: ptsRow }] = await Promise.all([
       apiJSON('/api/admin/subscriptions'),
       apiJSON('/api/admin/site-content?key=payment'),
+      apiJSON('/api/admin/site-content?key=ai_points'),
     ])
     setItems(subs.requests || [])
     setTableReady(subs.tableReady !== false)
     if (content?.data && typeof content.data === 'object') setPay(p => ({ ...p, ...content.data }))
+    if (ptsRow?.data && typeof ptsRow.data === 'object') setPts(p => ({ ...p, ...ptsRow.data }))
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
+
+  async function savePoints() {
+    setSavingPts(true)
+    const clean = {
+      free: Math.max(0, Math.round(Number(pts.free) || 0)),
+      message: Math.max(0, Math.round(Number(pts.message) || 0)),
+      image: Math.max(0, Math.round(Number(pts.image) || 0)),
+      quiz: Math.max(0, Math.round(Number(pts.quiz) || 0)),
+    }
+    const { ok, data } = await apiJSON('/api/admin/site-content', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'ai_points', data: clean }),
+    })
+    setSavingPts(false)
+    setPts(clean)
+    flash(ok ? 'تم حفظ نقاط المساعد' : (data.error || 'تعذّر الحفظ'), ok ? 'success' : 'error')
+  }
 
   async function savePayment() {
     setSavingPay(true)
@@ -1503,6 +1527,40 @@ function SubscriptionsTab({ flash }) {
           <div>لعرض الطلبات شغّل migration <strong>013_ai_subscriptions.sql</strong> في Supabase.</div>
         </div>
       )}
+
+      <div style={S.card}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--tx)', marginBottom: 4 }}>نقاط المساعد الذكي</div>
+        <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginBottom: 12 }}>
+          الطالب يبدأ كل مدة برصيد نقاط، وكل إجراء يخصم منه. الرصيد يتبع حسابه لا جهازه.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 12 }}>
+          {[
+            ['free', 'الرصيد المجاني'],
+            ['message', 'سؤال عادي'],
+            ['image', 'سؤال بصورة'],
+            ['quiz', 'إنشاء اختبار'],
+          ].map(([k, label]) => (
+            <div key={k}>
+              <div style={{ fontSize: 11.5, color: 'var(--mu)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
+              <input type="number" min={0} value={pts[k]}
+                onChange={e => setPts(p => ({ ...p, [k]: e.target.value }))}
+                style={{
+                  width: '100%', boxSizing: 'border-box', background: 'var(--bg)',
+                  border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px',
+                  fontSize: 13, color: 'var(--tx)', fontFamily: 'inherit', direction: 'ltr',
+                  textAlign: 'left', outline: 'none',
+                }} />
+            </div>
+          ))}
+        </div>
+        <button onClick={savePoints} disabled={savingPts} style={{ ...S.btn(P.blue2), width: '100%' }}>
+          <Save size={14} /> {savingPts ? 'جارٍ الحفظ…' : 'حفظ النقاط'}
+        </button>
+        <div style={{ fontSize: 11, color: 'var(--mu2)', lineHeight: 1.75, marginTop: 10 }}>
+          مثال: رصيد {pts.free} يكفي {pts.message > 0 ? Math.floor(pts.free / pts.message) : '∞'} سؤالاً عادياً،
+          أو {pts.quiz > 0 ? Math.floor(pts.free / pts.quiz) : '∞'} اختباراً.
+        </div>
+      </div>
 
       <div style={S.card}>
         <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--tx)', marginBottom: 4 }}>بيانات التحويل</div>

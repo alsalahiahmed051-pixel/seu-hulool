@@ -1,6 +1,8 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota, PAID_DAILY_LIMIT } from '@/lib/ai-quota'
-import { readUsage, spendMessage, isSubscribed, looksLikeEmail, FREE_MESSAGES } from '@/lib/ai-usage'
+import { readUsage, spendPoints, isSubscribed, looksLikeEmail, readPointsConfig } from '@/lib/ai-usage'
+import { ownerKey, costOf } from '@/lib/ai-points'
+import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 
 export const runtime = 'nodejs'
@@ -241,15 +243,41 @@ export async function POST(request) {
   // 3c) The allowance the student actually sees. Subscribers skip it. Checked
   // here, on the server, against the signed device cookie — the client is
   // told the numbers only so it can display them.
+  // The balance belongs to the account when there is one, and only falls back
+  // to the device otherwise. That is the difference between an allowance that
+  // follows the person and one that resets on every new phone.
+  let userId = null
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    userId = user?.id || null
+  } catch { /* no session — the device key stands in */ }
+
+  const points = await readPointsConfig()
+  const owner = ownerKey({ userId, deviceId })
+
+  // What this particular question costs. An image is more to read and more to
+  // answer, so it is not priced the same as a line of text. Read from the
+  // request rather than assumed: the attachment UI lands next, and pricing
+  // that ignores what was actually sent is pricing that will be wrong the day
+  // it does.
+  const hasImage = Boolean(body.image) ||
+    (Array.isArray(body.messages) && body.messages.some(m => m && m.image))
+  const cost = costOf(hasImage ? 'image' : 'message', points)
+
   const subscribed = await isSubscribed(deviceId)
   if (!subscribed) {
-    const usage = await readUsage(deviceId)
-    if (usage.remaining <= 0) {
+    const usage = await readUsage(owner, points.free)
+    if (usage.remaining < cost) {
       return reply({
-        error: `استهلكت ${FREE_MESSAGES} أسئلة. انتظر حتى تنتهي المهلة أو اطلب اشتراكاً.`,
+        error: usage.remaining <= 0
+          ? `انتهت نقاطك (${points.free}). انتظر حتى تتجدّد أو اطلب اشتراكاً.`
+          : `يتبقّى لك ${usage.remaining} نقطة، وهذا السؤال يحتاج ${cost}.`,
         need: 'subscription',
-        limit: FREE_MESSAGES,
+        limit: points.free,
+        cost,
         used: usage.used,
+        remaining: usage.remaining,
         resetAt: usage.resetAt,
       }, 429)
     }
@@ -296,11 +324,12 @@ export async function POST(request) {
         // never do. The student's own allowance is spent on any answered
         // question, free or paid, but never on a failure.
         if (paid) await consumePaidQuota(request, deviceId)
-        const usage = subscribed ? null : await spendMessage(deviceId)
+        const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
         return reply({
           text,
           subscribed,
-          limit: FREE_MESSAGES,
+          limit: points.free,
+          cost,
           ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
         })
       }
