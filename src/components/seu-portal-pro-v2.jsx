@@ -1620,8 +1620,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
    * Passing the base explicitly is what makes the rewind real.
    */
   const send = async (q, base) => {
-    const text = (q || inp).trim();
-    if (!text || loading) return;
+    let text = (q || inp).trim();
+    // An attached image is a complete question on its own — a photo of an
+    // exercise with nothing typed. Allow it, and give the model a default
+    // instruction so it knows what to do with the picture.
+    if ((!text && !image) || loading) return;
+    if (!text && image) text = "حل هذا السؤال الموجود في الصورة واشرح الخطوات بالعربية.";
     // The email is asked for once and kept locally; the server checks its
     // shape and records it, so there is no point sending a question without it.
     if (!looksLikeEmail(aiEmail)) { setAskEmail(true); return; }
@@ -1675,17 +1679,28 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       setRecording(false);
       return;
     }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    const r = new SR();
+    const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    // No silent no-op: iOS Safari has no speech recognition, and a dead button
+    // reads as a bug. Say why instead.
+    if (!SR) { onToast?.("الإدخال الصوتي غير مدعوم في هذا المتصفح — جرّب كروم على الجوال", "warn"); return; }
+    let r;
+    try { r = new SR(); } catch { onToast?.("تعذّر تشغيل الميكروفون", "error"); return; }
     r.lang = "ar-SA";
     r.interimResults = false;
-    r.onresult = (e) => { const t = e.results[0][0].transcript; setInp(prev => prev + t); };
+    r.onresult = (e) => { const tx = e.results[0][0].transcript; setInp(prev => (prev ? prev + " " : "") + tx); };
     r.onend = () => setRecording(false);
-    r.onerror = () => setRecording(false);
+    // Errors were swallowed — a denied mic permission just looked broken. The
+    // common cases now say what to do.
+    r.onerror = (e) => {
+      setRecording(false);
+      const err = e?.error;
+      if (err === "not-allowed" || err === "service-not-allowed") onToast?.("امنح إذن الميكروفون من إعدادات المتصفح", "warn");
+      else if (err === "no-speech") onToast?.("لم أسمع شيئاً — حاول مرة أخرى", "info");
+      else if (err && err !== "aborted") onToast?.("تعذّر الإدخال الصوتي — حاول مجدداً", "error");
+    };
     recogRef.current = r;
-    r.start();
-    setRecording(true);
+    try { r.start(); setRecording(true); }
+    catch { setRecording(false); onToast?.("تعذّر بدء التسجيل — حاول مجدداً", "error"); }
   };
 
   const menuBtnSt = (danger) => ({
@@ -1949,7 +1964,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
           onFocus={e => e.target.style.borderColor = P.blue2}
           onBlur={e => e.target.style.borderColor = t.bd} />
-        {hasSpeech && (
+        {(
           <button onClick={toggleRecording} style={{
             width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
             background: recording ? P.red : t.s3,
@@ -1961,13 +1976,13 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
             {recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
           </button>
         )}
-        <button onClick={() => send()} disabled={loading || !inp.trim()} style={{
-          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || !inp.trim() ? "not-allowed" : "pointer",
-          background: loading || !inp.trim() ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
+        <button onClick={() => send()} disabled={loading || (!inp.trim() && !image)} style={{
+          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || (!inp.trim() && !image) ? "not-allowed" : "pointer",
+          background: loading || (!inp.trim() && !image) ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          boxShadow: loading || !inp.trim() ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
+          boxShadow: loading || (!inp.trim() && !image) ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
         }}>
-          <Send size={17} color={loading || !inp.trim() ? t.dim : "#fff"} />
+          <Send size={17} color={loading || (!inp.trim() && !image) ? t.dim : "#fff"} />
         </button>
       </div>
     </div>
