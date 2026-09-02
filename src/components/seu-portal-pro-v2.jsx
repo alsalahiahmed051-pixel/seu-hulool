@@ -360,6 +360,43 @@ function useCountUp(target, dur = 1200) {
   return v;
 }
 
+/**
+ * A ring that keeps going until someone acknowledges it, then stops on its own.
+ *
+ * The owner asked for thirty seconds of sound and then quiet. Two things make
+ * that safe rather than maddening: a single module-level handle, so a second
+ * notification replaces the first rather than ringing over it, and a hard
+ * ceiling that fires even if nothing ever acknowledges it — an alarm with no
+ * off switch is the one people disable permanently.
+ */
+let ringTimer = null;
+let ringStopAt = 0;
+
+export function stopRinging() {
+  if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+  ringStopAt = 0;
+}
+
+// playChime, not playBell: this is the sound reminders already made, and
+// changing what an alarm sounds like is not a side effect anyone asked for.
+function startRinging(seconds = 30) {
+  stopRinging();
+  ringStopAt = Date.now() + seconds * 1000;
+  playChime();
+  ringTimer = setInterval(() => {
+    if (Date.now() >= ringStopAt) { stopRinging(); return; }
+    playChime();
+  }, 3000);
+}
+
+// Touching the page at all counts as hearing it. An alarm that keeps sounding
+// after you have picked up the phone is the reason people mute an app for good.
+if (typeof window !== "undefined") {
+  const ack = () => stopRinging();
+  window.addEventListener("pointerdown", ack, { passive: true });
+  window.addEventListener("keydown", ack);
+}
+
 function playBell() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -3239,12 +3276,33 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
     return best;
   }, [schedule, nowTick]);
 
-  const enableNotifs = async () => {
+  // Off is a local preference, not a permission: a browser will not hand back
+  // an already-granted permission, so "turn it off" has to mean "stop sending
+  // them" rather than "revoke". And once a browser has been told no, asking
+  // again silently does nothing — so say where the setting lives instead of
+  // firing a request that cannot succeed and looks broken.
+  const toggleNotifs = async () => {
     if (typeof Notification === "undefined") { onToast?.("متصفحك لا يدعم التنبيهات", "warn"); return; }
+    if (notifPerm === "granted") {
+      setNotifPerm("off");
+      stopRinging();
+      onToast?.("أُوقفت تنبيهات المحاضرات — اضغط مرة أخرى لإعادتها", "info");
+      return;
+    }
+    if (notifPerm === "denied") {
+      onToast?.("المتصفح يمنع التنبيهات — فعّلها من إعدادات الموقع في متصفحك", "warn");
+      return;
+    }
+    if (notifPerm === "off") {
+      // Permission is still granted underneath; this only lifts our own pause.
+      setNotifPerm(Notification.permission);
+      onToast?.("عادت تنبيهات المحاضرات ✅", "success");
+      return;
+    }
     try {
       const p = await Notification.requestPermission();
       setNotifPerm(p);
-      onToast?.(p === "granted" ? "تم تفعيل التنبيهات ✅" : "لم يتم منح إذن التنبيهات", p === "granted" ? "success" : "warn");
+      onToast?.(p === "granted" ? "تم تفعيل التنبيهات ✅" : "لم يُمنح إذن التنبيهات", p === "granted" ? "success" : "warn");
     } catch { onToast?.("تعذّر تفعيل التنبيهات", "error"); }
   };
 
@@ -3301,11 +3359,46 @@ function SchedulePage({ t, schedule, setSchedule, onToast }) {
       )}
 
       {/* Notifications enable prompt */}
-      {notifPerm !== "granted" && notifPerm !== "unsupported" && (schedule || []).length > 0 && (
-        <button onClick={enableNotifs} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: `${P.gold}15`, border: `1px solid ${P.gold}40`, color: t.tx, borderRadius: 12, padding: "10px 14px", marginBottom: 14, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700 }}>
-          <Bell size={15} color={P.gold} /> فعّل تنبيهات المحاضرات على هذا الجهاز
-        </button>
-      )}
+      {/* A switch, not a one-off prompt.
+          This used to render only while permission was ungranted and then
+          vanish for good: no way to turn reminders off afterwards, and no way
+          back on for anyone who dismissed the browser dialog once. The owner's
+          objection — that it tells you to go and enable something instead of
+          letting you — was about exactly that. It stays put and reads its own
+          state, so the answer to "are reminders on?" is always on screen. */}
+      {notifPerm !== "unsupported" && (schedule || []).length > 0 && (() => {
+        const on = notifPerm === "granted";
+        const denied = notifPerm === "denied";
+        return (
+          <button onClick={toggleNotifs} style={{
+            width: "100%", display: "flex", alignItems: "center", gap: 10, textAlign: "right",
+            background: on ? `${P.green}12` : `${P.gold}12`,
+            border: `1px solid ${on ? P.green + "45" : P.gold + "40"}`,
+            color: t.tx, borderRadius: 12, padding: "11px 14px", marginBottom: 14,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            <Bell size={16} color={on ? P.green : P.gold} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800 }}>
+                {on ? "تنبيهات المحاضرات مفعّلة" : "تنبيهات المحاضرات متوقّفة"}
+              </div>
+              <div style={{ fontSize: 11, color: t.mu, marginTop: 2, lineHeight: 1.5 }}>
+                {on ? "اضغط للإيقاف" : denied ? "المتصفح رافضها — اضغط لمعرفة كيف تسمح بها" : "اضغط للتفعيل"}
+              </div>
+            </div>
+            <div style={{
+              width: 42, height: 24, borderRadius: 12, flexShrink: 0, position: "relative",
+              background: on ? P.green : t.bd, transition: "background .2s",
+            }}>
+              <div style={{
+                position: "absolute", top: 3, insetInlineStart: on ? 21 : 3,
+                width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                transition: "inset-inline-start .2s",
+              }} />
+            </div>
+          </button>
+        );
+      })()}
 
       {view === "list" && DAYS.map(day => {
         // Sort on parsed minutes: a lecture saved without a time would make
@@ -6394,7 +6487,10 @@ function useLectureReminders(schedule, notifSoundOn, push) {
           const when = diff <= 0 ? "تبدأ الآن" : `تبدأ خلال ${diff} دقيقة`;
           const body = `${lec.course} ${when}${where ? " • " + where : ""}`;
           push?.(`⏰ ${body}`, "warn");
-          if (notifSoundOn) playChime();
+          // Rings until acknowledged, capped at 30s. A single chime is missed
+          // by anyone not already looking at the phone, which is most of the
+          // reason a lecture reminder exists at all.
+          if (notifSoundOn) startRinging(30);
           try {
             if (typeof Notification !== "undefined" && Notification.permission === "granted") {
               new Notification("تذكير محاضرة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
@@ -6441,7 +6537,7 @@ function useTaskReminders(tasks, notifSoundOn, push) {
           : `يُغلق خلال ${Math.round(minsLeft / 1440)} يوم`;
         const body = `${tk.type ? tk.type + ": " : ""}${tk.title} — ${when}`;
         push?.(`🔔 ${body}`, "warn");
-        if (notifSoundOn && !chimed) { playChime(); chimed = true; }
+        if (notifSoundOn && !chimed) { startRinging(30); chimed = true; }
         try {
           if (typeof Notification !== "undefined" && Notification.permission === "granted") {
             new Notification("تذكير مهمة — حلول", { body, icon: "/icons/icon-192.png", tag: key });
