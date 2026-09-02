@@ -704,6 +704,239 @@ function SupportSheet({ t, onClose, profile, email, page, onToast }) {
   );
 }
 
+/* ══════════════ MESSAGES ══════════════ */
+
+/** How a thread labels itself, by what opened it. */
+const THREAD_KINDS = {
+  support:      { label: "رسالة",  color: P.blue2 },
+  subscription: { label: "اشتراك", color: P.gold },
+  track:        { label: "مسار",   color: "#7c3aed" },
+  system:       { label: "من الإدارة", color: P.green },
+};
+
+const relTime = (iso) => {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "الآن";
+  if (m < 60) return `قبل ${m} د`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `قبل ${h} س`;
+  const d = Math.floor(h / 24);
+  return d === 1 ? "أمس" : `قبل ${d} يوم`;
+};
+
+/**
+ * The student's side of the correspondence.
+ *
+ * This replaces a send-only form. The form could deliver a question and had
+ * nowhere to deliver an answer, so every reply the owner wrote — and every
+ * decision the site made about a person — arrived as silence. A student who
+ * hears nothing asks again, which is why the old inbox filled with repeats.
+ *
+ * One surface for all of it on purpose: a rejected subscription and a
+ * question about a missing file are both "something I need to hear about",
+ * and splitting them across pages is how people miss things.
+ */
+function MessagesSheet({ t, onClose, profile, email, onToast, onUnread }) {
+  const [threads, setThreads] = useState(null);
+  const [open, setOpen] = useState(null);      // thread id being read
+  const [composing, setComposing] = useState(false);
+  const [topic, setTopic] = useState("سؤال");
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/messages");
+      const d = await r.json().catch(() => ({}));
+      setThreads(d.threads || []);
+      onUnread?.(d.unread || 0);
+    } catch { setThreads([]); }
+  }, [onUnread]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const thread = threads?.find(x => x.id === open) || null;
+
+  // Opening a conversation is reading it. Clearing the badge here rather than
+  // on a button keeps the count honest: it says "things you have not looked
+  // at", which is the only meaning anybody reads into it.
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/messages", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ threadId: open }),
+    }).then(() => {
+      setThreads(ts => (ts || []).map(x => x.id === open ? { ...x, student_unread: 0 } : x));
+      onUnread?.((threads || []).reduce((n, x) => n + (x.id === open ? 0 : x.student_unread || 0), 0));
+    }).catch(() => {});
+    // `threads` is deliberately not a dependency: it changes on every load and
+    // would re-fire this write in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const send = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setSending(true);
+    try {
+      const r = await fetch("/api/messages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body, threadId: open || undefined, topic,
+          name: profile?.name, studentId: profile?.studentId, email,
+        }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setDraft(""); setComposing(false);
+        if (!open && d.threadId) setOpen(d.threadId);
+        await load();
+        onToast?.("أُرسلت رسالتك ✅", "success");
+      } else onToast?.(safeText(d.error, "تعذّر الإرسال"), "error");
+    } catch { onToast?.("تعذّر الاتصال", "error"); }
+    setSending(false);
+  };
+
+  const header = (title, back) => (
+    <div style={{ background: t.hero, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+      <button onClick={back} style={{ background: "rgba(255,255,255,.14)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 13px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700 }}>
+        <ArrowLeft size={15} /> رجوع
+      </button>
+      <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+        <Mail size={17} color={P.gold} /> {title}
+      </div>
+    </div>
+  );
+
+  const box = { width: "100%", boxSizing: "border-box", background: t.s2, border: `1.5px solid ${t.bd}`, borderRadius: 12, padding: "11px 13px", fontSize: 13.5, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", resize: "vertical" };
+
+  /* ── one conversation ─────────────────────────────────────────── */
+  if (thread) {
+    const k = THREAD_KINDS[thread.kind] || THREAD_KINDS.support;
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+        {header(safeText(thread.subject, "محادثة"), () => setOpen(null))}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+          <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 800, color: k.color, background: `${k.color}15`, border: `1px solid ${k.color}35`, borderRadius: 7, padding: "3px 8px", marginBottom: 14 }}>
+            {k.label}
+          </div>
+          {(thread.messages || []).map(m => {
+            const mine = m.sender === "student";
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: mine ? "flex-start" : "flex-end", marginBottom: 10 }}>
+                <div style={{
+                  maxWidth: "85%",
+                  background: mine ? t.s2 : `${P.green}12`,
+                  border: `1px solid ${mine ? t.bd : `${P.green}35`}`,
+                  borderRadius: 14, padding: "10px 13px",
+                }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 800, color: mine ? t.dim : P.green, marginBottom: 4 }}>
+                    {mine ? "أنت" : "الإدارة"} · {relTime(m.created_at)}
+                  </div>
+                  <div style={{ fontSize: 13.5, color: t.tx, lineHeight: 1.9, whiteSpace: "pre-wrap" }}>
+                    {safeText(m.body, "")}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ padding: 14, borderTop: `1px solid ${t.bd}`, background: t.s1, maxWidth: 620, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2}
+            placeholder="اكتب ردّك…" style={{ ...box, marginBottom: 8 }} />
+          <Btn variant="primary" onClick={send} disabled={sending || !draft.trim()} style={{ width: "100%" }}>
+            <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال"}
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── writing a new one ────────────────────────────────────────── */
+  if (composing) {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+        {header("رسالة جديدة", () => setComposing(false))}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+          <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 6 }}>الموضوع</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+            {SUPPORT_TOPICS.map(x => (
+              <button key={x} onClick={() => setTopic(x)} style={{
+                background: topic === x ? `${P.blue2}18` : t.s2,
+                border: `1.5px solid ${topic === x ? P.blue2 : t.bd}`,
+                borderRadius: 9, padding: "7px 12px", cursor: "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 800, color: topic === x ? P.blue2 : t.mu,
+              }}>{x}</button>
+            ))}
+          </div>
+          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={6}
+            placeholder="اكتب رسالتك…" style={{ ...box, marginBottom: 12 }} />
+          <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.8, marginBottom: 14 }}>
+            {profile?.name || email
+              ? <>يُرسَل معها: {[profile?.name, profile?.studentId, email].filter(Boolean).join(" · ")}</>
+              : "لم تُكمل ملفك — الرد سيصلك هنا في هذه الصفحة على أي حال."}
+          </div>
+          <Btn variant="primary" onClick={send} disabled={sending || !draft.trim()} style={{ width: "100%" }}>
+            <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال"}
+          </Btn>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── the list ─────────────────────────────────────────────────── */
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 620, background: t.bg, display: "flex", flexDirection: "column", animation: "fadeIn .2s ease" }}>
+      {header("الرسائل", onClose)}
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, maxWidth: 620, margin: "0 auto", width: "100%" }}>
+        <Btn variant="gold" onClick={() => { setDraft(""); setComposing(true); }} style={{ width: "100%", marginBottom: 14 }}>
+          <MessageCircle size={15} /> راسل الإدارة
+        </Btn>
+
+        {threads === null ? (
+          <div style={{ fontSize: 13, color: t.mu, textAlign: "center", padding: 30 }}>جارٍ التحميل…</div>
+        ) : threads.length === 0 ? (
+          <div style={{ background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: 22, textAlign: "center" }}>
+            <Mail size={26} color={t.dim} style={{ marginBottom: 10 }} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, marginBottom: 5 }}>لا رسائل بعد</div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.85 }}>
+              أي سؤال أو مشكلة أو ملف ناقص — اكتب لنا. وكل ردّ على طلباتك يصلك هنا.
+            </div>
+          </div>
+        ) : threads.map(x => {
+          const k = THREAD_KINDS[x.kind] || THREAD_KINDS.support;
+          const last = (x.messages || [])[x.messages.length - 1];
+          return (
+            <button key={x.id} onClick={() => setOpen(x.id)} style={{
+              width: "100%", textAlign: "right", background: t.s1,
+              border: `1.5px solid ${x.student_unread > 0 ? `${P.blue2}55` : t.bd}`,
+              borderRadius: 14, padding: 14, marginBottom: 9, cursor: "pointer",
+              fontFamily: "inherit", display: "block",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: k.color, background: `${k.color}15`, borderRadius: 6, padding: "2px 7px" }}>{k.label}</span>
+                {x.student_unread > 0 && (
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: P.blue2 }} />
+                )}
+                <span style={{ marginRight: "auto", fontSize: 11, color: t.dim }}>{relTime(x.last_message_at)}</span>
+              </div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 3 }}>
+                {safeText(x.subject, "محادثة")}
+              </div>
+              {last && (
+                <div style={{ fontSize: 12, color: t.mu, lineHeight: 1.7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {last.sender === "admin" ? "الإدارة: " : "أنت: "}{safeText(last.body, "")}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * What a browsing visitor is told when they reach for something an account
  * unlocks. Named for what it is rather than "upgrade": nothing is being sold
@@ -4635,7 +4868,7 @@ function TrackPicker({ draft, set, t, disabled }) {
 /* ══════════════════════════════════════════════════════════════
    PROFILE / STATS PAGE
    ══════════════════════════════════════════════════════════════ */
-function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "" }) {
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "", onMessages = null, msgUnread = 0 }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
@@ -4878,6 +5111,39 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           <div style={{ fontSize: 11, color: t.dim, textAlign: "center", marginTop: 10, lineHeight: 1.7 }}>
             يصلك رمز من ٦ أرقام على بريدك للتأكد منه.
           </div>
+        </div>
+      )}
+
+      {/* Settings, said out loud.
+          It was a bare gear on a coloured header, one of two unlabelled icons
+          — the owner's word for it was "lost". An icon is a reminder for
+          someone who already knows the thing is there; it is not a way to
+          find it. The gear stays for whoever has learned it; this is for
+          everyone else. */}
+      {!editing && (
+        <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
+          <button onClick={openSettings} style={{
+            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
+            cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
+          }}>
+            <Settings size={16} color={P.blue2} /> الإعدادات
+          </button>
+          <button onClick={() => onMessages?.()} style={{
+            flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            background: t.s1, border: `1.5px solid ${msgUnread > 0 ? `${P.gold}55` : t.bd}`,
+            borderRadius: 14, padding: "13px 10px",
+            cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
+          }}>
+            <Mail size={16} color={P.gold} /> الرسائل
+            {msgUnread > 0 && (
+              <span style={{
+                minWidth: 18, height: 18, borderRadius: 9, padding: "0 4px", background: P.gold,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 11, fontWeight: 900, color: "#1a1a1a",
+              }}>{msgUnread > 9 ? "9+" : msgUnread}</span>
+            )}
+          </button>
         </div>
       )}
 
@@ -6243,6 +6509,22 @@ export default function App() {
     setAiClearKey(k => k + 1);
   };
   const [notifOpen, setNotifOpen] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [msgUnread, setMsgUnread] = useState(0);
+
+  // The badge has to be right before the sheet is ever opened, or a reply
+  // waiting for someone is a reply they have no reason to go and look for.
+  // Cheap enough to repeat: one indexed count, not a scan of the messages.
+  useEffect(() => {
+    let alive = true;
+    const check = () => fetch("/api/messages")
+      .then(r => r.json())
+      .then(d => { if (alive) setMsgUnread(d.unread || 0); })
+      .catch(() => {});
+    check();
+    const id = setInterval(check, 60_000);
+    return () => { alive = false; clearInterval(id); };
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -6486,6 +6768,21 @@ export default function App() {
         }}>
           {dark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
+        {/* Messages sit beside announcements, not inside settings. A reply is
+            something addressed to you; an announcement is not, and burying the
+            first behind a gear icon is how replies went unread. */}
+        <button onClick={() => setMessagesOpen(true)} title="الرسائل" aria-label="الرسائل" style={{
+          position: "relative", background: t.s2, border: `1px solid ${msgUnread > 0 ? `${P.gold}55` : t.bd}`,
+          borderRadius: 10, padding: 8, cursor: "pointer", display: "flex",
+          color: msgUnread > 0 ? P.gold : t.mu,
+        }}>
+          <Mail size={16} />
+          {msgUnread > 0 && <span style={{
+            position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8,
+            padding: "0 3px", background: P.gold, display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 11, fontWeight: 900, color: "#1a1a1a",
+          }}>{msgUnread > 9 ? "9+" : msgUnread}</span>}
+        </button>
         <button onClick={() => setNotifOpen(true)} title="الإشعارات" aria-label="الإشعارات" style={{
           position: "relative", background: t.s2, border: `1px solid ${t.bd}`,
           borderRadius: 10, padding: 8, cursor: "pointer", display: "flex", color: t.mu,
@@ -6548,6 +6845,7 @@ export default function App() {
           notes={notes} openCourse={openCourse} openSettings={() => setSettingsOpen(true)}
           savedAccount={savedAccount} onLogin={() => setSignedOut(true)}
           accounts={account.configured} signedIn={account.signedIn}
+          onMessages={() => setMessagesOpen(true)} msgUnread={msgUnread}
           studentCode={profile?.studentCode || ""} />}
       </div>
 
@@ -6619,7 +6917,10 @@ export default function App() {
         weeklyGoal={weeklyGoal} setWeeklyGoal={setWeeklyGoal}
         onReset={resetStudyData} onResetAll={resetAll} resetCounts={resetCounts}
         profile={profile} rememberAccount={rememberAccount} setRememberAccount={setRememberAccount}
-        onSignOut={signOut} onSupport={() => setSupportOpen(true)} onToast={toasts.push} />}
+        onSignOut={signOut} onSupport={() => setMessagesOpen(true)} onToast={toasts.push} />}
+      {messagesOpen && <MessagesSheet t={t} onClose={() => setMessagesOpen(false)}
+        profile={profile} email={aiEmail || profile?.email || ""}
+        onToast={toasts.push} onUnread={setMsgUnread} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
