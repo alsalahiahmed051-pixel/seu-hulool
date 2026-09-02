@@ -100,7 +100,7 @@ const TABS = [
   { id: 'students', label: 'الطلاب', Icon: GraduationCap },
   { id: 'requests', label: 'طلبات المسار', Icon: Send },
   { id: 'subs', label: 'الاشتراكات', Icon: CreditCard },
-  { id: 'support', label: 'الرسائل', Icon: MessageCircle },
+  { id: 'messages', label: 'الرسائل', Icon: MessageCircle },
   { id: 'users', label: 'المستخدمون', Icon: Users },
 ]
 
@@ -273,7 +273,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'students' && <StudentsTab flash={flash} />}
         {tab === 'requests' && <TrackRequestsTab flash={flash} />}
         {tab === 'subs' && <SubscriptionsTab flash={flash} />}
-        {tab === 'support' && <SupportTab flash={flash} />}
+        {tab === 'messages' && <MessagesTab flash={flash} />}
         {tab === 'users' && <UsersTab flash={flash} adminEmail={adminEmail} />}
       </div>
 
@@ -1190,115 +1190,211 @@ function TrackRequestsTab({ flash }) {
  * contact details anywhere were the university's switchboard, which is not
  * who you tell that a file is missing.
  */
-function SupportTab({ flash }) {
-  const [items, setItems] = useState([])
+/**
+ * The reply box on a conversation.
+ *
+ * Module scope, like RequestReply and for the same reason: a component
+ * declared inside another is a new type on every render, so React remounts
+ * the textarea on each keystroke and focus is lost after every letter. That
+ * bug has already happened twice in this file.
+ */
+function ThreadReply({ thread, busy, onSend }) {
+  const [text, setText] = useState('')
+  return (
+    <div style={{ marginTop: 10 }}>
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={2}
+        placeholder="اكتب ردّك — يصل الطالب داخل الموقع مباشرة"
+        style={{
+          width: '100%', boxSizing: 'border-box', background: 'var(--bg)',
+          border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px',
+          fontSize: 12.5, color: 'var(--tx)', fontFamily: 'inherit',
+          direction: 'rtl', outline: 'none', resize: 'vertical', marginBottom: 8,
+        }}
+      />
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          onClick={async () => { const ok = await onSend(thread, text); if (ok) setText('') }}
+          disabled={busy || !text.trim()}
+          style={{ ...S.btn(P.green), flex: 1, opacity: text.trim() ? 1 : 0.5 }}>
+          <Send size={14} /> إرسال الرد
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ══════════════ MESSAGES ══════════════ */
+/**
+ * Both sides of every conversation.
+ *
+ * The old tab could only answer by opening the student's mail client — which
+ * meant the reply left the site, needed an address the student may never have
+ * given, and never appeared anywhere they would look. Replies land in their
+ * inbox now, in the same thread as the question.
+ *
+ * Threads waiting on you sort first; that ordering comes from the API so the
+ * queue is the same whichever way it is read.
+ */
+function MessagesTab({ flash }) {
+  const [threads, setThreads] = useState([])
   const [tableReady, setTableReady] = useState(true)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')
+  const [busy, setBusy] = useState(null)
+  const [openId, setOpenId] = useState(null)
+  const [filter, setFilter] = useState('waiting')
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await apiJSON('/api/admin/support')
-    setItems(data.messages || [])
-    setTableReady(data.tableReady !== false)
+    const { ok, data } = await apiJSON('/api/admin/messages')
+    if (ok) { setThreads(data.threads || []); setTableReady(data.tableReady !== false) }
+    else flash(data.error || 'تعذّر التحميل', 'error')
     setLoading(false)
-  }, [])
+  }, [flash])
   useEffect(() => { load() }, [load])
 
-  async function setStatus(m, status) {
-    let reply = m.admin_reply || ''
-    if (status === 'answered') {
-      const r = window.prompt('ردّك (يُحفظ للسجل):', reply)
-      if (r === null) return
-      reply = r
-    }
-    const { ok, data } = await apiJSON('/api/admin/support', {
+  async function send(thread, body) {
+    if (!body.trim()) return false
+    setBusy(thread.id)
+    const { ok, data } = await apiJSON('/api/admin/messages', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId: thread.id, body }),
+    })
+    setBusy(null)
+    if (ok) { flash('وصل ردّك للطالب'); load(); return true }
+    flash(data.error || 'تعذّر الإرسال', 'error')
+    return false
+  }
+
+  async function mark(thread, status) {
+    setBusy(thread.id)
+    const { ok } = await apiJSON('/api/admin/messages', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: m.id, status, reply }),
+      body: JSON.stringify({ threadId: thread.id, status }),
     })
-    if (ok) { flash('تم التحديث'); load() } else flash(data.error || 'تعذّر الحفظ', 'error')
+    setBusy(null)
+    if (ok) load()
   }
 
-  async function remove(m) {
-    if (!confirm('حذف هذه الرسالة؟')) return
-    await apiJSON('/api/admin/support', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: m.id }),
-    })
-    flash('تم الحذف'); load()
+  async function remove(thread) {
+    if (!confirm('حذف هذه المحادثة وكل رسائلها؟')) return
+    const { ok } = await apiJSON(`/api/admin/messages?id=${thread.id}`, { method: 'DELETE' })
+    if (ok) { flash('حُذفت المحادثة'); load() }
   }
 
-  const statusMeta = {
-    new: { label: 'جديدة', color: P.gold },
-    read: { label: 'مقروءة', color: P.blue2 },
-    answered: { label: 'أُجيبت', color: P.green },
+  const waiting = threads.filter(t => t.admin_unread > 0).length
+  const shown = filter === 'waiting' ? threads.filter(t => t.admin_unread > 0)
+    : filter === 'open' ? threads.filter(t => t.status === 'open')
+      : threads
+
+  if (loading) return <div style={S.card}>جارٍ التحميل…</div>
+  if (!tableReady) return (
+    <div style={{ ...S.card, lineHeight: 1.9 }}>
+      جدول الرسائل غير موجود بعد — شغّل الترحيل <code>019_messages.sql</code>.
+    </div>
+  )
+
+  const KIND = {
+    support: { label: 'رسالة', color: P.blue2 },
+    subscription: { label: 'اشتراك', color: P.gold },
+    track: { label: 'مسار', color: P.purple },
+    system: { label: 'من الإدارة', color: P.green },
   }
-  const unread = items.filter(m => m.status === 'new').length
-  const shown = filter === 'all' ? items : items.filter(m => m.status === filter)
 
   return (
     <div>
-      <SectionHeader title={`الرسائل${unread ? ` (${unread} جديدة)` : ''}`} onRefresh={load} />
+      <SectionHeader title={`الرسائل${waiting ? ` (${waiting} بانتظارك)` : ''}`} onRefresh={load} />
 
-      {!tableReady && (
-        <div style={{ ...S.card, background: 'var(--warnBg)', border: '1px solid #c8a84b55', display: 'flex', gap: 10, fontSize: 12, color: 'var(--warnTx)', lineHeight: 1.7 }}>
-          <AlertCircle size={16} color={P.gold} style={{ flexShrink: 0, marginTop: 2 }} />
-          <div>لعرض الرسائل شغّل migration <strong>015_support_messages.sql</strong> في Supabase.</div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {[['all', `الكل (${items.length})`], ['new', `جديدة (${unread})`], ['read', 'مقروءة'], ['answered', 'أُجيبت']].map(([id, label]) => (
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+        {[['waiting', `بانتظارك (${waiting})`], ['open', 'مفتوحة'], ['all', `الكل (${threads.length})`]].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)} style={{
-            padding: '5px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
-            fontSize: 12.5, fontWeight: 700, whiteSpace: 'nowrap',
-            background: filter === id ? P.blue2 : 'var(--soft)',
-            border: `1px solid ${filter === id ? P.blue2 : 'var(--bd)'}`,
-            color: filter === id ? '#fff' : 'var(--mu)',
+            background: filter === id ? `${P.blue2}18` : 'var(--s2)',
+            border: `1.5px solid ${filter === id ? P.blue2 : 'var(--bd)'}`,
+            borderRadius: 9, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit',
+            fontSize: 12.5, fontWeight: 800, color: filter === id ? P.blue2 : 'var(--mu)',
           }}>{label}</button>
         ))}
       </div>
 
-      {loading ? <Loader /> : shown.length === 0 ? <Empty text="لا رسائل" /> : shown.map(m => {
-        const meta = statusMeta[m.status] || statusMeta.new
+      {shown.length === 0 && (
+        <div style={{ ...S.card, color: 'var(--mu)' }}>
+          {filter === 'waiting' ? 'لا شيء ينتظر ردّك.' : 'لا محادثات.'}
+        </div>
+      )}
+
+      {shown.map(t => {
+        const k = KIND[t.kind] || KIND.support
+        const expanded = openId === t.id
+        const last = (t.messages || [])[t.messages.length - 1]
         return (
-          <div key={m.id} style={{ ...S.card, borderRight: `3px solid ${meta.color}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: P.purple, background: `${P.purple}18`, borderRadius: 6, padding: '2px 8px' }}>{m.topic || 'سؤال'}</span>
-              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--tx)' }}>{m.student_name || 'زائر'}</span>
-              {m.student_id && <span style={{ fontSize: 11.5, color: 'var(--mu)', fontFamily: 'monospace', direction: 'ltr' }}>{m.student_id}</span>}
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, background: `${meta.color}18`, borderRadius: 6, padding: '2px 8px' }}>{meta.label}</span>
-              <span style={{ fontSize: 11, color: 'var(--mu)', marginRight: 'auto' }}>{fmtDate(m.created_at)}</span>
+          <div key={t.id} style={{ ...S.card, borderColor: t.admin_unread > 0 ? `${P.blue2}55` : 'var(--bd)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 10.5, fontWeight: 800, color: k.color, background: `${k.color}15`, borderRadius: 6, padding: '2px 7px' }}>{k.label}</span>
+              {t.admin_unread > 0 && (
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#fff', background: P.blue2, borderRadius: 6, padding: '2px 7px' }}>
+                  {t.admin_unread} جديدة
+                </span>
+              )}
+              {t.status === 'closed' && (
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--mu)', background: 'var(--s2)', borderRadius: 6, padding: '2px 7px' }}>مغلقة</span>
+              )}
+              <span style={{ marginRight: 'auto', fontSize: 11, color: 'var(--mu2)' }}>
+                {new Date(t.last_message_at).toLocaleString('ar-SA')}
+              </span>
             </div>
-            {m.email && <div style={{ fontSize: 12, color: P.blue2, direction: 'ltr', textAlign: 'right', marginBottom: 6 }}>{m.email}</div>}
-            <div style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.85, background: 'var(--bg)', borderRadius: 10, padding: '11px 13px', marginBottom: 10, whiteSpace: 'pre-wrap' }}>{m.message}</div>
-            {m.admin_reply && (
-              <div style={{ fontSize: 12, color: 'var(--mu2)', lineHeight: 1.7, marginBottom: 10 }}>
-                <strong style={{ color: 'var(--tx)' }}>ردّك:</strong> {m.admin_reply}
+
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tx)', marginBottom: 3 }}>
+              {t.student_name || 'طالب'}{t.student_id ? ` · ${t.student_id}` : ''}{t.email ? ` · ${t.email}` : ''}
+            </div>
+
+            {!expanded && last && (
+              <div style={{ fontSize: 12, color: 'var(--mu)', lineHeight: 1.7, marginBottom: 10 }}>
+                {last.sender === 'admin' ? 'أنت: ' : ''}{String(last.body).slice(0, 140)}
               </div>
             )}
+
+            {expanded && (
+              <div style={{ marginBottom: 10 }}>
+                {(t.messages || []).map(m => (
+                  <div key={m.id} style={{
+                    background: m.sender === 'admin' ? `${P.green}0d` : 'var(--s2)',
+                    border: `1px solid ${m.sender === 'admin' ? `${P.green}30` : 'var(--bd)'}`,
+                    borderRadius: 10, padding: '9px 11px', marginBottom: 7,
+                  }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: m.sender === 'admin' ? P.green : 'var(--mu2)', marginBottom: 3 }}>
+                      {m.sender === 'admin' ? 'أنت' : (t.student_name || 'الطالب')} · {new Date(m.created_at).toLocaleString('ar-SA')}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--tx)', lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                  </div>
+                ))}
+                <ThreadReply thread={t} busy={busy === t.id} onSend={send} />
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {m.status === 'new' && (
-                <button onClick={() => setStatus(m, 'read')} style={{ ...S.btn(P.blue2), flex: 1 }}>
-                  <Eye size={14} /> مقروءة
+              <button onClick={() => setOpenId(expanded ? null : t.id)} style={{ ...S.btn(P.blue2), flex: 1 }}>
+                <Eye size={14} /> {expanded ? 'إخفاء' : `فتح المحادثة (${(t.messages || []).length})`}
+              </button>
+              {t.status === 'open' ? (
+                <button onClick={() => mark(t, 'closed')} disabled={busy === t.id} style={{ ...S.btn(P.green), flex: 1 }}>
+                  <CheckCircle size={14} /> إغلاق
+                </button>
+              ) : (
+                <button onClick={() => mark(t, 'open')} disabled={busy === t.id} style={{ ...S.btn(P.gold), flex: 1 }}>
+                  إعادة فتح
                 </button>
               )}
-              {m.status !== 'answered' && (
-                <button onClick={() => setStatus(m, 'answered')} style={{ ...S.btn(P.green), flex: 1 }}>
-                  <CheckCircle size={14} /> أُجيبت
-                </button>
-              )}
-              {m.email && (
-                <a href={`mailto:${m.email}?subject=${encodeURIComponent('رد من حلول SEU')}`}
-                  style={{ ...S.btn(P.purple), flex: 1, textDecoration: 'none', justifyContent: 'center' }}>
-                  <Send size={14} /> ردّ بالبريد
-                </a>
-              )}
-              <button onClick={() => remove(m)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
+              <button onClick={() => remove(t)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
             </div>
           </div>
         )
       })}
+
+      <div style={{ ...S.card, fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
+        ردّك يصل الطالب داخل الموقع في صندوق رسائله، ويستطيع أن يردّ عليك في المحادثة نفسها — لم يعد الردّ يحتاج بريداً ولا يغادر الموقع.
+      </div>
     </div>
   )
 }
