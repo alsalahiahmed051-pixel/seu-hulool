@@ -5758,6 +5758,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         );
       })()}
 
+      {/* Section: a quick glance at what's next. */}
+      {!editing && profile && (
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, margin: "2px 2px 8px", letterSpacing: 0.2 }}>نظرة سريعة</div>
+      )}
+
       {/* Next lecture — what's coming, without opening the schedule. */}
       {!editing && profile && nextLec && (
         <button onClick={() => setActiveTab("schedule")} style={{
@@ -5799,6 +5804,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           </div>
           <ChevronLeft size={16} color={t.dim} />
         </button>
+      )}
+
+      {/* Section: everything else — sharing, backup, the study plan. */}
+      {!editing && profile && (
+        <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, margin: "4px 2px 8px", letterSpacing: 0.2 }}>المزيد</div>
       )}
 
       {/* Share the app with classmates. */}
