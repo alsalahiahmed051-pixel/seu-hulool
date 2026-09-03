@@ -1100,14 +1100,14 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
     setSending(true);
     setSendErr("");
     try {
-      // Save a newly typed email so the assistant and any later request use
-      // the same one — the student should type it once, not every time.
-      if (savedEmail && savedEmail !== email) onSaveEmail?.(savedEmail);
       const res = await fetch("/api/subscription", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profile?.name,
-          email: savedEmail, note: note.trim(), receiptUrl: receipt.trim(),
+          // The minted ID identifies the student to the owner in place of a
+          // university number or an email.
+          studentId: profile?.studentCode || "",
+          note: note.trim(), receiptUrl: receipt.trim(),
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -1278,24 +1278,13 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="أي تفاصيل تساعد في المراجعة"
               style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", resize: "vertical", marginBottom: 12 }} />
 
-            {/* The email is how you answer them. If the assistant never asked
-                for one, ask here rather than turning the request away. */}
-            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>
-              بريدك الإلكتروني {looksLikeEmail(email) ? "" : "— لتصلك نتيجة الطلب"}
-            </div>
-            <input type="email" inputMode="email" value={emailDraft} onChange={e => setEmailDraft(e.target.value)}
-              placeholder="مثال: name@example.com" dir="ltr"
-              style={{
-                width: "100%", border: `1px solid ${emailDraft && !looksLikeEmail(emailDraft) ? `${P.orange}70` : t.bd}`,
-                borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx,
-                fontFamily: "inherit", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 6,
-              }} />
-            {emailDraft && !looksLikeEmail(emailDraft) && (
-              <div style={{ fontSize: 11, color: P.orange, marginBottom: 8 }}>تحقّق من صيغة البريد</div>
-            )}
-
-            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "8px 0 12px" }}>
-              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {savedEmail || "بريدك"}.
+            {/* No email: the result reaches the student in the in-app inbox,
+                keyed to their device and ID — the same place every admin
+                decision lands. The request carries the name and the ID so the
+                owner knows exactly who it is. */}
+            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "4px 0 12px" }}>
+              يُرسَل مع الطلب: {profile?.name || "اسمك"}{profile?.studentCode ? ` · ${profile.studentCode}` : ""}.
+              وتصلك النتيجة في «الرسائل» داخل الموقع.
             </div>
 
             {sendErr && (
@@ -1306,11 +1295,11 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             )}
 
             <Btn variant="primary" onClick={submit} style={{ width: "100%" }}
-              disabled={sending || !profileComplete(profile) || !savedEmail || (!receipt.trim() && !note.trim())}>
+              disabled={sending || !profileComplete(profile) || (!receipt.trim() && !note.trim())}>
               <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال الطلب"}
             </Btn>
-            {!sending && !savedEmail && (
-              <div style={{ fontSize: 11.5, color: t.mu, textAlign: "center", marginTop: 8 }}>أضف بريدك أعلاه لتتمكن من الإرسال</div>
+            {!sending && !profileComplete(profile) && (
+              <div style={{ fontSize: 11.5, color: t.mu, textAlign: "center", marginTop: 8 }}>أكمل ملفك (الاسم والمسار) من «حسابي» أولاً</div>
             )}
           </div>
         )}
