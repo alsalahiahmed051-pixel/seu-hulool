@@ -94,6 +94,9 @@ export async function enablePush(profile) {
         subscription: sub.toJSON(),
         track: profile?.track || null,
         plan: profile?.plan || null,
+        // The minted ID ties this device to the student, so the reminder
+        // scheduler can reach it when the site is closed.
+        code: profile?.studentCode || null,
         name: profile?.name || null,
       }),
     })
