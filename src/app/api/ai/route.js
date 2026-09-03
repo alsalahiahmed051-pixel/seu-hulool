@@ -252,12 +252,10 @@ export async function POST(request) {
     return res
   }
 
-  // 3b) An email identifies who is asking. It is a product gate, not proof of
-  // anything — we cannot verify an address here — so it is checked for shape
-  // and recorded, and that is all it claims to be.
-  if (!looksLikeEmail(body.email)) {
-    return reply({ error: 'أدخل بريدك الإلكتروني للمتابعة', need: 'email' }, 400)
-  }
+  // 3b) No email gate. Identity is the signed device cookie (and the account
+  // when there is one) — the same key the allowance is counted against below.
+  // The site no longer collects an email anywhere, so requiring one here would
+  // block every question.
 
   // 3c) The allowance the student actually sees. Subscribers skip it. Checked
   // here, on the server, against the signed device cookie — the client is
