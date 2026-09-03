@@ -9,6 +9,9 @@ import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
 import { pushSupported, pushState, enablePush, disablePush, registerServiceWorker } from "@/lib/push-client";
+// Reminder timing lives in one place so the in-app reminders and the
+// server-side scheduler agree to the minute.
+import { computeReminders, taskDueAt, taskLead, lectureLead } from "@/lib/reminders";
 import {
   Home, Search, Star, Calculator, Bell, Moon, Sun, ChevronRight,
   Image as ImageIcon,
@@ -2613,24 +2616,10 @@ const TASK_LEAD_CHOICES = [
   { mins: 2880, label: "قبل يومين" },
   { mins: 10080, label: "قبل أسبوع" },
 ];
-const taskLead = (tk) => (tk?.leadMins == null ? 1440 : Number(tk.leadMins));
+// taskLead is imported from @/lib/reminders (shared with the scheduler).
 const leadLabel = (m) => TASK_LEAD_CHOICES.find(c => c.mins === Number(m))?.label || `قبل ${m} دقيقة`;
 
-/**
- * A task's deadline as a real instant.
- *
- * Tasks carry a date and, optionally, a closing time — an assignment that
- * shuts at 23:59 is a different thing from one due "that day". With no time
- * given, end-of-day is the honest reading.
- */
-const taskDueAt = (tk) => {
-  if (!tk?.dueDate) return null;
-  const mins = timeToMin(tk.dueTime);
-  const d = new Date(`${tk.dueDate}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setMinutes(mins == null ? 23 * 60 + 59 : mins);
-  return d;
-};
+// taskDueAt is imported from @/lib/reminders (shared with the scheduler).
 const taskOpenAt = (tk) => {
   if (!tk?.openDate) return null;
   const mins = timeToMin(tk.openTime);
@@ -6818,8 +6807,7 @@ const REMIND_CHOICES = [
   { min: 60, label: "قبل ساعة" },
 ];
 const remindLabel = (m) => (REMIND_CHOICES.find(c => c.min === Number(m))?.label) || `قبل ${m} د`;
-// Lectures saved before this existed keep the original 5-minute lead.
-const lectureLead = (lec) => (lec.remindMin == null ? 5 : Number(lec.remindMin));
+// lectureLead is imported from @/lib/reminders (shared with the scheduler).
 
 /**
  * Fires each lecture's reminder at its own lead time (while the app is open):
@@ -6911,6 +6899,39 @@ function useTaskReminders(tasks, notifSoundOn, push) {
     const iv = setInterval(tick, 60000);
     return () => clearInterval(iv);
   }, [tasks, notifSoundOn, push]);
+}
+
+/**
+ * Mirror the student's upcoming reminders to the server so they arrive even
+ * when the site is closed.
+ *
+ * The in-app hooks above only fire from an open tab; this ships the same
+ * reminders (identical timing, via computeReminders) to the scheduler. It runs
+ * only when device notifications are actually switched on — there is no point
+ * queueing pushes for a device that can't receive them — and debounces so a
+ * burst of edits produces one sync, not one per keystroke.
+ */
+function useReminderSync(schedule, tasks, studentCode) {
+  useEffect(() => {
+    if (!studentCode || !pushSupported()) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const st = await pushState();
+        if (cancelled || !st.subscribed) return;
+        const reminders = computeReminders({ schedule, tasks });
+        await fetch("/api/reminders/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: studentCode, reminders }),
+        });
+      } catch {
+        // A failed sync is not worth surfacing: the in-app reminders still
+        // fire, and the next edit (or reload) retries.
+      }
+    }, 2000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [schedule, tasks, studentCode]);
 }
 
 export default function App() {
@@ -7008,6 +7029,8 @@ export default function App() {
   const toasts = useToasts();
   useLectureReminders(schedule, notifSoundOn, toasts.push);
   useTaskReminders(tasks, notifSoundOn, toasts.push);
+  // Keep the server's reminder queue in step so these also arrive when closed.
+  useReminderSync(schedule, tasks, profile?.studentCode);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();

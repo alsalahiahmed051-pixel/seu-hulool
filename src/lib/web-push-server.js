@@ -98,3 +98,44 @@ export async function sendPushToAudience({ title, body, url = '/', audience = 'a
   if (stale.length) await db.from('push_subscriptions').delete().in('id', stale)
   return { sent, failed, skipped: false }
 }
+
+/**
+ * Sends a push to every device belonging to one student (matched by the minted
+ * code stored on the subscription). Used by the reminder scheduler, which has
+ * already decided the message — this only fans it out to that student's
+ * devices and prunes any the push service reports as gone.
+ *
+ * Returns { sent, failed, skipped }.
+ */
+export async function sendPushToCode(code, { title, body, url = '/', tag = 'hulool-reminder' }) {
+  if (!ensureConfigured()) return { sent: 0, failed: 0, skipped: true }
+  if (!code) return { sent: 0, failed: 0, skipped: false }
+
+  const db = createAdminClient()
+  const { data: subs, error } = await db
+    .from('push_subscriptions')
+    .select('id, endpoint, p256dh, auth')
+    .eq('code', code)
+  if (error || !subs?.length) return { sent: 0, failed: 0, skipped: false }
+
+  const payload = JSON.stringify({ title, body, url, tag })
+  const stale = []
+  let sent = 0
+  let failed = 0
+
+  await Promise.all(
+    subs.map(async (s) => {
+      const subscription = { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }
+      try {
+        await webpush.sendNotification(subscription, payload)
+        sent++
+      } catch (e) {
+        failed++
+        if (e?.statusCode === 404 || e?.statusCode === 410) stale.push(s.id)
+      }
+    })
+  )
+
+  if (stale.length) await db.from('push_subscriptions').delete().in('id', stale)
+  return { sent, failed, skipped: false }
+}

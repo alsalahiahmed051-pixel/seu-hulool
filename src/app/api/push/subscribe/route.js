@@ -32,6 +32,7 @@ export async function POST(request) {
     auth,
     track: body.track || null,
     plan: body.plan || null,
+    code: body.code || null,
     student_name: body.name || null,
     user_agent: (request.headers.get('user-agent') || '').slice(0, 300),
     updated_at: new Date().toISOString(),
