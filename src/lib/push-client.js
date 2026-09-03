@@ -106,6 +106,41 @@ export async function enablePush(profile) {
   }
 }
 
+/**
+ * Make sure this browser's stored subscription carries the student's code.
+ *
+ * Reminders are addressed by code, so a device that switched notifications on
+ * before reminders existed — its stored row has no code — would never receive
+ * one, and nothing else ever re-saves that row. Writing the same endpoint back
+ * links it. Idempotent (the server upserts on endpoint), so callers can do
+ * this on every sync rather than tracking whether it already happened.
+ */
+export async function linkPushToCode(profile) {
+  const code = profile?.studentCode
+  if (!code || !pushSupported()) return { ok: false, reason: 'unsupported' }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration()
+    const sub = reg ? await reg.pushManager.getSubscription() : null
+    if (!sub) return { ok: false, reason: 'not-subscribed' }
+    const res = await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription: sub.toJSON(),
+        code,
+        // The row is replaced wholesale, so these ride along to avoid blanking
+        // the targeting fields an admin broadcast relies on.
+        track: profile?.track || null,
+        plan: profile?.plan || null,
+        name: profile?.name || null,
+      }),
+    })
+    return { ok: res.ok }
+  } catch {
+    return { ok: false, reason: 'error' }
+  }
+}
+
 // Opt out: unsubscribe locally and forget on the server.
 export async function disablePush() {
   if (!pushSupported()) return { ok: true }

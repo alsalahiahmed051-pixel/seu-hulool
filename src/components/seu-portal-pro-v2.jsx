@@ -8,7 +8,7 @@ import { browseGate } from "@/lib/auth-config";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
-import { pushSupported, pushState, enablePush, disablePush, registerServiceWorker } from "@/lib/push-client";
+import { pushSupported, pushState, enablePush, disablePush, linkPushToCode, registerServiceWorker } from "@/lib/push-client";
 // Reminder timing lives in one place so the in-app reminders and the
 // server-side scheduler agree to the minute.
 import { computeReminders, taskDueAt, taskLead, lectureLead } from "@/lib/reminders";
@@ -6911,7 +6911,13 @@ function useTaskReminders(tasks, notifSoundOn, push) {
  * queueing pushes for a device that can't receive them — and debounces so a
  * burst of edits produces one sync, not one per keystroke.
  */
-function useReminderSync(schedule, tasks, studentCode) {
+function useReminderSync(schedule, tasks, profile) {
+  // Primitives, not the profile object: it is rebuilt on every save, which
+  // would re-run this effect far more often than the values it actually reads.
+  const studentCode = profile?.studentCode;
+  const track = profile?.track;
+  const plan = profile?.plan;
+  const name = profile?.name;
   useEffect(() => {
     if (!studentCode || !pushSupported()) return;
     let cancelled = false;
@@ -6919,6 +6925,12 @@ function useReminderSync(schedule, tasks, studentCode) {
       try {
         const st = await pushState();
         if (cancelled || !st.subscribed) return;
+        // Claim the subscription for this student first. A device that turned
+        // notifications on before reminders shipped is stored without a code,
+        // and the sender addresses by code — so queueing reminders for it
+        // would deliver nothing until this links the two.
+        await linkPushToCode({ studentCode, track, plan, name });
+        if (cancelled) return;
         const reminders = computeReminders({ schedule, tasks });
         await fetch("/api/reminders/sync", {
           method: "POST",
@@ -6931,7 +6943,7 @@ function useReminderSync(schedule, tasks, studentCode) {
       }
     }, 2000);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [schedule, tasks, studentCode]);
+  }, [schedule, tasks, studentCode, track, plan, name]);
 }
 
 export default function App() {
@@ -7030,7 +7042,7 @@ export default function App() {
   useLectureReminders(schedule, notifSoundOn, toasts.push);
   useTaskReminders(tasks, notifSoundOn, toasts.push);
   // Keep the server's reminder queue in step so these also arrive when closed.
-  useReminderSync(schedule, tasks, profile?.studentCode);
+  useReminderSync(schedule, tasks, profile);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
