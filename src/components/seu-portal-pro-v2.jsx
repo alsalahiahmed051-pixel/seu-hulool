@@ -1626,9 +1626,9 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     // instruction so it knows what to do with the picture.
     if ((!text && !image) || loading) return;
     if (!text && image) text = "حل هذا السؤال الموجود في الصورة واشرح الخطوات بالعربية.";
-    // The email is asked for once and kept locally; the server checks its
-    // shape and records it, so there is no point sending a question without it.
-    if (!looksLikeEmail(aiEmail)) { setAskEmail(true); return; }
+    // No email gate: the assistant is identified by the device (and the ID),
+    // which is also what the allowance counts against. Asking for an email was
+    // the last place the site still did.
     if (gate && gate.blocked) { onSubscribe?.(gate); return; }
     setInp("");
     // The picture belongs to this question only; clearing it here stops the
@@ -5085,8 +5085,16 @@ const AVATAR_COLORS = [
   ["#e11d48", "#fb7185"], // rose
   ["#0891b2", "#22d3ee"], // teal
   ["#ea580c", "#fb923c"], // orange
+  ["#0f766e", "#2dd4bf"], // deep teal
+  ["#4f46e5", "#818cf8"], // indigo
+  ["#db2777", "#f472b6"], // pink
+  ["#65a30d", "#a3e635"], // lime
+  ["#334155", "#64748b"], // slate
 ];
-const AVATAR_EMOJIS = ["📚", "🎓", "✏️", "💡", "🚀", "⭐", "🔥", "🧠", "🌟", "📖"];
+const AVATAR_EMOJIS = [
+  "📚", "🎓", "✏️", "💡", "🚀", "⭐", "🔥", "🧠", "🌟", "📖",
+  "🎯", "🏆", "⚡", "🌙", "📝", "🔬", "💻", "🧮", "🩺", "⚖️",
+];
 const avatarGradient = (c) => {
   const pair = AVATAR_COLORS.find(p => p[0] === c) || AVATAR_COLORS[0];
   return `linear-gradient(135deg,${pair[0]},${pair[1]})`;
@@ -5185,7 +5193,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
 
   const save = () => {
     if (!draft.name.trim()) { onToast?.("اكتب اسمك أولاً", "warn"); return; }
-    if (draft.email.trim() && !looksLikeEmail(draft.email)) { onToast?.("صيغة البريد غير صحيحة", "warn"); return; }
     if (!draft.track) { onToast?.("اختر مسارك أولاً", "warn"); return; }
     if (!profileComplete(draft)) { onToast?.("أكمل اختيار مسارك", "warn"); return; }
 
@@ -5484,11 +5491,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           text: "لم تختر مسارك بعد — الموقع كله يتخصّص عليه",
           cta: "اختر مسارك", act: () => setEditing(true),
         });
-        if (!(profile.email || aiEmail)) todo.push({
-          Icon: Mail, color: P.purple,
-          text: "أضف بريدك ليصلك ردّ الإدارة وتفعيل اشتراكك",
-          cta: "أضف بريدك", act: () => setEditing(true),
-        });
         if (todo.length === 0) return (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, padding: "10px 14px", background: `${P.green}0d`, border: `1px solid ${P.green}30`, borderRadius: 12 }}>
             <CheckCircle size={15} color={P.green} />
@@ -5598,16 +5600,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             ))}
           </div>
 
-          {/* One place to set the email, shared with the assistant — it used
-              to be asked for separately in the chat and nowhere else. */}
-          <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 6 }}>
-            البريد الإلكتروني <span style={{ fontWeight: 600, color: t.dim }}>— للمساعد وطلبات الاشتراك</span>
-          </label>
-          <input value={draft.email} onChange={e => patch({ email: e.target.value })} placeholder="you@example.com" type="email"
-            style={{ width: "100%", border: `1.5px solid ${draft.email && !looksLikeEmail(draft.email) ? P.red : t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 14, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "ltr", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: draft.email && !looksLikeEmail(draft.email) ? 5 : 14 }} />
-          {draft.email && !looksLikeEmail(draft.email) && (
-            <div style={{ fontSize: 11.5, color: P.red, marginBottom: 12 }}>صيغة البريد غير صحيحة</div>
-          )}
 
           {changeApproved && (
             <div style={{ background: `${P.green}12`, border: `1px solid ${P.green}45`, borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
