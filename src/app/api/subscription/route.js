@@ -31,8 +31,11 @@ export async function POST(request) {
   const note = String(body.note || '').trim().slice(0, 1000)
   const receiptUrl = String(body.receiptUrl || '').trim().slice(0, 600)
 
-  if (!name || !studentId) return Response.json({ error: 'أكمل اسمك ورقمك الجامعي في ملفك أولاً' }, { status: 400 })
-  if (!looksLikeEmail(email)) return Response.json({ error: 'أدخل بريداً إلكترونياً صحيحاً' }, { status: 400 })
+  // The site has no email or university number any more — a completed profile
+  // is a name plus the minted ID, and that is what a request needs to name who
+  // it is from. The result reaches the student in their in-app inbox, so no
+  // email is required.
+  if (!name) return Response.json({ error: 'أكمل ملفك (الاسم والمسار) من «حسابي» أولاً' }, { status: 400 })
   // A receipt is the whole point of the review, so require something.
   if (!receiptUrl && !note) return Response.json({ error: 'أرفق إيصال التحويل أو اكتب ملاحظة' }, { status: 400 })
 

@@ -1100,14 +1100,14 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
     setSending(true);
     setSendErr("");
     try {
-      // Save a newly typed email so the assistant and any later request use
-      // the same one — the student should type it once, not every time.
-      if (savedEmail && savedEmail !== email) onSaveEmail?.(savedEmail);
       const res = await fetch("/api/subscription", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: profile?.name,
-          email: savedEmail, note: note.trim(), receiptUrl: receipt.trim(),
+          // The minted ID identifies the student to the owner in place of a
+          // university number or an email.
+          studentId: profile?.studentCode || "",
+          note: note.trim(), receiptUrl: receipt.trim(),
         }),
       });
       const d = await res.json().catch(() => ({}));
@@ -1278,24 +1278,13 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="أي تفاصيل تساعد في المراجعة"
               style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", direction: "rtl", outline: "none", boxSizing: "border-box", resize: "vertical", marginBottom: 12 }} />
 
-            {/* The email is how you answer them. If the assistant never asked
-                for one, ask here rather than turning the request away. */}
-            <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 5 }}>
-              بريدك الإلكتروني {looksLikeEmail(email) ? "" : "— لتصلك نتيجة الطلب"}
-            </div>
-            <input type="email" inputMode="email" value={emailDraft} onChange={e => setEmailDraft(e.target.value)}
-              placeholder="مثال: name@example.com" dir="ltr"
-              style={{
-                width: "100%", border: `1px solid ${emailDraft && !looksLikeEmail(emailDraft) ? `${P.orange}70` : t.bd}`,
-                borderRadius: 10, padding: "10px 12px", fontSize: 13, background: t.s2, color: t.tx,
-                fontFamily: "inherit", textAlign: "left", outline: "none", boxSizing: "border-box", marginBottom: 6,
-              }} />
-            {emailDraft && !looksLikeEmail(emailDraft) && (
-              <div style={{ fontSize: 11, color: P.orange, marginBottom: 8 }}>تحقّق من صيغة البريد</div>
-            )}
-
-            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "8px 0 12px" }}>
-              يُرسَل مع الطلب: {profile?.name || "اسمك"} · {savedEmail || "بريدك"}.
+            {/* No email: the result reaches the student in the in-app inbox,
+                keyed to their device and ID — the same place every admin
+                decision lands. The request carries the name and the ID so the
+                owner knows exactly who it is. */}
+            <div style={{ fontSize: 11.5, color: t.dim, lineHeight: 1.7, margin: "4px 0 12px" }}>
+              يُرسَل مع الطلب: {profile?.name || "اسمك"}{profile?.studentCode ? ` · ${profile.studentCode}` : ""}.
+              وتصلك النتيجة في «الرسائل» داخل الموقع.
             </div>
 
             {sendErr && (
@@ -1306,11 +1295,11 @@ function SubscribeSheet({ t, onClose, profile, email, onSaveEmail, gate, onToast
             )}
 
             <Btn variant="primary" onClick={submit} style={{ width: "100%" }}
-              disabled={sending || !profileComplete(profile) || !savedEmail || (!receipt.trim() && !note.trim())}>
+              disabled={sending || !profileComplete(profile) || (!receipt.trim() && !note.trim())}>
               <Send size={14} /> {sending ? "جارٍ الإرسال…" : "إرسال الطلب"}
             </Btn>
-            {!sending && !savedEmail && (
-              <div style={{ fontSize: 11.5, color: t.mu, textAlign: "center", marginTop: 8 }}>أضف بريدك أعلاه لتتمكن من الإرسال</div>
+            {!sending && !profileComplete(profile) && (
+              <div style={{ fontSize: 11.5, color: t.mu, textAlign: "center", marginTop: 8 }}>أكمل ملفك (الاسم والمسار) من «حسابي» أولاً</div>
             )}
           </div>
         )}
@@ -5431,6 +5420,26 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             <Settings size={16} />
           </button>
         </div>
+
+        {/* A glance strip inside the hero — three live numbers, each a shortcut
+            to the tab it counts. Only for a completed profile. */}
+        {profile && (
+          <div style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 18 }}>
+            {[
+              { label: "مهامي", value: (tasks || []).filter(tk => !tk.done).length, tab: "home" },
+              { label: "محاضراتي", value: (schedule || []).length, tab: "schedule" },
+              { label: "مفضلتي", value: favorites.length, tab: "fav" },
+            ].map(({ label, value, tab }) => (
+              <button key={label} onClick={() => setActiveTab(tab)} style={{
+                background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.12)",
+                borderRadius: 13, padding: "9px 4px", cursor: "pointer", fontFamily: "inherit", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+                <div style={{ fontSize: 10.5, color: "rgba(255,255,255,.75)", fontWeight: 600, marginTop: 1 }}>{label}</div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* No profile yet: say what one adds rather than dropping straight into
@@ -5694,8 +5703,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {/* My plan — the track spelled out, with its subjects and what's due */}
       {!editing && profile && (() => {
         const subjects = myTrackSubjects(profile);
-        const openTasks = (tasks || []).filter(tk => !tk.done).length;
-        const lectures = (schedule || []).length;
         return (
           <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.gold}35`, boxShadow: t.shSm }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -5737,23 +5744,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               </>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-              {[
-                { label: "مهام مفتوحة", value: openTasks, tab: "home", color: P.green },
-                { label: "محاضرات", value: lectures, tab: "schedule", color: P.blue2 },
-                { label: "مفضلة", value: favorites.length, tab: "fav", color: P.gold },
-              ].map(({ label, value, tab, color }) => (
-                <button key={label} onClick={() => setActiveTab(tab)} style={{
-                  background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "10px 6px",
-                  cursor: "pointer", fontFamily: "inherit", textAlign: "center", transition: "all .2s",
-                }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = color}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-                  <div style={{ fontSize: 18, fontWeight: 900, color }}>{value}</div>
-                  <div style={{ fontSize: 11, color: t.mu, fontWeight: 600, marginTop: 2 }}>{label}</div>
-                </button>
-              ))}
-            </div>
           </div>
         );
       })()}
@@ -5894,49 +5884,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           )}
         </div>
       )}
-
-      {/* My study plan — shows the subjects of the student's chosen plan */}
-      {!editing && profile?.track && (() => {
-        const planKey = profile.plan === "خطة ب" ? "b" : profile.plan === "خطة أ" ? "a" : null;
-        let subjects = [];
-        let heading = profile.track;
-        if (profile.track === "تحضيري" && planKey) {
-          subjects = TREE.preparatory.plans[planKey]?.subjects || [];
-          heading = `التحضيري — ${profile.plan}`;
-        }
-        return (
-          <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.blue2}30`, boxShadow: t.shSm }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-                <GraduationCap size={15} color={P.blue2} /> خطتي الدراسية
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 800, color: P.blue2, background: `${P.blue2}14`, borderRadius: 8, padding: "2px 9px" }}>{heading}</span>
-            </div>
-            {subjects.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {subjects.map((s) => {
-                  const SIcon = getIcon(s);
-                  return (
-                    <button key={s} onClick={() => openCourse(s)} style={{ background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "11px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "right", display: "flex", alignItems: "center", gap: 10, transition: "all .2s" }}
-                      onMouseEnter={e => e.currentTarget.style.borderColor = P.blue2 + "55"}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
-                      <div style={{ width: 32, height: 32, borderRadius: 9, background: `${P.blue2}15`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <SIcon size={15} color={P.blue2} />
-                      </div>
-                      <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
-                      <ChevronLeft size={14} color={t.dim} />
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <button onClick={() => setActiveTab("explore")} style={{ width: "100%", background: t.s2, border: `1px dashed ${t.bd}`, borderRadius: 12, padding: "13px", cursor: "pointer", fontFamily: "inherit", color: t.mu, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Compass size={14} color={P.blue2} /> استكشف مواد {profile.track} ومقرراته
-              </button>
-            )}
-          </div>
-        );
-      })()}
 
       {/* All my notes in one place */}
       {!editing && (() => {
