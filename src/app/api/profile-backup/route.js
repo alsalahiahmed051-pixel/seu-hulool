@@ -32,6 +32,32 @@ export async function POST(request) {
   const code = normCode(body.code)
   if (!code) return Response.json({ error: 'معرّف غير صحيح' }, { status: 400 })
 
+  // "Just remember that this device belongs to this ID."
+  //
+  // Recording the device only when a backup is *written* meant recovery worked
+  // for nobody who already had an account: their row was stored before the
+  // column existed, and they have no reason to re-save. This is the cheap call
+  // the app makes on open, so any existing device becomes recoverable the next
+  // time the student simply opens the site.
+  //
+  // It updates the link and nothing else — no `data`, so it can never overwrite
+  // a store with an empty one — and only for a code that already has a backup.
+  if (body.link === true) {
+    const { deviceId, setCookie } = deviceIdentity(request)
+    if (!deviceId) return Response.json({ ok: false })
+    let ldb
+    try { ldb = createAdminClient() } catch { return Response.json({ ok: false }) }
+    const { data: linked } = await ldb
+      .from('profile_backups')
+      .update({ device_id: deviceId })
+      .eq('code', code)
+      .select('code')
+      .maybeSingle()
+    const res = Response.json({ ok: true, linked: Boolean(linked) })
+    if (setCookie) res.headers.append('Set-Cookie', setCookie)
+    return res
+  }
+
   const data = body.data
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return Response.json({ error: 'لا بيانات لحفظها' }, { status: 400 })
@@ -83,6 +109,19 @@ export async function GET(request) {
         .order('updated_at', { ascending: false })
         .limit(5)
       codes = data || []
+
+      // Second source: the device's own identity row. A student who saved a
+      // profile but whose backup never got linked is still findable here, so
+      // recovery does not depend on one table having been written recently.
+      const { data: ident } = await rdb
+        .from('student_identities')
+        .select('student_id, full_name')
+        .eq('device_id', deviceId)
+        .maybeSingle()
+      const identCode = normCode(ident?.student_id)
+      if (identCode && !codes.some(c => c.code === identCode)) {
+        codes.push({ code: identCode, name: ident.full_name || null, updated_at: null })
+      }
     }
     const res = Response.json({ codes })
     if (setCookie) res.headers.append('Set-Cookie', setCookie)

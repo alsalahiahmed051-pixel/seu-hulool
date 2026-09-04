@@ -2,13 +2,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { COURSE_GROUPS } from '@/lib/courses'
+import { COURSE_GROUPS, CATALOGUE } from '@/lib/courses'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
   Building2, LayoutGrid, Plus, X, Edit3, Send, Shield, Activity, TrendingUp,
   Link2, Save, Moon, Sun, Palette, Check, CalendarDays, CreditCard, MessageCircle,
   Sparkles,
+  Layers,
 } from 'lucide-react'
 
 // Colour themes the admin can apply site-wide (must mirror THEME_PRESETS in
@@ -94,6 +95,7 @@ const TABS = [
   { id: 'files', label: 'الملفات', Icon: FileText },
   { id: 'courses', label: 'المواد', Icon: BookOpen },
   { id: 'colleges', label: 'الكليات', Icon: Building2 },
+  { id: 'plans', label: 'الخطط الدراسية', Icon: Layers },
   { id: 'notifications', label: 'الإشعارات', Icon: Bell },
   { id: 'links', label: 'الروابط', Icon: Link2 },
   { id: 'calendar', label: 'التقويم', Icon: CalendarDays },
@@ -268,6 +270,7 @@ export default function AdminPanelClient({ adminName, adminEmail, pinConfigured 
         {tab === 'files' && <FilesTab flash={flash} />}
         {tab === 'courses' && <CoursesTab flash={flash} />}
         {tab === 'colleges' && <CollegesTab flash={flash} />}
+        {tab === 'plans' && <PlansTab flash={flash} />}
         {tab === 'notifications' && <NotificationsTab flash={flash} />}
         {tab === 'links' && <LinksTab flash={flash} />}
         {tab === 'calendar' && <CalendarTab flash={flash} />}
@@ -586,6 +589,156 @@ function CourseModal({ course, colleges, onSave, onClose }) {
 }
 
 /* ══════════════ COLLEGES ══════════════ */
+/**
+ * The study-plan editor.
+ *
+ * The plan for إدارة أعمال was compiled into the app because it was the only one
+ * transcribed; every other programme needed the same treatment and a deploy for
+ * each. Only the owner holds those lists, so this is the screen that lets them
+ * enter one without me — which is the only way all of them ever get filled in.
+ *
+ * A whole programme saves in one write: the editor holds the entire plan on
+ * screen, so patching level-by-level would let two open tabs interleave into a
+ * plan neither person typed.
+ */
+function PlansTab({ flash }) {
+  const [plans, setPlans] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [program, setProgram] = useState('')
+  const [levels, setLevels] = useState([])
+  const [saving, setSaving] = useState(false)
+
+  // Every programme the catalogue knows, so the owner picks rather than types a
+  // name that would never match what students are filed under.
+  const allPrograms = []
+  CATALOGUE.bachelor.colleges.forEach(c => c.programs.forEach(pr => allPrograms.push({ program: pr, college: c.label })))
+  CATALOGUE.diploma.programs.forEach(pr => allPrograms.push({ program: pr, college: 'دبلوم' }))
+  CATALOGUE.graduate.programs.forEach(pr => allPrograms.push({ program: pr, college: 'دراسات عليا' }))
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await apiJSON('/api/admin/program-plans')
+    setPlans(data.plans || [])
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const openProgram = (pr) => {
+    setProgram(pr)
+    const found = plans.find(x => x.program === pr)
+    setLevels(found && Array.isArray(found.levels) && found.levels.length
+      ? found.levels.map(l => ({ label: l.label, courses: (l.courses || []).join('، ') }))
+      : [{ label: 'المستوى الثالث', courses: '' }])
+  }
+
+  const save = async () => {
+    if (!program) return
+    setSaving(true)
+    const payload = levels
+      .map(l => ({
+        label: (l.label || '').trim(),
+        // Accept Arabic or Latin commas, spaces or new lines between codes —
+        // the owner is pasting from a bot, not filling in a form.
+        courses: (l.courses || '').split(/[،,\n\s]+/).map(c => c.trim()).filter(Boolean),
+      }))
+      .filter(l => l.label)
+    const { ok, data } = await apiJSON('/api/admin/program-plans', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ program, levels: payload }),
+    })
+    setSaving(false)
+    flash(ok ? `حُفظت خطة ${program}` : (data.error || 'تعذّر الحفظ'), ok ? 'success' : 'error')
+    if (ok) load()
+  }
+
+  const removePlan = async () => {
+    if (!program || !confirm(`حذف خطة ${program} نهائياً؟`)) return
+    const { ok, data } = await apiJSON(`/api/admin/program-plans?program=${encodeURIComponent(program)}`, { method: 'DELETE' })
+    flash(ok ? 'حُذفت الخطة' : (data.error || 'تعذّر الحذف'), ok ? 'success' : 'error')
+    if (ok) { setProgram(''); setLevels([]); load() }
+  }
+
+  const inp = { width: '100%', padding: '9px 11px', borderRadius: 10, border: '1px solid var(--bd)', background: 'var(--soft)', color: 'var(--tx)', fontFamily: 'inherit', fontSize: 13, outline: 'none', boxSizing: 'border-box' }
+
+  if (loading) return <div style={S.card}>جارِ التحميل…</div>
+
+  return (
+    <div>
+      <div style={S.card}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>الخطط الدراسية</h3>
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--mu)', lineHeight: 1.7 }}>
+          اختر التخصص، ثم اكتب مستوياته ومواد كل مستوى. تُعرض للطالب في «مساري ← خطتي الدراسية»،
+          وكل مادة يضغطها تفتح صفحتها.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+          {allPrograms.map(({ program: pr, college }) => {
+            const has = plans.some(x => x.program === pr && (x.levels || []).length)
+            const on = program === pr
+            return (
+              <button key={pr} onClick={() => openProgram(pr)} title={college} style={{
+                padding: '7px 12px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 12.5, fontWeight: 700,
+                background: on ? 'var(--brand)' : 'var(--soft)',
+                color: on ? '#fff' : 'var(--tx)',
+                border: `1.5px solid ${on ? 'var(--brand)' : 'var(--bd)'}`,
+              }}>
+                {has && !on && <span style={{ color: '#16a34a', marginLeft: 5 }}>●</span>}
+                {pr}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {program && (
+        <div style={S.card}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>خطة: {program}</h3>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setLevels(l => [...l, { label: `المستوى ${l.length + 3}`, courses: '' }])}
+                style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, background: 'var(--soft)', color: 'var(--tx)', border: '1px solid var(--bd)' }}>
+                + مستوى
+              </button>
+              <button onClick={removePlan}
+                style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, background: 'transparent', color: '#dc2626', border: '1px solid #dc262655' }}>
+                حذف الخطة
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {levels.map((lv, i) => (
+              <div key={i} style={{ border: '1px solid var(--bd)', borderRadius: 12, padding: 12, background: 'var(--soft)' }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <input value={lv.label} placeholder="اسم المستوى"
+                    onChange={e => setLevels(ls => ls.map((x, j) => j === i ? { ...x, label: e.target.value } : x))}
+                    style={{ ...inp, flex: 1 }} />
+                  <button onClick={() => setLevels(ls => ls.filter((_, j) => j !== i))}
+                    style={{ padding: '0 12px', borderRadius: 9, cursor: 'pointer', background: 'transparent', color: '#dc2626', border: '1px solid #dc262655', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700 }}>
+                    حذف
+                  </button>
+                </div>
+                <textarea value={lv.courses} rows={2}
+                  placeholder="رموز المواد — افصلها بفاصلة أو مسافة  مثل: STAT101، LAW101، ECON101"
+                  onChange={e => setLevels(ls => ls.map((x, j) => j === i ? { ...x, courses: e.target.value } : x))}
+                  style={{ ...inp, resize: 'vertical', direction: 'ltr', textAlign: 'left', fontFamily: 'monospace' }} />
+              </div>
+            ))}
+          </div>
+
+          <button onClick={save} disabled={saving} style={{
+            marginTop: 14, width: '100%', padding: '11px', borderRadius: 12, cursor: saving ? 'wait' : 'pointer',
+            background: 'var(--brand)', color: '#fff', border: 'none', fontFamily: 'inherit', fontSize: 14, fontWeight: 800,
+          }}>
+            {saving ? 'جارِ الحفظ…' : 'حفظ الخطة'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function CollegesTab({ flash }) {
   const [colleges, setColleges] = useState([])
   const [loading, setLoading] = useState(true)

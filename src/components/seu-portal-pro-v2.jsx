@@ -1419,7 +1419,12 @@ const untilLabel = (resetAt) => {
   return `خلال ${h} ساعة${m ? ` و${m} د` : ""}`;
 };
 
-function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null }) {
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null, onToast = null }) {
+  // This component called `onToast?.(...)` in a dozen places without ever
+  // receiving it. Optional chaining does not save an *undeclared* identifier:
+  // every one of those lines threw ReferenceError and took the whole click
+  // handler with it. That is why the microphone did nothing at all, and why an
+  // image that failed validation failed silently — the error path was the crash.
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
@@ -1481,8 +1486,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   const [fileCount, setFileCount] = useState(0);
   const [fileSugs, setFileSugs] = useState([]);
   const [recording, setRecording] = useState(false);
+  // Audio is captured; the server is turning it into text.
+  const [transcribing, setTranscribing] = useState(false);
   const [hasSpeech, setHasSpeech] = useState(false);
   const recogRef = useRef(null);
+  // The MediaRecorder path, for browsers with no SpeechRecognition.
+  const mediaRef = useRef(null);
   const endRef = useRef(null);
   // A photo of a question, waiting to be sent with the next message.
   const [image, setImage] = useState(null);
@@ -1759,16 +1768,65 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     setLoading(false);
   };
 
+  /**
+   * Record the microphone and have the server transcribe it.
+   *
+   * This is the path for Safari — every iPhone — which has no
+   * `SpeechRecognition` at all. Telling those students "use Chrome" was not a
+   * fix: it is most of them. MediaRecorder is supported everywhere the mic is,
+   * so the audio goes to /api/transcribe and comes back as text.
+   */
+  const startFallbackRecording = async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      onToast?.("متصفحك لا يدعم التسجيل الصوتي", "warn");
+      return;
+    }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { onToast?.("امنح إذن الميكروفون من إعدادات المتصفح", "warn"); return; }
+
+    // Let the browser pick a container it can actually produce: Safari gives
+    // mp4/aac, Chrome webm/opus. Forcing one of them breaks the other.
+    let rec;
+    try { rec = new MediaRecorder(stream); }
+    catch { stream.getTracks().forEach(t => t.stop()); onToast?.("تعذّر بدء التسجيل", "error"); return; }
+
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      setRecording(false);
+      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+      if (!blob.size) { onToast?.("التسجيل فارغ — حاول مجدداً", "warn"); return; }
+      setTranscribing(true);
+      try {
+        const fd = new FormData();
+        fd.append("audio", blob);
+        const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+        const d = await res.json().catch(() => ({}));
+        setTranscribing(false);
+        if (!res.ok || !d.text) { onToast?.(d.error || "تعذّر تحويل الصوت إلى نص", "warn"); return; }
+        setInp(prev => (prev ? prev + " " : "") + d.text);
+      } catch { setTranscribing(false); onToast?.("تعذّر الاتصال — تحقق من الإنترنت", "error"); }
+    };
+    mediaRef.current = rec;
+    try { rec.start(); setRecording(true); }
+    catch { stream.getTracks().forEach(t => t.stop()); onToast?.("تعذّر بدء التسجيل", "error"); }
+  };
+
   const toggleRecording = () => {
     if (recording) {
+      // Whichever path started it is the one that has to be stopped.
+      if (mediaRef.current && mediaRef.current.state === "recording") { mediaRef.current.stop(); return; }
       recogRef.current?.stop();
       setRecording(false);
       return;
     }
+    if (transcribing) return;
     const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-    // No silent no-op: iOS Safari has no speech recognition, and a dead button
-    // reads as a bug. Say why instead.
-    if (!SR) { onToast?.("الإدخال الصوتي غير مدعوم في هذا المتصفح — جرّب كروم على الجوال", "warn"); return; }
+    // No speech recognition (Safari, every iPhone) is no longer a dead end:
+    // record instead and let the server transcribe.
+    if (!SR) { startFallbackRecording(); return; }
     let r;
     try { r = new SR(); } catch { onToast?.("تعذّر تشغيل الميكروفون", "error"); return; }
     r.lang = "ar-SA";
@@ -2050,18 +2108,24 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
           onFocus={e => e.target.style.borderColor = P.blue2}
           onBlur={e => e.target.style.borderColor = t.bd} />
-        {(
-          <button onClick={toggleRecording} style={{
-            width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
-            background: recording ? P.red : t.s3,
+        {/* Three states, because the fallback path has a wait the browser's own
+            recogniser doesn't: idle, recording, and "sending it to be read". */}
+        <button onClick={toggleRecording} disabled={transcribing}
+          title={transcribing ? "جارٍ تحويل الصوت إلى نص" : recording ? "إيقاف التسجيل" : "إدخال صوتي"}
+          aria-label={transcribing ? "جارٍ التحويل" : recording ? "إيقاف التسجيل" : "إدخال صوتي"}
+          style={{
+            width: 44, height: 44, borderRadius: "50%", border: "none",
+            cursor: transcribing ? "wait" : "pointer",
+            background: recording ? P.red : transcribing ? `${P.blue2}22` : t.s3,
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             boxShadow: recording ? `0 0 0 3px ${P.red}40` : "none",
             transition: "all .2s",
             animation: recording ? "pulse 1.2s infinite" : "none",
           }}>
-            {recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
-          </button>
-        )}
+          {transcribing
+            ? <RotateCcw size={17} color={P.blue2} style={{ animation: "spin 1s linear infinite" }} />
+            : recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
+        </button>
         <button onClick={() => send()} disabled={loading || (!inp.trim() && !image)} style={{
           width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || (!inp.trim() && !image) ? "not-allowed" : "pointer",
           background: loading || (!inp.trim() && !image) ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
@@ -4214,7 +4278,7 @@ function AISection({ subject, t, onChat, files, onToast }) {
           </button>
         ))}
       </div>
-      {aiTab === "chat" && <AIChat subject={subject} t={t} onChat={onChat} files={files} />}
+      {aiTab === "chat" && <AIChat subject={subject} t={t} onChat={onChat} files={files} onToast={onToast} />}
       {aiTab === "quiz" && <QuizMode subject={subject} t={t} onToast={onToast} />}
     </div>
   );
@@ -4910,7 +4974,18 @@ function SearchResults({ query, onCourse, onClose, t }) {
 const TRACK_TO_TREE = { "تحضيري": "preparatory", "تخصص": "bachelor", "دبلوم": "diploma", "دراسات عليا": "graduate" };
 const PLAN_TO_SUB = { "خطة أ": "a", "خطة ب": "b" };
 
-function ExplorePage({ onCourse, t, profile }) {
+function ExplorePage({ onCourse, t, profile, plans = null }) {
+  /**
+   * The plan the admin has published wins over the one compiled into the app.
+   * The constant is the seed and the offline fallback — the database is the
+   * copy the owner can actually keep correct, for every programme.
+   */
+  const planOf = (program) => {
+    const live = plans && plans[program];
+    if (Array.isArray(live) && live.length) return live;
+    const built = levelsOf(program);
+    return built ? Object.entries(built).map(([label, courses]) => ({ label, courses })) : null;
+  };
   const [step, setStep] = useState("root");
   const [path, setPath] = useState(null);
   const [sub, setSub] = useState(null);
@@ -5136,14 +5211,14 @@ function ExplorePage({ onCourse, t, profile }) {
             {/* The actual study plan, level by level, where we have it. This is
                 the thing a student came for: their own courses by code, not
                 the programme's name repeated back at them. */}
-            {scoped && levelsOf(profile.plan) && (
+            {scoped && planOf(profile.plan) && (
               <div style={{ marginTop: 18 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx, marginBottom: 4 }}>خطتي الدراسية</div>
                 <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 10 }}>
                   اضغط على أي مستوى لعرض مواده، ثم على المادة لفتحها.
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {Object.entries(levelsOf(profile.plan)).map(([lvl, codes]) => {
+                  {planOf(profile.plan).map(({ label: lvl, courses: codes }) => {
                     const on = openLevel === lvl;
                     return (
                       <div key={lvl} style={{
@@ -5215,6 +5290,191 @@ function ExplorePage({ onCourse, t, profile }) {
  * the only thing that varies per service, and it is drawn from the site's own
  * green scale, so the section reads as the platform rather than as a poster.
  */
+/**
+ * One service, as its own top-level component.
+ *
+ * It used to be declared inside ServicesPage. That gave it a new function
+ * identity on every render, so toggling "ما الذي يشمله" unmounted the whole
+ * list and mounted a fresh one — the DOM was replaced under the reader and the
+ * browser threw the scroll back to the top of the page. Declared out here the
+ * identity is stable, React keeps the nodes, and opening a card leaves the page
+ * exactly where it was.
+ */
+function ServiceCard({ s, t, dark, color, isOpen, onToggle }) {
+const SIcon = s.Icon;
+const hasItems = s.items.length > 0;
+  return (
+    <div style={{
+      background: t.s1, border: `1px solid ${isOpen ? color + "55" : t.bd}`,
+      borderRadius: 20, overflow: "hidden", boxShadow: isOpen ? `0 10px 30px ${color}22` : t.shSm,
+      transition: "border-color .22s, box-shadow .22s", position: "relative",
+    }}>
+      {/* Brand rail — the one place the service's colour is stated flatly. */}
+      <div style={{ height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
+      {/* Sits on the corner rather than in the title row: inline it pushed the
+          heading onto a second line on a narrow phone. */}
+      {s.featured && (
+        <span style={{
+          position: "absolute", top: 0, left: 14, zIndex: 1,
+          fontSize: 10.5, fontWeight: 800, color: "#fff",
+          background: `linear-gradient(135deg, ${P.navy}, ${P.blue2})`,
+          borderRadius: "0 0 10px 10px", padding: "4px 10px 5px",
+          boxShadow: `0 4px 12px ${P.navy}44`,
+        }}>الأكثر طلباً</span>
+      )}
+      <div style={{ padding: "16px 16px 14px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{
+            width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+            background: dark ? `${color}26` : `${color}14`,
+            border: `1px solid ${color}33`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <SIcon size={22} color={color} strokeWidth={1.9} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+              <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>{s.title}</span>
+              <span style={{
+                fontSize: 10.5, fontWeight: 800, color: color, letterSpacing: ".02em",
+                background: dark ? `${color}22` : `${color}12`,
+                border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px",
+              }}>{s.tag}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>{s.blurb}</div>
+          </div>
+        </div>
+
+        {hasItems && (
+          <>
+            <button onClick={onToggle} style={{
+              marginTop: 12, width: "100%", background: "none", border: "none", padding: "4px 0",
+              cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: color,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <span>{isOpen ? "إخفاء التفاصيل" : `ما الذي يشمله؟ (${s.items.length})`}</span>
+              <ChevronDown size={15} color={color}
+                style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .22s" }} />
+            </button>
+            {isOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10, animation: "fadeUp .25s ease" }}>
+                {s.items.map((it, i) => (
+                  <div key={i} style={{
+                    background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
+                    padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 9,
+                  }}>
+                    <CheckCircle size={15} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{it.name}</div>
+                      {it.detail && <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2, lineHeight: 1.55 }}>{it.detail}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        <a href={waLink(s.title)} target="_blank" rel="noopener noreferrer" style={{
+          marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          background: `linear-gradient(135deg, ${color}, ${color}cc)`, color: "#fff",
+          borderRadius: 14, padding: "11px 14px", textDecoration: "none",
+          fontSize: 13.5, fontWeight: 800, boxShadow: `0 5px 16px ${color}38`,
+        }}>
+          <MessageCircle size={16} /> احجز أو استفسر
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function SingleJobCard({ t, dark }) {
+  const [pick, setPick] = useState("");
+  const [own, setOwn] = useState("");
+  const chosen = (own.trim() || pick).trim();
+  const color = P.gold;
+  return (
+    <div style={{
+      background: t.s1, border: `1px solid ${chosen ? color + "55" : t.bd}`,
+      borderRadius: 20, overflow: "hidden", boxShadow: t.shSm, transition: "border-color .22s",
+    }}>
+      <div style={{ height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
+      <div style={{ padding: "16px 16px 14px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+          <div style={{
+            width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+            background: dark ? `${color}26` : `${color}14`, border: `1px solid ${color}33`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <PenLine size={22} color={color} strokeWidth={1.9} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+              <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>خدمة فردية</span>
+              <span style={{
+                fontSize: 10.5, fontWeight: 800, color, background: dark ? `${color}22` : `${color}12`,
+                border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px",
+              }}>حسب الطلب</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>
+              محتاج شيئاً واحداً فقط؟ اختر نوعه — أو اكتبه بنفسك.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          {SINGLE_JOBS.map(j => {
+            const on = !own.trim() && pick === j;
+            return (
+              <button key={j} onClick={() => { setPick(on ? "" : j); setOwn(""); }} style={{
+                padding: "7px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                fontSize: 12.5, fontWeight: 700,
+                background: on ? `${color}20` : t.s2,
+                border: `1.5px solid ${on ? color : t.bd}`, color: on ? color : t.mu,
+              }}>{j}</button>
+            );
+          })}
+        </div>
+
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+          background: own.trim() ? `${color}12` : t.s2,
+          border: `1.5px solid ${own.trim() ? color : t.bd}`, borderRadius: 12, padding: "8px 11px",
+        }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: own.trim() ? color : t.mu, whiteSpace: "nowrap" }}>
+            أو اكتبه
+          </span>
+          <input
+            value={own}
+            onChange={e => setOwn(e.target.value)}
+            placeholder="نوع آخر…"
+            style={{
+              flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
+              fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: t.tx,
+            }} />
+        </div>
+
+        <a
+          href={waLink(chosen ? `خدمة فردية — ${chosen}` : "خدمة فردية")}
+          target="_blank" rel="noopener noreferrer"
+          aria-disabled={!chosen}
+          onClick={e => { if (!chosen) e.preventDefault(); }}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            background: chosen ? `linear-gradient(135deg, ${color}, ${color}cc)` : t.s2,
+            color: chosen ? "#fff" : t.dim,
+            borderRadius: 14, padding: "11px 14px", textDecoration: "none",
+            fontSize: 13.5, fontWeight: 800,
+            boxShadow: chosen ? `0 5px 16px ${color}38` : "none",
+            cursor: chosen ? "pointer" : "not-allowed",
+          }}>
+          <MessageCircle size={16} /> {chosen ? `اطلب: ${chosen}` : "اختر نوع الخدمة أولاً"}
+        </a>
+      </div>
+    </div>
+  );
+}
+
 function ServicesPage({ t, dark }) {
   const [open, setOpen] = useState(null);
 
@@ -5223,186 +5483,6 @@ function ServicesPage({ t, dark }) {
   const TONES = [P.navy, P.blue, P.blue2, P.green, P.greenLight];
   const toneOf = (s) => TONES[s.tone % TONES.length];
 
-  const Card = ({ s }) => {
-    const color = toneOf(s);
-    const SIcon = s.Icon;
-    const isOpen = open === s.id;
-    const hasItems = s.items.length > 0;
-    return (
-      <div style={{
-        background: t.s1, border: `1px solid ${isOpen ? color + "55" : t.bd}`,
-        borderRadius: 20, overflow: "hidden", boxShadow: isOpen ? `0 10px 30px ${color}22` : t.shSm,
-        transition: "border-color .22s, box-shadow .22s", position: "relative",
-      }}>
-        {/* Brand rail — the one place the service's colour is stated flatly. */}
-        <div style={{ height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
-        {/* Sits on the corner rather than in the title row: inline it pushed the
-            heading onto a second line on a narrow phone. */}
-        {s.featured && (
-          <span style={{
-            position: "absolute", top: 0, left: 14, zIndex: 1,
-            fontSize: 10.5, fontWeight: 800, color: "#fff",
-            background: `linear-gradient(135deg, ${P.navy}, ${P.blue2})`,
-            borderRadius: "0 0 10px 10px", padding: "4px 10px 5px",
-            boxShadow: `0 4px 12px ${P.navy}44`,
-          }}>الأكثر طلباً</span>
-        )}
-        <div style={{ padding: "16px 16px 14px" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            <div style={{
-              width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-              background: dark ? `${color}26` : `${color}14`,
-              border: `1px solid ${color}33`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <SIcon size={22} color={color} strokeWidth={1.9} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
-                <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>{s.title}</span>
-                <span style={{
-                  fontSize: 10.5, fontWeight: 800, color: color, letterSpacing: ".02em",
-                  background: dark ? `${color}22` : `${color}12`,
-                  border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px",
-                }}>{s.tag}</span>
-              </div>
-              <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>{s.blurb}</div>
-            </div>
-          </div>
-
-          {hasItems && (
-            <>
-              <button onClick={() => setOpen(isOpen ? null : s.id)} style={{
-                marginTop: 12, width: "100%", background: "none", border: "none", padding: "4px 0",
-                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: color,
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-              }}>
-                <span>{isOpen ? "إخفاء التفاصيل" : `ما الذي يشمله؟ (${s.items.length})`}</span>
-                <ChevronDown size={15} color={color}
-                  style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .22s" }} />
-              </button>
-              {isOpen && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10, animation: "fadeUp .25s ease" }}>
-                  {s.items.map((it, i) => (
-                    <div key={i} style={{
-                      background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
-                      padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 9,
-                    }}>
-                      <CheckCircle size={15} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{it.name}</div>
-                        {it.detail && <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2, lineHeight: 1.55 }}>{it.detail}</div>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-
-          <a href={waLink(s.title)} target="_blank" rel="noopener noreferrer" style={{
-            marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-            background: `linear-gradient(135deg, ${color}, ${color}cc)`, color: "#fff",
-            borderRadius: 14, padding: "11px 14px", textDecoration: "none",
-            fontSize: 13.5, fontWeight: 800, boxShadow: `0 5px 16px ${color}38`,
-          }}>
-            <MessageCircle size={16} /> احجز أو استفسر
-          </a>
-        </div>
-      </div>
-    );
-  };
-
-  /**
-   * One-off work: pick the kind, or type one the list doesn't cover, and the
-   * WhatsApp message is already written by the time the chat opens.
-   */
-  const SingleJobCard = () => {
-    const [pick, setPick] = useState("");
-    const [own, setOwn] = useState("");
-    const chosen = (own.trim() || pick).trim();
-    const color = P.gold;
-    return (
-      <div style={{
-        background: t.s1, border: `1px solid ${chosen ? color + "55" : t.bd}`,
-        borderRadius: 20, overflow: "hidden", boxShadow: t.shSm, transition: "border-color .22s",
-      }}>
-        <div style={{ height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
-        <div style={{ padding: "16px 16px 14px" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
-            <div style={{
-              width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-              background: dark ? `${color}26` : `${color}14`, border: `1px solid ${color}33`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <PenLine size={22} color={color} strokeWidth={1.9} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
-                <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>خدمة فردية</span>
-                <span style={{
-                  fontSize: 10.5, fontWeight: 800, color, background: dark ? `${color}22` : `${color}12`,
-                  border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px",
-                }}>حسب الطلب</span>
-              </div>
-              <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>
-                محتاج شيئاً واحداً فقط؟ اختر نوعه — أو اكتبه بنفسك.
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-            {SINGLE_JOBS.map(j => {
-              const on = !own.trim() && pick === j;
-              return (
-                <button key={j} onClick={() => { setPick(on ? "" : j); setOwn(""); }} style={{
-                  padding: "7px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
-                  fontSize: 12.5, fontWeight: 700,
-                  background: on ? `${color}20` : t.s2,
-                  border: `1.5px solid ${on ? color : t.bd}`, color: on ? color : t.mu,
-                }}>{j}</button>
-              );
-            })}
-          </div>
-
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-            background: own.trim() ? `${color}12` : t.s2,
-            border: `1.5px solid ${own.trim() ? color : t.bd}`, borderRadius: 12, padding: "8px 11px",
-          }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: own.trim() ? color : t.mu, whiteSpace: "nowrap" }}>
-              أو اكتبه
-            </span>
-            <input
-              value={own}
-              onChange={e => setOwn(e.target.value)}
-              placeholder="نوع آخر…"
-              style={{
-                flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
-                fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: t.tx,
-              }} />
-          </div>
-
-          <a
-            href={waLink(chosen ? `خدمة فردية — ${chosen}` : "خدمة فردية")}
-            target="_blank" rel="noopener noreferrer"
-            aria-disabled={!chosen}
-            onClick={e => { if (!chosen) e.preventDefault(); }}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-              background: chosen ? `linear-gradient(135deg, ${color}, ${color}cc)` : t.s2,
-              color: chosen ? "#fff" : t.dim,
-              borderRadius: 14, padding: "11px 14px", textDecoration: "none",
-              fontSize: 13.5, fontWeight: 800,
-              boxShadow: chosen ? `0 5px 16px ${color}38` : "none",
-              cursor: chosen ? "pointer" : "not-allowed",
-            }}>
-            <MessageCircle size={16} /> {chosen ? `اطلب: ${chosen}` : "اختر نوع الخدمة أولاً"}
-          </a>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
@@ -5435,8 +5515,12 @@ function ServicesPage({ t, dark }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {SERVICES.map(s => <Card key={s.id} s={s} />)}
-        <SingleJobCard />
+        {SERVICES.map(s => (
+          <ServiceCard key={s.id} s={s} t={t} dark={dark} color={toneOf(s)}
+            isOpen={open === s.id}
+            onToggle={() => setOpen(open === s.id ? null : s.id)} />
+        ))}
+        <SingleJobCard t={t} dark={dark} />
       </div>
 
       {/* One closing way to reach a human, for anything the cards don't cover. */}
@@ -6440,6 +6524,31 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {/* Section: everything else — sharing, backup, the study plan. */}
       {!editing && profile && (
         <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, margin: "4px 2px 8px", letterSpacing: 0.2 }}>المزيد</div>
+      )}
+
+      {/* The two tabs that came out of the bottom bar. */}
+      {!editing && profile && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          {[
+            { id: "fav", label: "المفضلة", desc: "موادك المحفوظة", Icon: Star, color: P.gold },
+            { id: "links", label: "روابط الجامعة", desc: "البوابة والبلاك بورد", Icon: Link2, color: P.blue2 },
+          ].map(q => (
+            <button key={q.id} onClick={() => setActiveTab?.(q.id)} style={{
+              background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "14px 12px",
+              cursor: "pointer", fontFamily: "inherit", textAlign: "right", boxShadow: t.shSm,
+            }}>
+              <div style={{
+                width: 38, height: 38, borderRadius: 12, background: `${q.color}15`,
+                border: `1px solid ${q.color}30`, display: "flex", alignItems: "center",
+                justifyContent: "center", marginBottom: 9,
+              }}>
+                <q.Icon size={18} color={q.color} />
+              </div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx }}>{q.label}</div>
+              <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2 }}>{q.desc}</div>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Share the app with classmates. */}
@@ -7694,12 +7803,80 @@ export default function App() {
   useLectureReminders(schedule, notifSoundOn, toasts.push);
   useTaskReminders(tasks, notifSoundOn, toasts.push);
   // Keep the server's reminder queue in step so these also arrive when closed.
+  // Study plans published by the admin. Fetched once; the built-in plan stays
+  // the fallback so the page still works before this resolves — or if it never
+  // does.
+  const [programPlans, setProgramPlans] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/program-plans")
+      .then(r => r.json())
+      .then(d => { if (alive && d?.plans) setProgramPlans(d.plans); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   useReminderSync(schedule, tasks, profile);
+
+  /**
+   * Tell the server, once per visit, that this device belongs to this ID.
+   *
+   * "نسيت معرّفي" can only answer for devices the server knows about, and the
+   * link used to be written only when a backup was saved — so it worked for
+   * nobody who already had an account and no reason to re-save. This claims the
+   * link on open instead, which is what makes the feature real for every
+   * existing device, not just ones created after it shipped.
+   */
+  useEffect(() => {
+    const code = profile?.studentCode;
+    if (!code) return;
+    const id = setTimeout(() => {
+      fetch("/api/profile-backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, link: true }),
+      }).catch(() => {});
+    }, 3000);
+    return () => clearTimeout(id);
+  }, [profile?.studentCode]);
   const unread = (notifs || []).filter(n => !n.read).length;
   const overdueTasks = useMemo(() => {
     const today = todayKey();
     return (tasks || []).filter(tk => !tk.done && tk.dueDate && tk.dueDate < today).length;
   }, [tasks]);
+
+  /**
+   * What each tab wants the student to know without opening it.
+   *
+   * A number where a count is the point (tasks due, lectures today), and a plain
+   * dot where "there is something new" is the whole message — an exam three days
+   * out is not "3 of" anything, and a profile with an approved request is not a
+   * quantity at all.
+   */
+  const todaysLectures = useMemo(() => {
+    const d = new Date().getDay();
+    return (schedule || []).filter(l => Number(l?.day) === d).length;
+  }, [schedule]);
+
+  const soonExams = useMemo(() => {
+    const now = Date.now(), week = now + 7 * 86400000;
+    return (exams || []).some(e => {
+      const t2 = e?.date ? new Date(e.date).getTime() : 0;
+      return t2 >= now && t2 <= week;
+    });
+  }, [exams]);
+
+  // Something on حسابي is waiting on the student: an approved change to spend,
+  // or a reply they haven't read.
+  const profileDot = Boolean(unread > 0);
+
+  const tabSignal = (id) => {
+    if (id === "home" || id === "tasks") return { count: overdueTasks, dot: false };
+    if (id === "schedule") return { count: todaysLectures, dot: false };
+    if (id === "calendar") return { count: 0, dot: soonExams };
+    if (id === "profile") return { count: 0, dot: profileDot };
+    return { count: 0, dot: false };
+  };
 
 
   useEffect(() => {
@@ -7862,8 +8039,10 @@ export default function App() {
     // easiest place to hit with a thumb.
     { id: "profile", Icon: CircleUser, label: "حسابي", raised: true },
     { id: "calendar", Icon: Calendar, label: "التقويم" },
-    { id: "fav", Icon: Star, label: "المفضلة" },
-    { id: "links", Icon: Link2, label: "روابط" },
+    // المفضلة and روابط used to sit here too. Nine tabs did not fit a phone:
+    // the row scrolled and the last one was clipped off the edge, which is a
+    // worse way to lose a tab than moving it somewhere it can be read. Both are
+    // one tap away inside حسابي.
   ];
 
   return (
@@ -7879,6 +8058,7 @@ export default function App() {
         @keyframes scaleIn { from { opacity:0; transform:scale(.92) } to { opacity:1; transform:scale(1) } }
         @keyframes bounce { 0%,80%,100% { transform:translateY(0) } 40% { transform:translateY(-7px) } }
         @keyframes pulse { 0%,100% { opacity:.5 } 50% { opacity:.85 } }
+        @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes toastIn { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
         @keyframes splashBar { from { width:0% } to { width:100% } }
         @keyframes floatOrb { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-12px) } }
@@ -7966,7 +8146,7 @@ export default function App() {
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} profile={profile} />}
 
-        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
+        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} plans={programPlans} />}
         {tab === "services" && !course && <ServicesPage t={t} dark={dark} />}
         {tab === "tasks" && !course && <TasksHub
           t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams}
@@ -8039,7 +8219,7 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label, raised }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
-          const badge = (id === "home" || id === "tasks") ? overdueTasks : 0;
+          const { count: badge, dot } = tabSignal(id);
           // The raised tab keeps a filled circle whether or not it is active,
           // so it reads as the anchor of the row rather than another chip.
           const filled = raised || active;
@@ -8063,7 +8243,22 @@ export default function App() {
                   : (active ? `0 3px 12px ${P.blue}55` : "none"),
               }}>
                 <Icon size={raised ? 21 : 17} color={filled ? "#fff" : t.dim} strokeWidth={active ? 2.5 : 1.8} />
-                {badge > 0 && <span style={{ position: "absolute", top: -3, right: -3, width: 14, height: 14, borderRadius: "50%", background: P.red, color: "#fff", fontSize: 10, fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>{badge}</span>}
+                {badge > 0 && (
+                  <span style={{
+                    position: "absolute", top: -3, right: -3, minWidth: 15, height: 15, padding: "0 3px",
+                    borderRadius: 8, background: P.red, color: "#fff", fontSize: 10, fontWeight: 900,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    border: `1.5px solid ${dark ? "rgba(8,19,13,.96)" : "#fff"}`,
+                  }}>{badge > 9 ? "9+" : badge}</span>
+                )}
+                {/* No number to show, but something changed: a plain dot says so
+                    without pretending it is a quantity. */}
+                {!badge && dot && (
+                  <span aria-hidden style={{
+                    position: "absolute", top: -1, right: -1, width: 9, height: 9, borderRadius: "50%",
+                    background: P.gold, border: `1.5px solid ${dark ? "rgba(8,19,13,.96)" : "#fff"}`,
+                  }} />
+                )}
               </div>
               <span style={{ fontSize: 10.5, fontWeight: active || raised ? 800 : 500, color: active ? P.blue2 : (raised ? t.tx : t.dim), whiteSpace: "nowrap" }}>{label}</span>
             </button>
@@ -8196,7 +8391,7 @@ export default function App() {
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {aiGlobalTab === "chat"
-              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed}
+              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} onToast={toasts.push}
                   profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
                   email={aiEmail} onSaveEmail={setAiEmail} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} onSubscribe={() => setSubOpen({})} /></div>
