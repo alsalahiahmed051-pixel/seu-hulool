@@ -1419,7 +1419,12 @@ const untilLabel = (resetAt) => {
   return `خلال ${h} ساعة${m ? ` و${m} د` : ""}`;
 };
 
-function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null }) {
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null, onToast = null }) {
+  // This component called `onToast?.(...)` in a dozen places without ever
+  // receiving it. Optional chaining does not save an *undeclared* identifier:
+  // every one of those lines threw ReferenceError and took the whole click
+  // handler with it. That is why the microphone did nothing at all, and why an
+  // image that failed validation failed silently — the error path was the crash.
   const histKey = `aiHistory_${subject.replace(/\s+/g, "_").slice(0, 40)}`;
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
@@ -1481,8 +1486,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   const [fileCount, setFileCount] = useState(0);
   const [fileSugs, setFileSugs] = useState([]);
   const [recording, setRecording] = useState(false);
+  // Audio is captured; the server is turning it into text.
+  const [transcribing, setTranscribing] = useState(false);
   const [hasSpeech, setHasSpeech] = useState(false);
   const recogRef = useRef(null);
+  // The MediaRecorder path, for browsers with no SpeechRecognition.
+  const mediaRef = useRef(null);
   const endRef = useRef(null);
   // A photo of a question, waiting to be sent with the next message.
   const [image, setImage] = useState(null);
@@ -1759,16 +1768,65 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     setLoading(false);
   };
 
+  /**
+   * Record the microphone and have the server transcribe it.
+   *
+   * This is the path for Safari — every iPhone — which has no
+   * `SpeechRecognition` at all. Telling those students "use Chrome" was not a
+   * fix: it is most of them. MediaRecorder is supported everywhere the mic is,
+   * so the audio goes to /api/transcribe and comes back as text.
+   */
+  const startFallbackRecording = async () => {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      onToast?.("متصفحك لا يدعم التسجيل الصوتي", "warn");
+      return;
+    }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { onToast?.("امنح إذن الميكروفون من إعدادات المتصفح", "warn"); return; }
+
+    // Let the browser pick a container it can actually produce: Safari gives
+    // mp4/aac, Chrome webm/opus. Forcing one of them breaks the other.
+    let rec;
+    try { rec = new MediaRecorder(stream); }
+    catch { stream.getTracks().forEach(t => t.stop()); onToast?.("تعذّر بدء التسجيل", "error"); return; }
+
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      setRecording(false);
+      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+      if (!blob.size) { onToast?.("التسجيل فارغ — حاول مجدداً", "warn"); return; }
+      setTranscribing(true);
+      try {
+        const fd = new FormData();
+        fd.append("audio", blob);
+        const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+        const d = await res.json().catch(() => ({}));
+        setTranscribing(false);
+        if (!res.ok || !d.text) { onToast?.(d.error || "تعذّر تحويل الصوت إلى نص", "warn"); return; }
+        setInp(prev => (prev ? prev + " " : "") + d.text);
+      } catch { setTranscribing(false); onToast?.("تعذّر الاتصال — تحقق من الإنترنت", "error"); }
+    };
+    mediaRef.current = rec;
+    try { rec.start(); setRecording(true); }
+    catch { stream.getTracks().forEach(t => t.stop()); onToast?.("تعذّر بدء التسجيل", "error"); }
+  };
+
   const toggleRecording = () => {
     if (recording) {
+      // Whichever path started it is the one that has to be stopped.
+      if (mediaRef.current && mediaRef.current.state === "recording") { mediaRef.current.stop(); return; }
       recogRef.current?.stop();
       setRecording(false);
       return;
     }
+    if (transcribing) return;
     const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-    // No silent no-op: iOS Safari has no speech recognition, and a dead button
-    // reads as a bug. Say why instead.
-    if (!SR) { onToast?.("الإدخال الصوتي غير مدعوم في هذا المتصفح — جرّب كروم على الجوال", "warn"); return; }
+    // No speech recognition (Safari, every iPhone) is no longer a dead end:
+    // record instead and let the server transcribe.
+    if (!SR) { startFallbackRecording(); return; }
     let r;
     try { r = new SR(); } catch { onToast?.("تعذّر تشغيل الميكروفون", "error"); return; }
     r.lang = "ar-SA";
@@ -2050,18 +2108,24 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           style={{ flex: 1, border: `1.5px solid ${t.bd}`, borderRadius: 24, padding: "10px 16px", fontSize: 13, outline: "none", direction: "rtl", fontFamily: "inherit", color: t.tx, background: t.s2, transition: "border-color .2s", minWidth: 0 }}
           onFocus={e => e.target.style.borderColor = P.blue2}
           onBlur={e => e.target.style.borderColor = t.bd} />
-        {(
-          <button onClick={toggleRecording} style={{
-            width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
-            background: recording ? P.red : t.s3,
+        {/* Three states, because the fallback path has a wait the browser's own
+            recogniser doesn't: idle, recording, and "sending it to be read". */}
+        <button onClick={toggleRecording} disabled={transcribing}
+          title={transcribing ? "جارٍ تحويل الصوت إلى نص" : recording ? "إيقاف التسجيل" : "إدخال صوتي"}
+          aria-label={transcribing ? "جارٍ التحويل" : recording ? "إيقاف التسجيل" : "إدخال صوتي"}
+          style={{
+            width: 44, height: 44, borderRadius: "50%", border: "none",
+            cursor: transcribing ? "wait" : "pointer",
+            background: recording ? P.red : transcribing ? `${P.blue2}22` : t.s3,
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             boxShadow: recording ? `0 0 0 3px ${P.red}40` : "none",
             transition: "all .2s",
             animation: recording ? "pulse 1.2s infinite" : "none",
           }}>
-            {recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
-          </button>
-        )}
+          {transcribing
+            ? <RotateCcw size={17} color={P.blue2} style={{ animation: "spin 1s linear infinite" }} />
+            : recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
+        </button>
         <button onClick={() => send()} disabled={loading || (!inp.trim() && !image)} style={{
           width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || (!inp.trim() && !image) ? "not-allowed" : "pointer",
           background: loading || (!inp.trim() && !image) ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
@@ -4214,7 +4278,7 @@ function AISection({ subject, t, onChat, files, onToast }) {
           </button>
         ))}
       </div>
-      {aiTab === "chat" && <AIChat subject={subject} t={t} onChat={onChat} files={files} />}
+      {aiTab === "chat" && <AIChat subject={subject} t={t} onChat={onChat} files={files} onToast={onToast} />}
       {aiTab === "quiz" && <QuizMode subject={subject} t={t} onToast={onToast} />}
     </div>
   );
@@ -7879,6 +7943,7 @@ export default function App() {
         @keyframes scaleIn { from { opacity:0; transform:scale(.92) } to { opacity:1; transform:scale(1) } }
         @keyframes bounce { 0%,80%,100% { transform:translateY(0) } 40% { transform:translateY(-7px) } }
         @keyframes pulse { 0%,100% { opacity:.5 } 50% { opacity:.85 } }
+        @keyframes spin { to { transform: rotate(360deg) } }
         @keyframes toastIn { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
         @keyframes splashBar { from { width:0% } to { width:100% } }
         @keyframes floatOrb { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-12px) } }
@@ -8196,7 +8261,7 @@ export default function App() {
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
             {aiGlobalTab === "chat"
-              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed}
+              ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} onToast={toasts.push}
                   profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
                   email={aiEmail} onSaveEmail={setAiEmail} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} onSubscribe={() => setSubOpen({})} /></div>

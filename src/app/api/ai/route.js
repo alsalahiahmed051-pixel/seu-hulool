@@ -26,7 +26,8 @@ async function callAnthropic(subject, messages, fileContext) {
   return text
 }
 
-async function getFreeModels() {
+/** Every free model OpenRouter is currently serving, with its metadata. */
+async function getFreeModelList() {
   try {
     const r = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
@@ -39,11 +40,81 @@ async function getFreeModels() {
         return p === '0' || p === 0 || p === '0.0' || Number(p) === 0
       })
       .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
-      .map(m => m.id)
-      .slice(0, 8)
   } catch {
     return []
   }
+}
+
+async function getFreeModels() {
+  return (await getFreeModelList()).map(m => m.id).slice(0, 8)
+}
+
+/**
+ * The free models that can actually look at a picture.
+ *
+ * Reading images used to require a Gemini key, so a site configured with only
+ * the OpenRouter key — the one the app's own setup text tells owners to get —
+ * answered every photo with "قراءة الصور غير مفعّلة". OpenRouter serves free
+ * vision models too; this finds them, so the picture works with the key the
+ * owner already has.
+ */
+async function getFreeVisionModels() {
+  return (await getFreeModelList())
+    .filter(m => {
+      const arch = m.architecture || {}
+      const inputs = arch.input_modalities || arch.modality || ''
+      return Array.isArray(inputs)
+        ? inputs.includes('image')
+        : String(inputs).includes('image')
+    })
+    .map(m => m.id)
+    .slice(0, 4)
+}
+
+/** Ask a free OpenRouter vision model about the attached picture. */
+async function callOpenRouterVision(subject, messages, fileContext, image) {
+  const models = await getFreeVisionModels()
+  if (models.length === 0) throw new Error('no free vision models on OpenRouter')
+
+  // Only the newest turn carries the picture; earlier turns stay plain text.
+  const history = messages.slice(0, -1)
+  const last = messages[messages.length - 1]
+  const withImage = {
+    role: 'user',
+    content: [
+      { type: 'text', text: last?.content || 'حلّ هذا السؤال من الصورة.' },
+      { type: 'image_url', image_url: { url: image } },
+    ],
+  }
+
+  const errors = []
+  for (const model of models) {
+    try {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENROUTER_KEY}`,
+          'HTTP-Referer': 'https://seu-hulool.vercel.app',
+          'X-Title': 'SEU Hulool',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: buildSystem(subject, fileContext) },
+            ...history,
+            withImage,
+          ],
+          max_tokens: 1024,
+        }),
+      })
+      const data = await r.json()
+      if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
+      const text = data.choices?.[0]?.message?.content
+      if (text) return text
+    } catch (e) { errors.push(`${model}: ${e.message}`) }
+  }
+  throw new Error(errors.join(' | ') || 'vision models returned nothing')
 }
 
 async function callOpenRouter(subject, messages, fileContext) {
@@ -322,6 +393,11 @@ export async function POST(request) {
   if (hasImage) {
     if (geminiUsable)
       providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext, image) })
+    // OpenRouter serves free vision models too. Without this, a site holding
+    // only the OpenRouter key — the key its own setup text asks for — refused
+    // every picture.
+    if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, fileContext, image) })
     if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
       // Only if there is no free reader at all: this one costs money.
       providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
