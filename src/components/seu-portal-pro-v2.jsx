@@ -108,6 +108,72 @@ const P = {
   cyan: "#0891b2", pink: "#db2777",
 };
 
+/**
+ * The «حلول» brand identity, taken from the platform's own logo and service
+ * cards: teal for the wordmark, indigo for the check, purple for SEU. These
+ * stay fixed while `P` follows the admin's chosen theme — the services section
+ * is the one place that must read as the brand itself, not as a site skin.
+ */
+const BRAND = {
+  teal: "#1b9ac4", tealDeep: "#12718f", tealSoft: "#e8f5fa",
+  indigo: "#3f51a8", indigoDeep: "#2c3a7c",
+  purple: "#6b2d91", purpleDeep: "#4a1f66",
+  slate: "#4a5461", brown: "#6b4a45",
+  ink: "#0c1712",
+};
+
+/** The one number every service is booked through. */
+const WHATSAPP = "966539614221";
+const waLink = (service) =>
+  `https://wa.me/${WHATSAPP}?text=${encodeURIComponent(`السلام عليكم، أبي أستفسر عن: ${service}`)}`;
+
+/**
+ * The paid services «حلول» actually sells, transcribed from the platform's own
+ * service cards. Kept as data so the section stays one grid to restyle rather
+ * than five hand-built blocks, and so a price or an item is a one-line edit.
+ */
+const SERVICES = [
+  {
+    id: "plan-a", title: "اشتراك الخطة A", tag: "تحضيري",
+    blurb: "حزمة الفصل الأول كاملة — الحاسب والإنجليزي والأكاديمي",
+    color: BRAND.teal, Icon: Layers,
+    items: [
+      { name: "الحاسب", detail: "التدريبات العملية + المناقشات الجماعية + الكويزات" },
+      { name: "الإنجليزي", detail: "حل كتابين IQ + Quiz 1 · 2 · 3" },
+      { name: "الأكاديمي", detail: "الـ ١٠ اختبارات القصيرة — عليها ٤٠ درجة" },
+    ],
+  },
+  {
+    id: "plan-b", title: "اشتراك الخطة B", tag: "تحضيري",
+    blurb: "حزمة الفصل الثاني كاملة — الرياضيات والإنجليزي ومهارات الاتصال",
+    color: BRAND.indigo, Icon: Layers,
+    items: [
+      { name: "الرياضيات", detail: "10 Test Homework + ٤ كويزات" },
+      { name: "الإنجليزي", detail: "حل كتابين IQ + Quiz 1 · 2 · 3" },
+      { name: "مهارات الاتصال", detail: "٧ اختبارات ذاتية + كويزان" },
+    ],
+  },
+  {
+    id: "major", title: "مساعد طلاب التخصص", tag: "كل التخصصات", featured: true,
+    blurb: "اشتراك بجميع المواد لكل التخصصات — يشمل كل ما يُسلَّم أسبوعياً",
+    color: BRAND.purple, Icon: GraduationCap,
+    items: [
+      { name: "البروجكت" }, { name: "الكويزات" },
+      { name: "المناقشات" }, { name: "الأكتفتي الأسبوعي" },
+    ],
+  },
+  {
+    id: "attend", title: "حضور المحاضرات", tag: "خدمة",
+    blurb: "نحضر المحاضرة نيابةً عنك ونوصّل لك الخلاصة",
+    color: BRAND.slate, Icon: Monitor, items: [],
+  },
+  {
+    id: "slides", title: "العروض التقديمية", tag: "خدمة",
+    blurb: "عروض تقديمية احترافية جاهزة للتسليم",
+    color: BRAND.brown, Icon: BarChart2, items: [],
+  },
+];
+
 // Admin-selectable colour themes. Each recolours the primary brand (buttons,
 // icons, headers), the page background/mesh and the hero gradients. Neutrals
 // (cards, text) stay clean. Applied by mutating P + parametrising T.
@@ -4752,6 +4818,8 @@ function ExplorePage({ onCourse, t, profile }) {
   const [step, setStep] = useState("root");
   const [path, setPath] = useState(null);
   const [sub, setSub] = useState(null);
+  // Opt back out of the student's own programme to the full college/track list.
+  const [showAll, setShowAll] = useState(false);
 
   // Open on the student's own subjects, not on a picker they already answered.
   //
@@ -4867,12 +4935,18 @@ function ExplorePage({ onCourse, t, profile }) {
         </div>
       </>}
 
-      {step === "level2" && (path === "diploma" || path === "graduate") && <>
+      {step === "level2" && (path === "diploma" || path === "graduate") && (() => {
+        // Same rule as the bachelor screen: a student who already named their
+        // programme sees theirs, not the whole track's catalogue.
+        const all = TREE[path].programs;
+        const scoped = all.includes(profile?.plan) && !showAll;
+        const shown = scoped ? [profile.plan] : all;
+        return <>
         <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
-          {path === "diploma" ? "برامج الدبلوم" : "برامج الدراسات العليا"}
+          {scoped ? "برنامجي" : (path === "diploma" ? "برامج الدبلوم" : "برامج الدراسات العليا")}
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-          {TREE[path].programs.map((p, i) => {
+          {shown.map((p, i) => {
             const Icon = TREE[path].icon;
             const colors = ["#1d4ed8", "#6d28d9", "#065f46", "#be123c", "#b45309", "#0369a1", "#92400e", "#047857", "#7c3aed"];
             return (
@@ -4892,7 +4966,16 @@ function ExplorePage({ onCourse, t, profile }) {
             );
           })}
         </div>
-      </>}
+        {scoped && (
+          <button onClick={() => setShowAll(true)} style={{
+            background: "none", border: "none", padding: "12px 2px 0", cursor: "pointer",
+            fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu,
+          }}>
+            تصفّح بقية البرامج
+          </button>
+        )}
+      </>;
+      })()}
 
       {step === "level3" && path === "preparatory" && <>
         <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
@@ -4921,11 +5004,21 @@ function ExplorePage({ onCourse, t, profile }) {
 
       {step === "level3" && path === "bachelor" && (() => {
         const col = TREE.bachelor.colleges.find(c => c.id === sub);
-        return col && (
+        if (!col) return null;
+        // «مساري» is the student's own programme, not everything their college
+        // offers. Someone who already answered "إدارة أعمال" was still handed
+        // all of العلوم الإدارية to pick through again, on the screen named
+        // after their own track. Their programme is the list now; the rest of
+        // the college stays one tap away for anyone who wants to look around.
+        const scoped = col.programs.includes(profile?.plan) && !showAll;
+        const shown = scoped ? [profile.plan] : col.programs;
+        return (
           <>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>{col.label}</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
+              {scoped ? "تخصصي" : col.label}
+            </h2>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {col.programs.map((p, i) => {
+              {shown.map((p, i) => {
                 const PIcon = getIcon(p);
                 return (
                   <button key={i} onClick={() => onCourse(p)} style={{
@@ -4942,9 +5035,175 @@ function ExplorePage({ onCourse, t, profile }) {
                 );
               })}
             </div>
+            {scoped && (
+              <button onClick={() => setShowAll(true)} style={{
+                background: "none", border: "none", padding: "12px 2px 0", cursor: "pointer",
+                fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu,
+              }}>
+                تصفّح بقية تخصصات {col.label}
+              </button>
+            )}
           </>
         );
       })()}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SERVICES PAGE — what «حلول» sells, in the platform's own identity
+   ══════════════════════════════════════════════════════════════ */
+/**
+ * The paid catalogue, laid out as one system rather than five posters.
+ *
+ * Every card carries the same anatomy — a brand rail, an icon plate, the
+ * programme name, what is inside it, and the one action that books it — so the
+ * eye learns the shape once and then only reads what changed. The colour is
+ * the only thing that varies per service, and it comes from BRAND, so the
+ * section reads as «حلول» whatever theme the admin has set for the rest.
+ */
+function ServicesPage({ t, dark }) {
+  const [open, setOpen] = useState(null);
+
+  const Card = ({ s }) => {
+    const isOpen = open === s.id;
+    const hasItems = s.items.length > 0;
+    return (
+      <div style={{
+        background: t.s1, border: `1px solid ${isOpen ? s.color + "55" : t.bd}`,
+        borderRadius: 20, overflow: "hidden", boxShadow: isOpen ? `0 10px 30px ${s.color}22` : t.shSm,
+        transition: "border-color .22s, box-shadow .22s", position: "relative",
+      }}>
+        {/* Brand rail — the one place the service's colour is stated flatly. */}
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${s.color}, ${s.color}55)` }} />
+        {/* Sits on the corner rather than in the title row: inline it pushed the
+            heading onto a second line on a narrow phone. */}
+        {s.featured && (
+          <span style={{
+            position: "absolute", top: 0, left: 14, zIndex: 1,
+            fontSize: 10.5, fontWeight: 800, color: "#fff",
+            background: `linear-gradient(135deg, ${BRAND.purple}, ${BRAND.indigo})`,
+            borderRadius: "0 0 10px 10px", padding: "4px 10px 5px",
+            boxShadow: `0 4px 12px ${BRAND.purple}44`,
+          }}>الأكثر طلباً</span>
+        )}
+        <div style={{ padding: "16px 16px 14px" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            <div style={{
+              width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+              background: dark ? `${s.color}26` : `${s.color}14`,
+              border: `1px solid ${s.color}33`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <s.Icon size={22} color={s.color} strokeWidth={1.9} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+                <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>{s.title}</span>
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800, color: s.color, letterSpacing: ".02em",
+                  background: dark ? `${s.color}22` : `${s.color}12`,
+                  border: `1px solid ${s.color}30`, borderRadius: 20, padding: "2px 8px",
+                }}>{s.tag}</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>{s.blurb}</div>
+            </div>
+          </div>
+
+          {hasItems && (
+            <>
+              <button onClick={() => setOpen(isOpen ? null : s.id)} style={{
+                marginTop: 12, width: "100%", background: "none", border: "none", padding: "4px 0",
+                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: s.color,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <span>{isOpen ? "إخفاء التفاصيل" : `ما الذي يشمله؟ (${s.items.length})`}</span>
+                <ChevronDown size={15} color={s.color}
+                  style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .22s" }} />
+              </button>
+              {isOpen && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10, animation: "fadeUp .25s ease" }}>
+                  {s.items.map((it, i) => (
+                    <div key={i} style={{
+                      background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
+                      padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 9,
+                    }}>
+                      <CheckCircle size={15} color={s.color} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{it.name}</div>
+                        {it.detail && <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2, lineHeight: 1.55 }}>{it.detail}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          <a href={waLink(s.title)} target="_blank" rel="noopener noreferrer" style={{
+            marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            background: `linear-gradient(135deg, ${s.color}, ${s.color}cc)`, color: "#fff",
+            borderRadius: 14, padding: "11px 14px", textDecoration: "none",
+            fontSize: 13.5, fontWeight: 800, boxShadow: `0 5px 16px ${s.color}38`,
+          }}>
+            <MessageCircle size={16} /> احجز أو استفسر
+          </a>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ animation: "fadeUp .4s ease" }}>
+      {/* Hero — the brand's three colours in the order the logo uses them. */}
+      <div style={{
+        borderRadius: 22, padding: "22px 20px", marginBottom: 18, position: "relative", overflow: "hidden",
+        background: `linear-gradient(135deg, ${BRAND.tealDeep} 0%, ${BRAND.indigo} 55%, ${BRAND.purple} 100%)`,
+        boxShadow: `0 12px 32px ${BRAND.indigo}33`,
+      }}>
+        <div aria-hidden style={{
+          position: "absolute", inset: 0, opacity: .17,
+          background: "radial-gradient(circle at 88% 18%, #fff 0%, transparent 42%), radial-gradient(circle at 12% 88%, #fff 0%, transparent 38%)",
+        }} />
+        <div style={{ position: "relative" }}>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 9,
+            background: "rgba(255,255,255,.16)", border: "1px solid rgba(255,255,255,.28)",
+            borderRadius: 20, padding: "4px 11px", fontSize: 11.5, fontWeight: 800, color: "#fff",
+          }}>
+            <Sparkles size={12} /> منصة حلول التعليمية
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 900, color: "#fff", marginBottom: 7, lineHeight: 1.35 }}>
+            خدماتنا
+          </h2>
+          <p style={{ fontSize: 13, color: "rgba(255,255,255,.85)", lineHeight: 1.7, margin: 0 }}>
+            كل الحلول في مكان واحد — حلول التحضيري والتخصص.
+            <br />اشترك ووفّر وقتك، النجاح أسهل معنا.
+          </p>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {SERVICES.map(s => <Card key={s.id} s={s} />)}
+      </div>
+
+      {/* One closing way to reach a human, for anything the cards don't cover. */}
+      <div style={{
+        marginTop: 16, background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 18,
+        padding: "16px", textAlign: "center",
+      }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: t.tx, marginBottom: 4 }}>ما لقيت اللي تبيه؟</div>
+        <div style={{ fontSize: 12, color: t.mu, marginBottom: 12, lineHeight: 1.6 }}>
+          راسلنا مباشرة على واتساب وبنرد عليك بأسرع وقت
+        </div>
+        <a href={waLink("خدمة أخرى")} target="_blank" rel="noopener noreferrer" style={{
+          display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none",
+          background: "#25D366", color: "#fff", borderRadius: 14, padding: "11px 22px",
+          fontSize: 13.5, fontWeight: 800, boxShadow: "0 5px 16px #25D36640",
+        }}>
+          <MessageCircle size={16} /> {"+" + WHATSAPP}
+        </a>
+      </div>
     </div>
   );
 }
@@ -7196,6 +7455,9 @@ export default function App() {
     // Once a track is confirmed the explorer is scoped to it, so the label
     // "المسارات" (plural, all of them) stops being true.
     { id: "explore", Icon: Compass, label: profile?.track ? "مساري" : "المسارات" },
+    // The paid catalogue earns a tab of its own: it is what the platform sells,
+    // and burying it in a menu is how a service nobody finds stops selling.
+    { id: "services", Icon: Sparkles, label: "الخدمات" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
     // حسابي sits in the middle and is raised: it is the one tab that is about
     // you rather than about content, and the middle of a seven-tab row is the
@@ -7307,6 +7569,7 @@ export default function App() {
           exams={exams} setExams={setExams} profile={profile} />}
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
+        {tab === "services" && !course && <ServicesPage t={t} dark={dark} />}
 
         {tab === "schedule" && <SchedulePage t={t} schedule={schedule} setSchedule={setSchedule} onToast={toasts.push} />}
 
@@ -7557,6 +7820,7 @@ export default function App() {
 // subjects. Each has keywords to match loosely.
 const SEARCH_PAGES = [
   { tab: "explore", label: "المسارات والتخصصات", Icon: Compass, color: "#0a8a58", kw: "مسار تخصص استكشاف كليات برامج تجميعات ملخصات خطط مقررات" },
+  { tab: "services", label: "الخدمات والاشتراكات", Icon: Sparkles, color: BRAND.purple, kw: "خدمات اشتراك خطة a خطة b تحضيري تخصص حضور محاضرات عروض تقديمية بروجكت كويزات مناقشات اكتفتي واتساب حجز" },
   { tab: "schedule", label: "جدولي الأسبوعي", Icon: CalendarDays, color: "#0891b2", kw: "جدول محاضرات حصص مواعيد" },
   { tab: "gpa", label: "حاسبة المعدل", Icon: Calculator, color: "#2563eb", kw: "حساب معدل درجات gpa تراكمي فصلي" },
   { tab: "fav", label: "المفضلة", Icon: Star, color: "#c8a84b", kw: "مفضلة محفوظات نجمة" },
