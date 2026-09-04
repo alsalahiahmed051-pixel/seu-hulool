@@ -12,6 +12,32 @@
  * Both sides now import from here, so they cannot drift again.
  */
 
+/**
+ * The real course plan, level by level, as SEU actually publishes it.
+ *
+ * Until now a programme ("إدارة أعمال") was the leaf the whole app treated as a
+ * course, so a student's own screen could not name a single subject they sit.
+ * These are the course codes per level — the identifiers students actually use
+ * with each other and on Blackboard.
+ *
+ * Transcribed from the platform's own course listing. Only programmes whose
+ * plan has been transcribed appear here; the rest fall back to the programme
+ * card, so nothing is invented for a programme we do not have the plan for.
+ */
+export const PROGRAM_LEVELS = {
+  'إدارة أعمال': {
+    'المستوى الثالث': ['STAT101', 'LAW101', 'ECON101', 'MGT101', 'ACCT101'],
+    'المستوى الرابع': ['STAT201', 'FIN101', 'MGT201', 'MGT211', 'ECOM101'],
+    'المستوى الخامس': ['ECON201', 'MIS201', 'ECOM201', 'MGT301', 'MGT311', 'MGT312'],
+    'المستوى السادس': ['ACCT301', 'MGT321', 'MGT322', 'MGT323'],
+    'المستوى السابع': ['MGT401', 'MGT324', 'MGT402', 'MGT403'],
+    'المستوى الثامن': ['MGT404', 'MGT421', 'MGT422', 'MGT430'],
+  },
+};
+
+/** The levels for a programme, or null when its plan isn't transcribed yet. */
+export const levelsOf = (program) => PROGRAM_LEVELS[program] || null;
+
 export const CATALOGUE = {
   preparatory: {
     label: 'السنة الأولى المشتركة (CFY)',

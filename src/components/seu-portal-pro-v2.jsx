@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE } from "@/lib/courses";
+import { CATALOGUE, levelsOf } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -4916,6 +4916,8 @@ function ExplorePage({ onCourse, t, profile }) {
   const [sub, setSub] = useState(null);
   // Opt back out of the student's own programme to the full college/track list.
   const [showAll, setShowAll] = useState(false);
+  // Which level of the student's own study plan is expanded.
+  const [openLevel, setOpenLevel] = useState(null);
 
   // Open on the student's own subjects, not on a picker they already answered.
   //
@@ -5131,9 +5133,64 @@ function ExplorePage({ onCourse, t, profile }) {
                 );
               })}
             </div>
+            {/* The actual study plan, level by level, where we have it. This is
+                the thing a student came for: their own courses by code, not
+                the programme's name repeated back at them. */}
+            {scoped && levelsOf(profile.plan) && (
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx, marginBottom: 4 }}>خطتي الدراسية</div>
+                <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 10 }}>
+                  اضغط على أي مستوى لعرض مواده، ثم على المادة لفتحها.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {Object.entries(levelsOf(profile.plan)).map(([lvl, codes]) => {
+                    const on = openLevel === lvl;
+                    return (
+                      <div key={lvl} style={{
+                        background: t.s1, border: `1px solid ${on ? col.color + "55" : t.bd}`,
+                        borderRadius: 14, overflow: "hidden", transition: "border-color .2s",
+                      }}>
+                        <button onClick={() => setOpenLevel(on ? null : lvl)} style={{
+                          width: "100%", background: "none", border: "none", cursor: "pointer",
+                          padding: "12px 14px", fontFamily: "inherit", textAlign: "right",
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                        }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{lvl}</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 800, color: col.color,
+                              background: `${col.color}15`, border: `1px solid ${col.color}30`,
+                              borderRadius: 20, padding: "2px 8px",
+                            }}>{codes.length} مواد</span>
+                            <ChevronDown size={15} color={t.mu}
+                              style={{ transform: on ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                          </span>
+                        </button>
+                        {on && (
+                          <div style={{
+                            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8,
+                            padding: "0 12px 12px", animation: "fadeUp .22s ease",
+                          }}>
+                            {codes.map(code => (
+                              <button key={code} onClick={() => onCourse(code)} style={{
+                                background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11,
+                                padding: "11px 8px", cursor: "pointer", fontFamily: "inherit",
+                                fontSize: 12.5, fontWeight: 800, color: t.tx,
+                                fontFeatureSettings: '"tnum"', direction: "ltr",
+                              }}>{code}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {scoped && (
               <button onClick={() => setShowAll(true)} style={{
-                background: "none", border: "none", padding: "12px 2px 0", cursor: "pointer",
+                background: "none", border: "none", padding: "14px 2px 0", cursor: "pointer",
                 fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu,
               }}>
                 تصفّح بقية تخصصات {col.label}
