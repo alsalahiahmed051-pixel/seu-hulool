@@ -6526,12 +6526,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
         <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, margin: "4px 2px 8px", letterSpacing: 0.2 }}>المزيد</div>
       )}
 
-      {/* The two tabs that came out of the bottom bar. */}
+      {/* المفضلة, the one tab still living here rather than in the row. */}
       {!editing && profile && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 16 }}>
           {[
             { id: "fav", label: "المفضلة", desc: "موادك المحفوظة", Icon: Star, color: P.gold },
-            { id: "links", label: "روابط الجامعة", desc: "البوابة والبلاك بورد", Icon: Link2, color: P.blue2 },
           ].map(q => (
             <button key={q.id} onClick={() => setActiveTab?.(q.id)} style={{
               background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "14px 12px",
@@ -8039,10 +8038,13 @@ export default function App() {
     // easiest place to hit with a thumb.
     { id: "profile", Icon: CircleUser, label: "حسابي", raised: true },
     { id: "calendar", Icon: Calendar, label: "التقويم" },
-    // المفضلة and روابط used to sit here too. Nine tabs did not fit a phone:
-    // the row scrolled and the last one was clipped off the edge, which is a
-    // worse way to lose a tab than moving it somewhere it can be read. Both are
-    // one tap away inside حسابي.
+    // روابط is back in the row. It was moved into حسابي when nine tabs
+    // overflowed the phone and this one got clipped off the edge — but the
+    // owner went looking for it here, and that is the better evidence of where
+    // it belongs. The row is tightened below so eight fit without clipping
+    // instead. المفضلة stays in حسابي: it is also on the profile's own
+    // مفضلتي tile, so it was never one tap away from nothing.
+    { id: "links", Icon: Link2, label: "روابط" },
   ];
 
   return (
@@ -8216,7 +8218,7 @@ export default function App() {
         scrollbarWidth: "none", padding: "6px 8px 14px",
         boxShadow: dark ? "0 -1px 20px rgba(0,0,0,.5)" : "0 -1px 16px rgba(0,80,45,.08)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 0, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label, raised }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
           const { count: badge, dot } = tabSignal(id);
@@ -8227,12 +8229,12 @@ export default function App() {
             <button key={id} onClick={() => { setTab(id); setCourse(null); }}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-                background: "none", border: "none", cursor: "pointer", padding: "5px 4px",
+                background: "none", border: "none", cursor: "pointer", padding: "5px 2px",
                 transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
                 marginTop: raised ? -14 : 0,
               }}>
               <div style={{
-                width: raised ? 46 : 38, height: raised ? 46 : 31,
+                width: raised ? 44 : 34, height: raised ? 44 : 30,
                 borderRadius: raised ? "50%" : 12, position: "relative",
                 background: filled ? `linear-gradient(135deg,${P.navy},${P.blue2})` : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -8260,7 +8262,7 @@ export default function App() {
                   }} />
                 )}
               </div>
-              <span style={{ fontSize: 10.5, fontWeight: active || raised ? 800 : 500, color: active ? P.blue2 : (raised ? t.tx : t.dim), whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 9.8, fontWeight: active || raised ? 800 : 500, color: active ? P.blue2 : (raised ? t.tx : t.dim), whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
