@@ -108,20 +108,6 @@ const P = {
   cyan: "#0891b2", pink: "#db2777",
 };
 
-/**
- * The «حلول» brand identity, taken from the platform's own logo and service
- * cards: teal for the wordmark, indigo for the check, purple for SEU. These
- * stay fixed while `P` follows the admin's chosen theme — the services section
- * is the one place that must read as the brand itself, not as a site skin.
- */
-const BRAND = {
-  teal: "#1b9ac4", tealDeep: "#12718f", tealSoft: "#e8f5fa",
-  indigo: "#3f51a8", indigoDeep: "#2c3a7c",
-  purple: "#6b2d91", purpleDeep: "#4a1f66",
-  slate: "#4a5461", brown: "#6b4a45",
-  ink: "#0c1712",
-};
-
 /** The one number every service is booked through. */
 const WHATSAPP = "966539614221";
 const waLink = (service) =>
@@ -130,13 +116,17 @@ const waLink = (service) =>
 /**
  * The paid services «حلول» actually sells, transcribed from the platform's own
  * service cards. Kept as data so the section stays one grid to restyle rather
- * than five hand-built blocks, and so a price or an item is a one-line edit.
+ * than a stack of hand-built blocks, and so an item is a one-line edit.
+ *
+ * `tone` indexes into the site's own green scale rather than naming a colour:
+ * `P` is mutated when the admin switches theme, so a colour captured here at
+ * module load would freeze the section on whatever theme happened to be live.
  */
 const SERVICES = [
   {
     id: "plan-a", title: "اشتراك الخطة A", tag: "تحضيري",
     blurb: "حزمة الفصل الأول كاملة — الحاسب والإنجليزي والأكاديمي",
-    color: BRAND.teal, Icon: Layers,
+    tone: 2, Icon: Layers,
     items: [
       { name: "الحاسب", detail: "التدريبات العملية + المناقشات الجماعية + الكويزات" },
       { name: "الإنجليزي", detail: "حل كتابين IQ + Quiz 1 · 2 · 3" },
@@ -146,7 +136,7 @@ const SERVICES = [
   {
     id: "plan-b", title: "اشتراك الخطة B", tag: "تحضيري",
     blurb: "حزمة الفصل الثاني كاملة — الرياضيات والإنجليزي ومهارات الاتصال",
-    color: BRAND.indigo, Icon: Layers,
+    tone: 1, Icon: Layers,
     items: [
       { name: "الرياضيات", detail: "10 Test Homework + ٤ كويزات" },
       { name: "الإنجليزي", detail: "حل كتابين IQ + Quiz 1 · 2 · 3" },
@@ -156,21 +146,29 @@ const SERVICES = [
   {
     id: "major", title: "مساعد طلاب التخصص", tag: "كل التخصصات", featured: true,
     blurb: "اشتراك بجميع المواد لكل التخصصات — يشمل كل ما يُسلَّم أسبوعياً",
-    color: BRAND.purple, Icon: GraduationCap,
+    tone: 0, Icon: GraduationCap,
     items: [
       { name: "البروجكت" }, { name: "الكويزات" },
       { name: "المناقشات" }, { name: "الأكتفتي الأسبوعي" },
     ],
   },
   {
+    // Every diploma programme the catalogue carries, so a diploma student can
+    // see their own programme named rather than guess whether they're covered.
+    id: "diploma", title: "حلول الدبلوم", tag: "كل برامج الدبلوم",
+    blurb: "حلول شاملة لكل برامج الدبلوم — البروجكت والكويزات والمناقشات والأكتفتي",
+    tone: 3, Icon: FileText,
+    items: CATALOGUE.diploma.programs.map(p => ({ name: p })),
+  },
+  {
     id: "attend", title: "حضور المحاضرات", tag: "خدمة",
     blurb: "نحضر المحاضرة نيابةً عنك ونوصّل لك الخلاصة",
-    color: BRAND.slate, Icon: Monitor, items: [],
+    tone: 4, Icon: Monitor, items: [],
   },
   {
     id: "slides", title: "العروض التقديمية", tag: "خدمة",
     blurb: "عروض تقديمية احترافية جاهزة للتسليم",
-    color: BRAND.brown, Icon: BarChart2, items: [],
+    tone: 2, Icon: BarChart2, items: [],
   },
 ];
 
@@ -2676,6 +2674,12 @@ const normImportance = (tk) => LEGACY_IMPORTANCE[tk?.importance || tk?.priority]
 
 /** How far ahead a task reminder fires. */
 const TASK_LEAD_CHOICES = [
+  // The short leads exist because "remind me a day ahead" is the wrong tool for
+  // something due in the next hour — a one-minute nudge is a real request.
+  { mins: 1, label: "قبل دقيقة" },
+  { mins: 5, label: "قبل ٥ دقائق" },
+  { mins: 15, label: "قبل ١٥ دقيقة" },
+  { mins: 30, label: "قبل نصف ساعة" },
   { mins: 60, label: "قبل ساعة" },
   { mins: 180, label: "قبل ٣ ساعات" },
   { mins: 1440, label: "قبل يوم" },
@@ -2683,7 +2687,16 @@ const TASK_LEAD_CHOICES = [
   { mins: 10080, label: "قبل أسبوع" },
 ];
 // taskLead is imported from @/lib/reminders (shared with the scheduler).
-const leadLabel = (m) => TASK_LEAD_CHOICES.find(c => c.mins === Number(m))?.label || `قبل ${m} دقيقة`;
+
+/** Minutes as a phrase, for a lead the preset row doesn't name. */
+const leadPhrase = (m) => {
+  const n = Math.max(0, Math.round(Number(m) || 0));
+  if (n < 60) return `قبل ${n} دقيقة`;
+  if (n % 1440 === 0) return `قبل ${n / 1440} يوم`;
+  if (n % 60 === 0) return `قبل ${n / 60} ساعة`;
+  return `قبل ${Math.floor(n / 60)} ساعة و${n % 60} دقيقة`;
+};
+const leadLabel = (m) => TASK_LEAD_CHOICES.find(c => c.mins === Number(m))?.label || leadPhrase(m);
 
 // taskDueAt is imported from @/lib/reminders (shared with the scheduler).
 const taskOpenAt = (tk) => {
@@ -3064,19 +3077,49 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, profile }) {
                   <input type="checkbox" checked={nt.remind !== false} onChange={e => patch({ remind: e.target.checked })} style={{ accentColor: P.gold, width: 16, height: 16 }} />
                   <Bell size={14} color={P.gold} /> ذكّرني قبل الإغلاق
                 </label>
-                {nt.remind !== false && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {TASK_LEAD_CHOICES.map(({ mins, label }) => {
-                      const active = Number(nt.leadMins) === mins;
-                      return (
-                        <button key={mins} onClick={() => patch({ leadMins: mins })} style={{
-                          padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
-                          background: active ? `${P.gold}20` : t.s1, border: `1.5px solid ${active ? P.gold : t.bd}`, color: active ? P.gold : t.mu,
-                        }}>{label}</button>
-                      );
-                    })}
-                  </div>
-                )}
+                {nt.remind !== false && (() => {
+                  // A lead the presets don't name is still a valid lead, so the
+                  // row shows which preset is on and the field below always
+                  // reflects the real number — including one typed by hand.
+                  const custom = !TASK_LEAD_CHOICES.some(c => c.mins === Number(nt.leadMins));
+                  return (
+                    <>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {TASK_LEAD_CHOICES.map(({ mins, label }) => {
+                          const active = Number(nt.leadMins) === mins;
+                          return (
+                            <button key={mins} onClick={() => patch({ leadMins: mins })} style={{
+                              padding: "6px 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700,
+                              background: active ? `${P.gold}20` : t.s1, border: `1.5px solid ${active ? P.gold : t.bd}`, color: active ? P.gold : t.mu,
+                            }}>{label}</button>
+                          );
+                        })}
+                      </div>
+                      <div style={{
+                        display: "flex", alignItems: "center", gap: 8, marginTop: 8,
+                        background: custom ? `${P.gold}12` : t.s1,
+                        border: `1.5px solid ${custom ? P.gold : t.bd}`, borderRadius: 10, padding: "7px 10px",
+                      }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: custom ? P.gold : t.mu, whiteSpace: "nowrap" }}>
+                          أو يدوي
+                        </span>
+                        <input
+                          type="number" min="0" step="1" inputMode="numeric"
+                          value={nt.leadMins ?? ""}
+                          onChange={e => patch({ leadMins: Math.max(0, Number(e.target.value) || 0) })}
+                          style={{
+                            width: 78, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 8,
+                            padding: "5px 8px", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700,
+                            color: t.tx, outline: "none", textAlign: "center",
+                          }} />
+                        <span style={{ fontSize: 12, color: t.mu, whiteSpace: "nowrap" }}>دقيقة</span>
+                        <span style={{ fontSize: 11.5, color: t.dim, marginRight: "auto", whiteSpace: "nowrap" }}>
+                          {leadLabel(nt.leadMins)}
+                        </span>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             )}
 
@@ -5059,51 +5102,58 @@ function ExplorePage({ onCourse, t, profile }) {
  * Every card carries the same anatomy — a brand rail, an icon plate, the
  * programme name, what is inside it, and the one action that books it — so the
  * eye learns the shape once and then only reads what changed. The colour is
- * the only thing that varies per service, and it comes from BRAND, so the
- * section reads as «حلول» whatever theme the admin has set for the rest.
+ * the only thing that varies per service, and it is drawn from the site's own
+ * green scale, so the section reads as the platform rather than as a poster.
  */
 function ServicesPage({ t, dark }) {
   const [open, setOpen] = useState(null);
 
+  // The site's own green scale, read at render so the section follows whatever
+  // theme the admin has set instead of freezing one captured at module load.
+  const TONES = [P.navy, P.blue, P.blue2, P.green, P.greenLight];
+  const toneOf = (s) => TONES[s.tone % TONES.length];
+
   const Card = ({ s }) => {
+    const color = toneOf(s);
+    const SIcon = s.Icon;
     const isOpen = open === s.id;
     const hasItems = s.items.length > 0;
     return (
       <div style={{
-        background: t.s1, border: `1px solid ${isOpen ? s.color + "55" : t.bd}`,
-        borderRadius: 20, overflow: "hidden", boxShadow: isOpen ? `0 10px 30px ${s.color}22` : t.shSm,
+        background: t.s1, border: `1px solid ${isOpen ? color + "55" : t.bd}`,
+        borderRadius: 20, overflow: "hidden", boxShadow: isOpen ? `0 10px 30px ${color}22` : t.shSm,
         transition: "border-color .22s, box-shadow .22s", position: "relative",
       }}>
         {/* Brand rail — the one place the service's colour is stated flatly. */}
-        <div style={{ height: 4, background: `linear-gradient(90deg, ${s.color}, ${s.color}55)` }} />
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
         {/* Sits on the corner rather than in the title row: inline it pushed the
             heading onto a second line on a narrow phone. */}
         {s.featured && (
           <span style={{
             position: "absolute", top: 0, left: 14, zIndex: 1,
             fontSize: 10.5, fontWeight: 800, color: "#fff",
-            background: `linear-gradient(135deg, ${BRAND.purple}, ${BRAND.indigo})`,
+            background: `linear-gradient(135deg, ${P.navy}, ${P.blue2})`,
             borderRadius: "0 0 10px 10px", padding: "4px 10px 5px",
-            boxShadow: `0 4px 12px ${BRAND.purple}44`,
+            boxShadow: `0 4px 12px ${P.navy}44`,
           }}>الأكثر طلباً</span>
         )}
         <div style={{ padding: "16px 16px 14px" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
             <div style={{
               width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-              background: dark ? `${s.color}26` : `${s.color}14`,
-              border: `1px solid ${s.color}33`,
+              background: dark ? `${color}26` : `${color}14`,
+              border: `1px solid ${color}33`,
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <s.Icon size={22} color={s.color} strokeWidth={1.9} />
+              <SIcon size={22} color={color} strokeWidth={1.9} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
                 <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>{s.title}</span>
                 <span style={{
-                  fontSize: 10.5, fontWeight: 800, color: s.color, letterSpacing: ".02em",
-                  background: dark ? `${s.color}22` : `${s.color}12`,
-                  border: `1px solid ${s.color}30`, borderRadius: 20, padding: "2px 8px",
+                  fontSize: 10.5, fontWeight: 800, color: color, letterSpacing: ".02em",
+                  background: dark ? `${color}22` : `${color}12`,
+                  border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px",
                 }}>{s.tag}</span>
               </div>
               <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>{s.blurb}</div>
@@ -5114,11 +5164,11 @@ function ServicesPage({ t, dark }) {
             <>
               <button onClick={() => setOpen(isOpen ? null : s.id)} style={{
                 marginTop: 12, width: "100%", background: "none", border: "none", padding: "4px 0",
-                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: s.color,
+                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 800, color: color,
                 display: "flex", alignItems: "center", justifyContent: "space-between",
               }}>
                 <span>{isOpen ? "إخفاء التفاصيل" : `ما الذي يشمله؟ (${s.items.length})`}</span>
-                <ChevronDown size={15} color={s.color}
+                <ChevronDown size={15} color={color}
                   style={{ transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .22s" }} />
               </button>
               {isOpen && (
@@ -5128,7 +5178,7 @@ function ServicesPage({ t, dark }) {
                       background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
                       padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 9,
                     }}>
-                      <CheckCircle size={15} color={s.color} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <CheckCircle size={15} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{it.name}</div>
                         {it.detail && <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2, lineHeight: 1.55 }}>{it.detail}</div>}
@@ -5142,9 +5192,9 @@ function ServicesPage({ t, dark }) {
 
           <a href={waLink(s.title)} target="_blank" rel="noopener noreferrer" style={{
             marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-            background: `linear-gradient(135deg, ${s.color}, ${s.color}cc)`, color: "#fff",
+            background: `linear-gradient(135deg, ${color}, ${color}cc)`, color: "#fff",
             borderRadius: 14, padding: "11px 14px", textDecoration: "none",
-            fontSize: 13.5, fontWeight: 800, boxShadow: `0 5px 16px ${s.color}38`,
+            fontSize: 13.5, fontWeight: 800, boxShadow: `0 5px 16px ${color}38`,
           }}>
             <MessageCircle size={16} /> احجز أو استفسر
           </a>
@@ -5158,8 +5208,8 @@ function ServicesPage({ t, dark }) {
       {/* Hero — the brand's three colours in the order the logo uses them. */}
       <div style={{
         borderRadius: 22, padding: "22px 20px", marginBottom: 18, position: "relative", overflow: "hidden",
-        background: `linear-gradient(135deg, ${BRAND.tealDeep} 0%, ${BRAND.indigo} 55%, ${BRAND.purple} 100%)`,
-        boxShadow: `0 12px 32px ${BRAND.indigo}33`,
+        background: `linear-gradient(135deg, ${P.navyDeep} 0%, ${P.blue} 52%, ${P.blue2} 100%)`,
+        boxShadow: `0 12px 32px ${P.navy}33`,
       }}>
         <div aria-hidden style={{
           position: "absolute", inset: 0, opacity: .17,
@@ -7820,7 +7870,7 @@ export default function App() {
 // subjects. Each has keywords to match loosely.
 const SEARCH_PAGES = [
   { tab: "explore", label: "المسارات والتخصصات", Icon: Compass, color: "#0a8a58", kw: "مسار تخصص استكشاف كليات برامج تجميعات ملخصات خطط مقررات" },
-  { tab: "services", label: "الخدمات والاشتراكات", Icon: Sparkles, color: BRAND.purple, kw: "خدمات اشتراك خطة a خطة b تحضيري تخصص حضور محاضرات عروض تقديمية بروجكت كويزات مناقشات اكتفتي واتساب حجز" },
+  { tab: "services", label: "الخدمات والاشتراكات", Icon: Sparkles, color: P.blue2, kw: "خدمات اشتراك خطة a خطة b تحضيري تخصص حضور محاضرات عروض تقديمية بروجكت كويزات مناقشات اكتفتي واتساب حجز" },
   { tab: "schedule", label: "جدولي الأسبوعي", Icon: CalendarDays, color: "#0891b2", kw: "جدول محاضرات حصص مواعيد" },
   { tab: "gpa", label: "حاسبة المعدل", Icon: Calculator, color: "#2563eb", kw: "حساب معدل درجات gpa تراكمي فصلي" },
   { tab: "fav", label: "المفضلة", Icon: Star, color: "#c8a84b", kw: "مفضلة محفوظات نجمة" },
