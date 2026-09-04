@@ -108,6 +108,17 @@ const P = {
   cyan: "#0891b2", pink: "#db2777",
 };
 
+/**
+ * Single pieces of work, for a student who wants one thing done rather than a
+ * term's subscription. The last entry is deliberately open: the list can never
+ * name every kind of coursework, and a student who has to pick "other" and
+ * then explain in chat has already been failed by the picker.
+ */
+const SINGLE_JOBS = [
+  "حل واجب", "اسايمنت", "مشروع", "بروجكت", "بحث",
+  "عرض تقديمي", "تقرير", "دراسة حالة", "مناقشة", "كويز",
+];
+
 /** The one number every service is booked through. */
 const WHATSAPP = "966539614221";
 const waLink = (service) =>
@@ -5203,6 +5214,97 @@ function ServicesPage({ t, dark }) {
     );
   };
 
+  /**
+   * One-off work: pick the kind, or type one the list doesn't cover, and the
+   * WhatsApp message is already written by the time the chat opens.
+   */
+  const SingleJobCard = () => {
+    const [pick, setPick] = useState("");
+    const [own, setOwn] = useState("");
+    const chosen = (own.trim() || pick).trim();
+    const color = P.gold;
+    return (
+      <div style={{
+        background: t.s1, border: `1px solid ${chosen ? color + "55" : t.bd}`,
+        borderRadius: 20, overflow: "hidden", boxShadow: t.shSm, transition: "border-color .22s",
+      }}>
+        <div style={{ height: 4, background: `linear-gradient(90deg, ${color}, ${color}55)` }} />
+        <div style={{ padding: "16px 16px 14px" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+            <div style={{
+              width: 46, height: 46, borderRadius: 14, flexShrink: 0,
+              background: dark ? `${color}26` : `${color}14`, border: `1px solid ${color}33`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <PenLine size={22} color={color} strokeWidth={1.9} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+                <span style={{ fontSize: 15.5, fontWeight: 900, color: t.tx }}>خدمة فردية</span>
+                <span style={{
+                  fontSize: 10.5, fontWeight: 800, color, background: dark ? `${color}22` : `${color}12`,
+                  border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px",
+                }}>حسب الطلب</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: t.mu, lineHeight: 1.6 }}>
+                محتاج شيئاً واحداً فقط؟ اختر نوعه — أو اكتبه بنفسك.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+            {SINGLE_JOBS.map(j => {
+              const on = !own.trim() && pick === j;
+              return (
+                <button key={j} onClick={() => { setPick(on ? "" : j); setOwn(""); }} style={{
+                  padding: "7px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
+                  fontSize: 12.5, fontWeight: 700,
+                  background: on ? `${color}20` : t.s2,
+                  border: `1.5px solid ${on ? color : t.bd}`, color: on ? color : t.mu,
+                }}>{j}</button>
+              );
+            })}
+          </div>
+
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
+            background: own.trim() ? `${color}12` : t.s2,
+            border: `1.5px solid ${own.trim() ? color : t.bd}`, borderRadius: 12, padding: "8px 11px",
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: own.trim() ? color : t.mu, whiteSpace: "nowrap" }}>
+              أو اكتبه
+            </span>
+            <input
+              value={own}
+              onChange={e => setOwn(e.target.value)}
+              placeholder="نوع آخر…"
+              style={{
+                flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none",
+                fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: t.tx,
+              }} />
+          </div>
+
+          <a
+            href={waLink(chosen ? `خدمة فردية — ${chosen}` : "خدمة فردية")}
+            target="_blank" rel="noopener noreferrer"
+            aria-disabled={!chosen}
+            onClick={e => { if (!chosen) e.preventDefault(); }}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              background: chosen ? `linear-gradient(135deg, ${color}, ${color}cc)` : t.s2,
+              color: chosen ? "#fff" : t.dim,
+              borderRadius: 14, padding: "11px 14px", textDecoration: "none",
+              fontSize: 13.5, fontWeight: 800,
+              boxShadow: chosen ? `0 5px 16px ${color}38` : "none",
+              cursor: chosen ? "pointer" : "not-allowed",
+            }}>
+            <MessageCircle size={16} /> {chosen ? `اطلب: ${chosen}` : "اختر نوع الخدمة أولاً"}
+          </a>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ animation: "fadeUp .4s ease" }}>
       {/* Hero — the brand's three colours in the order the logo uses them. */}
@@ -5235,6 +5337,7 @@ function ServicesPage({ t, dark }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {SERVICES.map(s => <Card key={s.id} s={s} />)}
+        <SingleJobCard />
       </div>
 
       {/* One closing way to reach a human, for anything the cards don't cover. */}
@@ -5378,10 +5481,44 @@ const AVATAR_COLORS = [
   ["#65a30d", "#a3e635"], // lime
   ["#334155", "#64748b"], // slate
 ];
-const AVATAR_EMOJIS = [
-  "📚", "🎓", "✏️", "💡", "🚀", "⭐", "🔥", "🧠", "🌟", "📖",
-  "🎯", "🏆", "⚡", "🌙", "📝", "🔬", "💻", "🧮", "🩺", "⚖️",
+/**
+ * Drawn avatar marks — line art, not emoji.
+ *
+ * An emoji is rendered by the reader's own device, so the same profile looked
+ * like a different picture on every phone and never matched the site's own
+ * drawing style. These are paths we ship: one stroke weight, one grid, so a
+ * row of them reads as a set rather than as borrowed clip-art.
+ */
+const AVATAR_ICONS = [
+  { id: "cap", d: ["M2 8.5 12 4l10 4.5-10 4.5L2 8.5Z", "M6 11v4c0 1.66 2.69 3 6 3s6-1.34 6-3v-4", "M21.5 9.2v4.8"] },
+  { id: "book", d: ["M4 4h5.5A2.5 2.5 0 0 1 12 6.5V20a2 2 0 0 0-2-1.6H4V4Z", "M20 4h-5.5A2.5 2.5 0 0 0 12 6.5V20a2 2 0 0 1 2-1.6h6V4Z"] },
+  { id: "rocket", d: ["M12 2.5c2.9 2.2 4.6 5.6 4.6 9.3L12 15.6 7.4 11.8c0-3.7 1.7-7.1 4.6-9.3Z", "M12 10.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z", "M9.2 15.4 7 21.5l5-2.2 5 2.2-2.2-6.1"] },
+  { id: "bulb", d: ["M9.5 18.5h5", "M10.5 21.5h3", "M12 2.5a6 6 0 0 0-3.4 10.9c.6.5.9 1.1 1 1.6h4.8c.1-.5.4-1.1 1-1.6A6 6 0 0 0 12 2.5Z"] },
+  { id: "flask", d: ["M9.2 2.5v6L4.4 18.9a2 2 0 0 0 1.8 2.9h11.6a2 2 0 0 0 1.8-2.9L14.8 8.5v-6", "M7.8 2.5h8.4", "M7 14.5h10"] },
+  { id: "laptop", d: ["M4.5 5.5h15v9.5h-15z", "M2 19h20", "M9.8 19h4.4"] },
+  { id: "nib", d: ["M12 2.5 5.2 15.8 12 21.5l6.8-5.7L12 2.5Z", "M12 2.5v19", "M5.2 15.8h13.6"] },
+  { id: "compass", d: ["M12 21.5a9.5 9.5 0 1 0 0-19 9.5 9.5 0 0 0 0 19Z", "M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1 5.1-2.1Z"] },
+  { id: "trophy", d: ["M8 3.5h8v5.2a4 4 0 0 1-8 0V3.5Z", "M8 5.8H5v1.1a3 3 0 0 0 3 3", "M16 5.8h3v1.1a3 3 0 0 1-3 3", "M12 12.8v4.2", "M9 21h6", "M9.8 17h4.4"] },
+  { id: "target", d: ["M12 21.2a9.2 9.2 0 1 0 0-18.4 9.2 9.2 0 0 0 0 18.4Z", "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z", "M12 13.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2Z"] },
+  { id: "star", d: ["M12 2.6l2.9 6.3 6.9.9-5.1 4.7 1.3 6.8L12 17.9 6 21.3l1.3-6.8L2.2 9.8l6.9-.9L12 2.6Z"] },
+  { id: "shield", d: ["M12 2.6l8 3v6.1c0 5-3.5 8.3-8 9.7-4.5-1.4-8-4.7-8-9.7V5.6l8-3Z", "M8.8 12.1l2.2 2.2 4.2-4.2"] },
+  { id: "peak", d: ["M2.5 19.5 9 9.2l3.6 4.7 2.2-3 6.7 8.6H2.5Z", "M9 9.2 6.4 5.2"] },
+  { id: "plane", d: ["M21.8 2.4 10.6 13.6", "M21.8 2.4 14.7 22l-4.1-8.4L2.2 9.5l19.6-7.1Z"] },
+  { id: "globe", d: ["M12 21.4a9.4 9.4 0 1 0 0-18.8 9.4 9.4 0 0 0 0 18.8Z", "M2.6 12h18.8", "M12 2.6a13.5 13.5 0 0 1 0 18.8 13.5 13.5 0 0 1 0-18.8Z"] },
+  { id: "clock", d: ["M12 21.4a9.4 9.4 0 1 0 0-18.8 9.4 9.4 0 0 0 0 18.8Z", "M12 6.8V12l3.4 2.2"] },
 ];
+const avatarIconOf = (id) => AVATAR_ICONS.find(i => i.id === id) || null;
+/** One drawn mark, sized to fit whatever plate it sits on. */
+const AvatarMark = ({ id, size = 30, color = "#fff", width = 1.7 }) => {
+  const ic = avatarIconOf(id);
+  if (!ic) return null;
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color}
+      strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {ic.d.map((d, i) => <path key={i} d={d} />)}
+    </svg>
+  );
+};
 const avatarGradient = (c) => {
   const pair = AVATAR_COLORS.find(p => p[0] === c) || AVATAR_COLORS[0];
   return `linear-gradient(135deg,${pair[0]},${pair[1]})`;
@@ -5412,7 +5549,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     college: profile?.college || "",
     plan: profile?.plan || "",
     avatarColor: profile?.avatarColor || AVATAR_COLORS[0][0],
-    avatarEmoji: profile?.avatarEmoji || "",
+    avatarIcon: profile?.avatarIcon || "",
   });
   const patch = (p) => setDraft(d => ({ ...d, ...p }));
   const [requesting, setRequesting] = useState(false);
@@ -5430,6 +5567,9 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   const [restoreCode, setRestoreCode] = useState("");
   const [restoreId, setRestoreId] = useState("");   // recover by the minted ID
   const [syncing, setSyncing] = useState(false);
+  // "Forgot my ID" — IDs this device has backed up, and whether we've looked.
+  const [recovered, setRecovered] = useState(null);
+  const [recoverTried, setRecoverTried] = useState(false);
   useEffect(() => {
     let alive = true;
     fetch("/api/track-request")
@@ -5508,7 +5648,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       college: draft.college || "",
       plan: draft.plan || "",
       avatarColor: draft.avatarColor || AVATAR_COLORS[0][0],
-      avatarEmoji: draft.avatarEmoji || "",
+      avatarIcon: draft.avatarIcon || "",
       // Minted once and kept for the life of the profile — the owner's handle
       // for this student when a request comes in.
       studentCode: profile?.studentCode || genStudentCode(),
@@ -5628,6 +5768,31 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
     } catch { setSyncing(false); onToast?.("تعذّر الاتصال", "error"); }
   };
 
+  /**
+   * "I forgot my ID."
+   *
+   * There is no email to send it to, so the recoverable case is the device the
+   * student still has: every backup records the device that wrote it, and this
+   * asks the server which IDs belong to this one. It answers from the signed
+   * cookie, so it cannot be pointed at anyone else's device.
+   *
+   * When that comes back empty — a new phone, cleared cookies — the honest
+   * answer is a human, so the fallback opens WhatsApp with the request
+   * already written rather than leaving the student at a dead end.
+   */
+  const recoverMyCode = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/profile-backup?recover=1");
+      const d = await res.json().catch(() => ({}));
+      setSyncing(false);
+      const list = Array.isArray(d.codes) ? d.codes : [];
+      if (!list.length) { setRecovered([]); setRecoverTried(true); return; }
+      setRecovered(list);
+      setRecoverTried(true);
+    } catch { setSyncing(false); setRecovered([]); setRecoverTried(true); }
+  };
+
   // Share the app with classmates — native share sheet where it exists (phones),
   // otherwise copy the link. Growth costs nothing when a student does it.
   const shareApp = async () => {
@@ -5694,9 +5859,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           <div style={{
             width: 66, height: 66, borderRadius: 22, background: avatarGradient(profile?.avatarColor),
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: `0 8px 24px ${(profile?.avatarColor || P.gold)}55`, fontSize: profile?.avatarEmoji ? 34 : 30, fontWeight: 900, color: "#fff",
+            boxShadow: `0 8px 24px ${(profile?.avatarColor || P.gold)}55`, fontSize: 30, fontWeight: 900, color: "#fff",
           }}>
-            {profile?.avatarEmoji ? profile.avatarEmoji : (profile?.name ? initial : <User size={32} color="#fff" />)}
+            {profile?.avatarIcon
+              ? <AvatarMark id={profile.avatarIcon} size={34} width={1.8} />
+              : (profile?.name ? initial : <User size={32} color="#fff" />)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 900, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{profile?.name || "طالب SEU"}</div>
@@ -5775,6 +5942,51 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               <LogIn size={14} /> استعادة
             </Btn>
           </div>
+
+          {/* Forgotten ID — the whole point of recording the device. */}
+          <button onClick={recoverMyCode} disabled={syncing} style={{
+            background: "none", border: "none", padding: "10px 2px 0", cursor: syncing ? "wait" : "pointer",
+            fontFamily: "inherit", fontSize: 12, fontWeight: 800, color: P.blue2,
+          }}>
+            نسيت معرّفي — ابحث عنه في هذا الجهاز
+          </button>
+
+          {recoverTried && recovered?.length > 0 && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 11.5, color: t.mu }}>وجدنا هذه المعرّفات المحفوظة من هذا الجهاز:</div>
+              {recovered.map(r => (
+                <button key={r.code} onClick={() => setRestoreId(r.code)} style={{
+                  background: t.s2, border: `1.5px solid ${P.blue2}55`, borderRadius: 10,
+                  padding: "9px 11px", cursor: "pointer", fontFamily: "inherit", textAlign: "right",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                }}>
+                  <span style={{ fontFamily: "monospace", direction: "ltr", fontSize: 13, fontWeight: 800, color: t.tx }}>{r.code}</span>
+                  <span style={{ fontSize: 11.5, color: t.mu }}>{r.name || "بلا اسم"}</span>
+                </button>
+              ))}
+              <div style={{ fontSize: 11, color: t.dim }}>اضغط على معرّف لوضعه في الخانة، ثم «استعادة».</div>
+            </div>
+          )}
+
+          {recoverTried && recovered?.length === 0 && (
+            <div style={{
+              marginTop: 8, background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12, padding: "11px 12px",
+            }}>
+              <div style={{ fontSize: 12, color: t.tx, fontWeight: 700, marginBottom: 4 }}>
+                ما فيه معرّف محفوظ من هذا الجهاز
+              </div>
+              <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.7, marginBottom: 9 }}>
+                يحدث لو كان الجهاز جديداً أو مُسحت بيانات المتصفح. راسلنا وبنساعدك تستعيده.
+              </div>
+              <a href={waLink("نسيت معرّفي وأبي أستعيد حسابي")} target="_blank" rel="noopener noreferrer" style={{
+                display: "inline-flex", alignItems: "center", gap: 7, textDecoration: "none",
+                background: "#25D366", color: "#fff", borderRadius: 11, padding: "9px 15px",
+                fontSize: 12.5, fontWeight: 800,
+              }}>
+                <MessageCircle size={14} /> راسلنا على واتساب
+              </a>
+            </div>
+          )}
         </div>
       )}
 
@@ -5836,7 +6048,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {!editing && (
         <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
           {profile && (
-            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "", avatarColor: profile?.avatarColor || AVATAR_COLORS[0][0], avatarEmoji: profile?.avatarEmoji || "" }); setEditing(true); }} style={{
+            <button onClick={() => { setDraft({ name: profile?.name || "", email: profile?.email || aiEmail || "", track: profile?.track || "", college: profile?.college || "", plan: profile?.plan || "", avatarColor: profile?.avatarColor || AVATAR_COLORS[0][0], avatarIcon: profile?.avatarIcon || "" }); setEditing(true); }} style={{
               flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
               background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
               cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
@@ -5882,8 +6094,10 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
           {/* Avatar personalisation — a colour and, optionally, an emoji. */}
           <label style={{ fontSize: 12, color: t.mu, fontWeight: 700, display: "block", marginBottom: 8 }}>شكل الأفتار</label>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-            <div style={{ width: 52, height: 52, borderRadius: 16, background: avatarGradient(draft.avatarColor), display: "flex", alignItems: "center", justifyContent: "center", fontSize: draft.avatarEmoji ? 26 : 22, fontWeight: 900, color: "#fff", flexShrink: 0 }}>
-              {draft.avatarEmoji || (draft.name.trim()[0] || "ط")}
+            <div style={{ width: 52, height: 52, borderRadius: 16, background: avatarGradient(draft.avatarColor), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, fontWeight: 900, color: "#fff", flexShrink: 0 }}>
+              {draft.avatarIcon
+                ? <AvatarMark id={draft.avatarIcon} size={26} width={1.8} />
+                : (draft.name.trim()[0] || "ط")}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
               {AVATAR_COLORS.map(([c]) => (
@@ -5894,17 +6108,28 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               ))}
             </div>
           </div>
+          {/* The marks are drawn in the chosen colour so the picker previews the
+              real result rather than a grey sheet of unrelated glyphs. */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
-            <button type="button" onClick={() => patch({ avatarEmoji: "" })} title="بلا إيموجي" style={{
-              minWidth: 34, height: 34, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
-              background: t.s2, border: `1.5px solid ${!draft.avatarEmoji ? P.blue2 : t.bd}`, color: t.mu,
+            <button type="button" onClick={() => patch({ avatarIcon: "" })} title="استخدم أول حرف من اسمك" style={{
+              minWidth: 38, height: 38, borderRadius: 11, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+              background: t.s2, border: `1.5px solid ${!draft.avatarIcon ? P.blue2 : t.bd}`, color: !draft.avatarIcon ? P.blue2 : t.mu,
             }}>الحرف</button>
-            {AVATAR_EMOJIS.map(em => (
-              <button key={em} type="button" onClick={() => patch({ avatarEmoji: em })} style={{
-                width: 34, height: 34, borderRadius: 10, cursor: "pointer", fontSize: 18, lineHeight: 1,
-                background: t.s2, border: `1.5px solid ${draft.avatarEmoji === em ? P.blue2 : t.bd}`,
-              }}>{em}</button>
-            ))}
+            {AVATAR_ICONS.map(ic => {
+              const on = draft.avatarIcon === ic.id;
+              return (
+                <button key={ic.id} type="button" onClick={() => patch({ avatarIcon: ic.id })} style={{
+                  width: 38, height: 38, borderRadius: 11, cursor: "pointer", padding: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  background: on ? avatarGradient(draft.avatarColor) : t.s2,
+                  border: `1.5px solid ${on ? "transparent" : t.bd}`,
+                  boxShadow: on ? `0 4px 12px ${(draft.avatarColor || P.gold)}55` : "none",
+                  transition: "background .18s, box-shadow .18s",
+                }}>
+                  <AvatarMark id={ic.id} size={21} width={1.8} color={on ? "#fff" : t.mu} />
+                </button>
+              );
+            })}
           </div>
 
 

@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { profileBackupLimit, callerKey } from '@/lib/rate-limit'
+import { deviceIdentity } from '@/lib/ai-quota'
 
 export const runtime = 'nodejs'
 
@@ -44,19 +45,51 @@ export async function POST(request) {
   let db
   try { db = createAdminClient() } catch { return Response.json({ error: 'الخادم غير مهيّأ' }, { status: 503 }) }
 
+  // The device is taken from the signed cookie, never the body: it is what
+  // "recover my code on this phone" trusts, so a caller must not be able to
+  // claim someone else's device and be handed their ID.
+  const { deviceId, setCookie } = deviceIdentity(request)
+
   const { error } = await db.from('profile_backups').upsert(
-    { code, data, name, updated_at: new Date().toISOString() },
+    { code, data, name, device_id: deviceId || null, updated_at: new Date().toISOString() },
     { onConflict: 'code' }
   )
   if (error) return Response.json({ error: 'تعذّر الحفظ: ' + error.message }, { status: 500 })
-  return Response.json({ ok: true })
+  const res = Response.json({ ok: true })
+  if (setCookie) res.headers.append('Set-Cookie', setCookie)
+  return res
 }
 
 export async function GET(request) {
   const rl = await profileBackupLimit.limit(callerKey(request))
   if (!rl.success) return Response.json({ error: 'محاولات كثيرة — انتظر قليلاً' }, { status: 429 })
 
-  const code = normCode(new URL(request.url).searchParams.get('code'))
+  const url = new URL(request.url)
+
+  // "I forgot my ID." Answered from the signed device cookie, so it only ever
+  // returns IDs that were backed up from this same device — the phone the
+  // student still has. No data is returned here, only the IDs and their names,
+  // so this cannot be used to read a store; restoring still needs the ID.
+  if (url.searchParams.get('recover') === '1') {
+    const { deviceId, setCookie } = deviceIdentity(request)
+    let rdb
+    try { rdb = createAdminClient() } catch { return Response.json({ codes: [] }) }
+    let codes = []
+    if (deviceId) {
+      const { data } = await rdb
+        .from('profile_backups')
+        .select('code, name, updated_at')
+        .eq('device_id', deviceId)
+        .order('updated_at', { ascending: false })
+        .limit(5)
+      codes = data || []
+    }
+    const res = Response.json({ codes })
+    if (setCookie) res.headers.append('Set-Cookie', setCookie)
+    return res
+  }
+
+  const code = normCode(url.searchParams.get('code'))
   // Same answer for a malformed and an unknown ID: nothing to learn by probing.
   if (!code) return Response.json({ data: null })
 
