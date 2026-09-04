@@ -4974,7 +4974,18 @@ function SearchResults({ query, onCourse, onClose, t }) {
 const TRACK_TO_TREE = { "تحضيري": "preparatory", "تخصص": "bachelor", "دبلوم": "diploma", "دراسات عليا": "graduate" };
 const PLAN_TO_SUB = { "خطة أ": "a", "خطة ب": "b" };
 
-function ExplorePage({ onCourse, t, profile }) {
+function ExplorePage({ onCourse, t, profile, plans = null }) {
+  /**
+   * The plan the admin has published wins over the one compiled into the app.
+   * The constant is the seed and the offline fallback — the database is the
+   * copy the owner can actually keep correct, for every programme.
+   */
+  const planOf = (program) => {
+    const live = plans && plans[program];
+    if (Array.isArray(live) && live.length) return live;
+    const built = levelsOf(program);
+    return built ? Object.entries(built).map(([label, courses]) => ({ label, courses })) : null;
+  };
   const [step, setStep] = useState("root");
   const [path, setPath] = useState(null);
   const [sub, setSub] = useState(null);
@@ -5200,14 +5211,14 @@ function ExplorePage({ onCourse, t, profile }) {
             {/* The actual study plan, level by level, where we have it. This is
                 the thing a student came for: their own courses by code, not
                 the programme's name repeated back at them. */}
-            {scoped && levelsOf(profile.plan) && (
+            {scoped && planOf(profile.plan) && (
               <div style={{ marginTop: 18 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx, marginBottom: 4 }}>خطتي الدراسية</div>
                 <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 10 }}>
                   اضغط على أي مستوى لعرض مواده، ثم على المادة لفتحها.
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {Object.entries(levelsOf(profile.plan)).map(([lvl, codes]) => {
+                  {planOf(profile.plan).map(({ label: lvl, courses: codes }) => {
                     const on = openLevel === lvl;
                     return (
                       <div key={lvl} style={{
@@ -7792,6 +7803,19 @@ export default function App() {
   useLectureReminders(schedule, notifSoundOn, toasts.push);
   useTaskReminders(tasks, notifSoundOn, toasts.push);
   // Keep the server's reminder queue in step so these also arrive when closed.
+  // Study plans published by the admin. Fetched once; the built-in plan stays
+  // the fallback so the page still works before this resolves — or if it never
+  // does.
+  const [programPlans, setProgramPlans] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/program-plans")
+      .then(r => r.json())
+      .then(d => { if (alive && d?.plans) setProgramPlans(d.plans); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   useReminderSync(schedule, tasks, profile);
 
   /**
@@ -8122,7 +8146,7 @@ export default function App() {
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} profile={profile} />}
 
-        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
+        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} plans={programPlans} />}
         {tab === "services" && !course && <ServicesPage t={t} dark={dark} />}
         {tab === "tasks" && !course && <TasksHub
           t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams}
