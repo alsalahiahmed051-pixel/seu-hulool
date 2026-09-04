@@ -59,8 +59,34 @@ export async function POST(request) {
     : 0
   const locked = heldUntil > Date.now()
 
-  // Inside the hold, the track on file wins; name, ID and email stay editable.
+  // Inside the hold, the track on file wins — unless the owner approved a
+  // change that hasn't been spent yet.
+  //
+  // This lookup is why the approval works at all: the server used to know
+  // nothing about it, so it answered "still locked" with the OLD track and the
+  // client wrote that back over the student's new choice. The change appeared
+  // to save and then silently reverted.
+  //
+  // Spending is recorded here, not in the browser, and matched on the student's
+  // minted code as well as the device — so one approval is one change for that
+  // student on every device, and the next change needs a fresh request.
+  let approval = null
   if (existing && locked && !sameTrack) {
+    const or = [`device_id.eq.${deviceId}`]
+    if (studentId) or.push(`student_id.eq.${studentId}`)
+    const { data: appr } = await db
+      .from('track_requests')
+      .select('id, created_at')
+      .eq('status', 'approved')
+      .is('consumed_at', null)
+      .or(or.join(','))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    approval = appr || null
+  }
+
+  if (existing && locked && !sameTrack && !approval) {
     const row = {
       device_id: deviceId, full_name: name || null, student_id: studentId || null,
       email: email || null, last_seen: new Date().toISOString(),
@@ -72,6 +98,27 @@ export async function POST(request) {
       confirmedAt: existing.confirmed_at,
       daysLeft: Math.ceil((heldUntil - Date.now()) / 86_400_000),
     })
+  }
+
+  // Spend it before writing the new track, and only if it is still unspent:
+  // the `is('consumed_at', null)` filter makes two simultaneous saves race for
+  // one row, so a second one cannot also claim the same approval.
+  if (approval) {
+    const { data: claimed } = await db
+      .from('track_requests')
+      .update({ consumed_at: new Date().toISOString() })
+      .eq('id', approval.id)
+      .is('consumed_at', null)
+      .select('id')
+      .maybeSingle()
+    if (!claimed) {
+      return reply({
+        ok: true, stored: false, trackLocked: true,
+        track: existing.track, college: existing.college, plan: existing.plan,
+        confirmedAt: existing.confirmed_at,
+        daysLeft: Math.ceil((heldUntil - Date.now()) / 86_400_000),
+      })
+    }
   }
 
   const confirmedAt = sameTrack && existing?.confirmed_at
@@ -92,7 +139,9 @@ export async function POST(request) {
 
   // A missing table (migration not run) must not block saving a profile.
   if (error) return reply({ ok: true, stored: false, reason: error.message })
-  return reply({ ok: true, stored: true, trackLocked: false, confirmedAt })
+  // `approvalSpent` tells the client the change went through under an approval,
+  // so it can retire its own banner instead of offering the change again.
+  return reply({ ok: true, stored: true, trackLocked: false, confirmedAt, approvalSpent: Boolean(approval) })
 }
 
 /** What the server has on file for this device. */

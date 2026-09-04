@@ -5714,7 +5714,13 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // 15 days haven't passed, but only until a change is saved under it. After
   // that its created_at is recorded on the profile, the hold returns, and a
   // further change needs a new request.
-  const approvalConsumed = myRequest?.status === "approved" && profile?.approvalUsedAt === myRequest?.created_at;
+  // Spent is decided by the server (`consumed_at`) first: the local
+  // `approvalUsedAt` only ever knew about this one browser, so clearing site
+  // data or opening the site on a second device re-offered the same approval.
+  const approvalConsumed = myRequest?.status === "approved" && (
+    Boolean(myRequest?.consumed_at) || myRequest?.consumed === true ||
+    profile?.approvalUsedAt === myRequest?.created_at
+  );
   const changeApproved = myRequest?.status === "approved" && !approvalConsumed;
 
   const save = () => {
@@ -5780,14 +5786,27 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: next.name, email: next.email || aiEmail || "",
+        // The minted code goes with it so the server can find this student's
+        // approval even from a device it has never seen before.
+        studentId: next.studentCode || "",
         track: next.track, college: next.college, plan: next.plan,
       }),
     })
       .then(r => r.json())
       .then(d => {
+        // The server is the authority on the hold: it knows about approvals
+        // this device may not, and it is where an approval is spent. Only a
+        // refusal rolls the track back.
         if (d?.trackLocked && d.daysLeft) {
           onToast?.(`مسارك مثبَّت على «${trackLabel(d)}» — يتبقّى ${d.daysLeft} يوم`, "warn");
           setProfile(p => ({ ...p, track: d.track, college: d.college || "", plan: d.plan || "" }));
+          return;
+        }
+        if (d?.approvalSpent) {
+          // Refresh the request so the approved banner retires and the page
+          // offers "request a change" again — the next one needs a new request.
+          setMyRequest(r => (r ? { ...r, status: "approved", consumed: true } : r));
+          onToast?.("تم تغيير مسارك ✅ — أي تغيير آخر يحتاج طلباً جديداً", "success", 8000);
         }
       })
       .catch(() => {});

@@ -74,7 +74,7 @@ export async function GET(request) {
 
   const { data } = await db
     .from('track_requests')
-    .select('status, reason, admin_reply, current_track, created_at, updated_at')
+    .select('status, reason, admin_reply, current_track, created_at, updated_at, consumed_at')
     .eq('device_id', deviceId)
     .order('created_at', { ascending: false })
     .limit(1)
