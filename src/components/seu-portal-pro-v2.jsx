@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE } from "@/lib/courses";
+import { CATALOGUE, levelsOf } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -492,15 +492,23 @@ function playChime() {
    ══════════════════════════════════════════════════════════════ */
 function useToasts() {
   const [list, setList] = useState([]);
-  const push = useCallback((msg, kind = "info") => {
+  const dismiss = useCallback((id) => setList(l => l.filter(t => t.id !== id)), []);
+  /**
+   * `ms` lets a confirmation that carries real detail stay long enough to be
+   * read — three seconds is right for "saved", wrong for a notice repeating
+   * a task's title, due date and when its reminder will fire. Anything that
+   * outstays the default gets a close button, so a long notice is never
+   * something the student has to wait out.
+   */
+  const push = useCallback((msg, kind = "info", ms = 3000) => {
     const id = Date.now() + Math.random();
-    setList(l => [...l, { id, msg, kind }]);
-    setTimeout(() => setList(l => l.filter(t => t.id !== id)), 3000);
+    setList(l => [...l, { id, msg, kind, closable: ms > 6000 }]);
+    setTimeout(() => setList(l => l.filter(t => t.id !== id)), ms);
   }, []);
-  return { list, push };
+  return { list, push, dismiss };
 }
 
-function ToastStack({ list }) {
+function ToastStack({ list, dismiss }) {
   return (
     <div style={{
       // Above every full-screen sheet. At 300 these were painted *behind*
@@ -517,12 +525,23 @@ function ToastStack({ list }) {
         return (
           <div key={t.id} style={{
             background: "rgba(15,28,51,.96)", color: "#fff", padding: "10px 18px",
-            borderRadius: 24, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 30px rgba(0,0,0,.4)",
+            borderRadius: t.closable ? 18 : 24, fontSize: 13, fontWeight: 600, boxShadow: "0 8px 30px rgba(0,0,0,.4)",
             border: `1px solid ${colors[t.kind]}50`, display: "flex", alignItems: "center", gap: 8,
             animation: "toastIn .25s ease", backdropFilter: "blur(12px)",
+            maxWidth: "min(92vw, 420px)", pointerEvents: t.closable ? "auto" : "none",
+            whiteSpace: "pre-line", lineHeight: 1.65, textAlign: "right",
           }}>
-            <Icon size={15} color={colors[t.kind]} />
-            <span>{t.msg}</span>
+            <Icon size={15} color={colors[t.kind]} style={{ flexShrink: 0, alignSelf: "flex-start", marginTop: 3 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>{t.msg}</span>
+            {t.closable && (
+              <button onClick={() => dismiss?.(t.id)} aria-label="إغلاق" style={{
+                background: "rgba(255,255,255,.12)", border: "none", borderRadius: 8,
+                width: 24, height: 24, cursor: "pointer", flexShrink: 0, alignSelf: "flex-start",
+                display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+              }}>
+                <X size={13} color="rgba(255,255,255,.85)" />
+              </button>
+            )}
           </div>
         );
       })}
@@ -2773,7 +2792,7 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, profile }) {
   const add = () => {
     if (!nt.title.trim()) return;
     const finalType = nt.type === CUSTOM_TYPE && nt.customType.trim() ? nt.customType.trim() : nt.type;
-    setTasks(ts => [...(ts || []), {
+    const task = {
       id: Date.now(), done: false,
       title: nt.title.trim(), type: finalType,
       track: nt.track, subject: nt.subject,
@@ -2781,10 +2800,33 @@ function TasksHub({ t, tasks, setTasks, exams, setExams, onToast, profile }) {
       dueDate: nt.dueDate, dueTime: nt.dueTime,
       importance: nt.importance,
       remind: nt.remind !== false, leadMins: Number(nt.leadMins ?? 1440),
-    }]);
+    };
+    setTasks(ts => [...(ts || []), task]);
     setNt(blank());
     setShowAdd(false);
-    onToast?.("تمت الإضافة +15 XP", "success");
+
+    // A confirmation that repeats what was actually saved, and — the part a
+    // student is really asking about when they set a reminder — exactly when
+    // the alert will fire. "تمت الإضافة" alone left them to reopen the task
+    // to find out whether the reminder took. It stays a minute and closes on
+    // demand, because it is a paragraph, not a tick.
+    const lines = [`✅ أُضيفت: ${task.title}`];
+    const where = [task.type, task.subject].filter(Boolean).join(" · ");
+    if (where) lines.push(where);
+    if (task.dueDate) {
+      lines.push(`يُغلق: ${task.dueDate}${task.dueTime ? ` — ${task.dueTime}` : " (نهاية اليوم)"}`);
+      if (task.remind) {
+        const at = taskDueAt(task);
+        const fire = at ? new Date(at.getTime() - taskLead(task) * 60000) : null;
+        lines.push(fire && fire.getTime() > Date.now()
+          ? `🔔 التنبيه: ${leadLabel(task.leadMins)} — ${fire.toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}`
+          : `🔔 التنبيه: ${leadLabel(task.leadMins)}`);
+      } else {
+        lines.push("🔕 بلا تنبيه");
+      }
+    }
+    lines.push("+15 XP");
+    onToast?.(lines.join("\n"), "success", 60000);
   };
   const toggle = (id) => setTasks(ts => (ts || []).map(tk => tk.id === id ? { ...tk, done: !tk.done } : tk));
   const remove = (id) => setTasks(ts => (ts || []).filter(tk => tk.id !== id));
@@ -4874,6 +4916,8 @@ function ExplorePage({ onCourse, t, profile }) {
   const [sub, setSub] = useState(null);
   // Opt back out of the student's own programme to the full college/track list.
   const [showAll, setShowAll] = useState(false);
+  // Which level of the student's own study plan is expanded.
+  const [openLevel, setOpenLevel] = useState(null);
 
   // Open on the student's own subjects, not on a picker they already answered.
   //
@@ -5089,9 +5133,64 @@ function ExplorePage({ onCourse, t, profile }) {
                 );
               })}
             </div>
+            {/* The actual study plan, level by level, where we have it. This is
+                the thing a student came for: their own courses by code, not
+                the programme's name repeated back at them. */}
+            {scoped && levelsOf(profile.plan) && (
+              <div style={{ marginTop: 18 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx, marginBottom: 4 }}>خطتي الدراسية</div>
+                <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 10 }}>
+                  اضغط على أي مستوى لعرض مواده، ثم على المادة لفتحها.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {Object.entries(levelsOf(profile.plan)).map(([lvl, codes]) => {
+                    const on = openLevel === lvl;
+                    return (
+                      <div key={lvl} style={{
+                        background: t.s1, border: `1px solid ${on ? col.color + "55" : t.bd}`,
+                        borderRadius: 14, overflow: "hidden", transition: "border-color .2s",
+                      }}>
+                        <button onClick={() => setOpenLevel(on ? null : lvl)} style={{
+                          width: "100%", background: "none", border: "none", cursor: "pointer",
+                          padding: "12px 14px", fontFamily: "inherit", textAlign: "right",
+                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                        }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{lvl}</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 800, color: col.color,
+                              background: `${col.color}15`, border: `1px solid ${col.color}30`,
+                              borderRadius: 20, padding: "2px 8px",
+                            }}>{codes.length} مواد</span>
+                            <ChevronDown size={15} color={t.mu}
+                              style={{ transform: on ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                          </span>
+                        </button>
+                        {on && (
+                          <div style={{
+                            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8,
+                            padding: "0 12px 12px", animation: "fadeUp .22s ease",
+                          }}>
+                            {codes.map(code => (
+                              <button key={code} onClick={() => onCourse(code)} style={{
+                                background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11,
+                                padding: "11px 8px", cursor: "pointer", fontFamily: "inherit",
+                                fontSize: 12.5, fontWeight: 800, color: t.tx,
+                                fontFeatureSettings: '"tnum"', direction: "ltr",
+                              }}>{code}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {scoped && (
               <button onClick={() => setShowAll(true)} style={{
-                background: "none", border: "none", padding: "12px 2px 0", cursor: "pointer",
+                background: "none", border: "none", padding: "14px 2px 0", cursor: "pointer",
                 fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: t.mu,
               }}>
                 تصفّح بقية تخصصات {col.label}
@@ -5615,7 +5714,13 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
   // 15 days haven't passed, but only until a change is saved under it. After
   // that its created_at is recorded on the profile, the hold returns, and a
   // further change needs a new request.
-  const approvalConsumed = myRequest?.status === "approved" && profile?.approvalUsedAt === myRequest?.created_at;
+  // Spent is decided by the server (`consumed_at`) first: the local
+  // `approvalUsedAt` only ever knew about this one browser, so clearing site
+  // data or opening the site on a second device re-offered the same approval.
+  const approvalConsumed = myRequest?.status === "approved" && (
+    Boolean(myRequest?.consumed_at) || myRequest?.consumed === true ||
+    profile?.approvalUsedAt === myRequest?.created_at
+  );
   const changeApproved = myRequest?.status === "approved" && !approvalConsumed;
 
   const save = () => {
@@ -5681,14 +5786,27 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: next.name, email: next.email || aiEmail || "",
+        // The minted code goes with it so the server can find this student's
+        // approval even from a device it has never seen before.
+        studentId: next.studentCode || "",
         track: next.track, college: next.college, plan: next.plan,
       }),
     })
       .then(r => r.json())
       .then(d => {
+        // The server is the authority on the hold: it knows about approvals
+        // this device may not, and it is where an approval is spent. Only a
+        // refusal rolls the track back.
         if (d?.trackLocked && d.daysLeft) {
           onToast?.(`مسارك مثبَّت على «${trackLabel(d)}» — يتبقّى ${d.daysLeft} يوم`, "warn");
           setProfile(p => ({ ...p, track: d.track, college: d.college || "", plan: d.plan || "" }));
+          return;
+        }
+        if (d?.approvalSpent) {
+          // Refresh the request so the approved banner retires and the page
+          // offers "request a change" again — the next one needs a new request.
+          setMyRequest(r => (r ? { ...r, status: "approved", consumed: true } : r));
+          onToast?.("تم تغيير مسارك ✅ — أي تغيير آخر يحتاج طلباً جديداً", "success", 8000);
         }
       })
       .catch(() => {});
@@ -7733,6 +7851,11 @@ export default function App() {
     // The paid catalogue earns a tab of its own: it is what the platform sells,
     // and burying it in a menu is how a service nobody finds stops selling.
     { id: "services", Icon: Sparkles, label: "الخدمات" },
+    // Tasks were reachable only by scrolling the home page. They are the thing
+    // a student opens the site to check, and the one screen with a deadline
+    // attached — so they get an icon of their own, badged when something is
+    // overdue.
+    { id: "tasks", Icon: CheckCircle, label: "مهامي" },
     { id: "schedule", Icon: CalendarDays, label: "جدولي" },
     // حسابي sits in the middle and is raised: it is the one tab that is about
     // you rather than about content, and the middle of a seven-tab row is the
@@ -7845,6 +7968,9 @@ export default function App() {
 
         {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} />}
         {tab === "services" && !course && <ServicesPage t={t} dark={dark} />}
+        {tab === "tasks" && !course && <TasksHub
+          t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams}
+          onToast={toasts.push} profile={profile} />}
 
         {tab === "schedule" && <SchedulePage t={t} schedule={schedule} setSchedule={setSchedule} onToast={toasts.push} />}
 
@@ -7913,7 +8039,7 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
         {TABS.map(({ id, Icon, label, raised }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
-          const badge = id === "home" ? overdueTasks : 0;
+          const badge = (id === "home" || id === "tasks") ? overdueTasks : 0;
           // The raised tab keeps a filled circle whether or not it is active,
           // so it reads as the anchor of the row rather than another chip.
           const filled = raised || active;
@@ -8083,7 +8209,7 @@ export default function App() {
           onClose={() => setNeedAccount(null)}
           onComplete={() => { setNeedAccount(null); setCourse(null); setTab("profile"); }} />
       )}
-      <ToastStack list={toasts.list} />
+      <ToastStack list={toasts.list} dismiss={toasts.dismiss} />
     </div>
   );
 }
