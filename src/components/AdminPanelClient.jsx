@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { COURSE_GROUPS, CATALOGUE, levelsOf, isCourseCode, titleOf, COURSE_CATEGORIES, PROGRAM_CATEGORIES } from '@/lib/courses'
+import { COURSE_GROUPS, CATALOGUE, levelsOf, isCourseCode, titleOf, COURSE_CATEGORIES, PROGRAM_CATEGORIES, shelfOf } from '@/lib/courses'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
@@ -63,24 +63,28 @@ const FILE_COURSES = COURSE_GROUPS
  * What a file can be filed as, decided by what was picked.
  *
  * A course has slides, summaries and past papers; a programme has a study plan
- * and admission terms. Offering all of both put «تجميعات الفاينل» on a
- * programme and «شروط القبول» on STAT101, and the owner had to know which of
- * the ten was meaningful. The legacy bucket is filtered out for new uploads —
- * it exists to keep old files visible, not to file new ones into.
+ * and admission terms. Offering all of both put «تجميعات» on a programme and
+ * «شروط القبول» on STAT101, and the owner had to know which was meaningful.
+ *
+ * There is no longer a legacy bucket to filter out: «ملفات أخرى» became
+ * التجميعات, so the files that were in it are on a real shelf now.
  */
 // Mirrors the server's cap and its accepted types, so the picker offers
 // exactly what /api/upload will issue a token for.
 const MAX_UPLOAD = 200 * 1024 * 1024
 const ACCEPT_EXT = '.pdf,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.zip'
 
-const CATEGORY_LABEL = Object.fromEntries(
+// Retired ids resolve through shelfOf, so a file stored as «تجميعات الميد»
+// still reads as the shelf it is shown on today rather than as a bare id.
+const LABELS = Object.fromEntries(
   [...COURSE_CATEGORIES, ...PROGRAM_CATEGORIES].map(c => [c.id, c.label])
 )
+const CATEGORY_LABEL = new Proxy(LABELS, {
+  get: (t, k) => t[k] ?? t[shelfOf(String(k))],
+})
 
-const categoriesFor = (course) => {
-  const list = !course || isCourseCode(course) ? COURSE_CATEGORIES : PROGRAM_CATEGORIES
-  return list.filter(c => !c.legacy)
-}
+const categoriesFor = (course) =>
+  !course || isCourseCode(course) ? COURSE_CATEGORIES : PROGRAM_CATEGORIES
 
 function fmtSize(b) {
   if (!b) return '—'

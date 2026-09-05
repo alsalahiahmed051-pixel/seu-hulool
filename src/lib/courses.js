@@ -674,23 +674,21 @@ const ALL_CODES = new Set(
 export const isCourseCode = (name) => ALL_CODES.has(String(name || '').trim());
 
 /**
- * What a course's library is divided into — the same shelf the students'
- * Telegram bot hands them, because that is the division they already ask in:
- * «تجميعات ميد» is a different request from «ملخص», and one bucket called
- * "تجميعات وملخصات" cannot answer either.
+ * What a course's library is divided into — four shelves, in the order a
+ * student reaches for them through a term.
  *
- * `collections` stays at the end and is not offered for new uploads: it is the
- * single bucket everything was filed under before, and dropping it would hide
- * every file already in the library.
+ * It was seven. Splitting «تجميعات الميد» from «تجميعات الفاينل» sounded
+ * faithful to how students ask, but on the shelf it produced two half-empty
+ * drawers where one full one belongs — a past paper is a past paper, and the
+ * owner filing it should not have to decide which exam a scanned sheet came
+ * from. The book sits with the slides for the same reason: both are what the
+ * course hands you to study from, as opposed to what someone made out of it.
  */
 export const COURSE_CATEGORIES = [
-  { id: 'slides', label: 'السلايدات', desc: 'سلايدات المقرر كاملة' },
+  { id: 'slides', label: 'السلايدات والكتب', desc: 'سلايدات المقرر وكتبه ومراجعه' },
   { id: 'summary', label: 'الملخصات', desc: 'ملخصات المحتوى والمراجعة' },
-  { id: 'mid', label: 'تجميعات الميد', desc: 'أسئلة اختبارات نصفية سابقة' },
-  { id: 'final', label: 'تجميعات الفاينل', desc: 'أسئلة اختبارات نهائية سابقة' },
+  { id: 'collections', label: 'التجميعات', desc: 'أسئلة الاختبارات السابقة' },
   { id: 'solved', label: 'واجبات وحلول', desc: 'الواجبات وحلولها والأنشطة' },
-  { id: 'book', label: 'الكتاب والمراجع', desc: 'الكتاب المقرر والمراجع' },
-  { id: 'collections', label: 'ملفات أخرى', desc: 'ملفات رُفعت قبل تقسيم الأنواع', legacy: true },
 ];
 
 /** What a programme's own page holds — about the programme, not one course. */
@@ -698,12 +696,38 @@ export const PROGRAM_CATEGORIES = [
   { id: 'plans', label: 'الخطط الدراسية', desc: 'الخطة الكاملة وجدول المستويات' },
   { id: 'curriculum', label: 'المقررات الدراسية', desc: 'توصيف المقررات ومحتواها' },
   { id: 'programs', label: 'البرامج والتخصصات', desc: 'نظرة عامة وشروط القبول' },
-  { id: 'collections', label: 'ملفات أخرى', desc: 'ملفات رُفعت قبل تقسيم الأنواع', legacy: true },
 ];
 
-/** Every category id the library accepts, old ones included. */
+/**
+ * Where a file filed under a retired shelf now lives.
+ *
+ * Merging shelves must never lose a file: everything already uploaded carries
+ * the old id, and an id nothing renders is a file that silently disappears.
+ * Read paths map through this; the API keeps accepting the old ids so old
+ * records stay valid exactly as written.
+ *
+ * `collections` was the pre-split "ملفات أخرى" bucket. It becomes التجميعات
+ * rather than being retired, which is also where those miscellaneous uploads
+ * belonged — so «ملفات أخرى» disappears from the shelf without stranding one.
+ */
+export const CATEGORY_ALIASES = {
+  mid: 'collections',
+  final: 'collections',
+  book: 'slides',
+}
+
+/** The shelf a file's stored category renders on today. */
+export function shelfOf(category) {
+  return CATEGORY_ALIASES[category] || category
+}
+
+/** Every category id the library accepts, retired ones included. */
 export const ALL_CATEGORY_IDS = [
-  ...new Set([...COURSE_CATEGORIES, ...PROGRAM_CATEGORIES].map(c => c.id)),
+  ...new Set([
+    ...COURSE_CATEGORIES.map(c => c.id),
+    ...PROGRAM_CATEGORIES.map(c => c.id),
+    ...Object.keys(CATEGORY_ALIASES),
+  ]),
 ];
 
 export const CATALOGUE = {

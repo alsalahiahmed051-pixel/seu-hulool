@@ -48,6 +48,19 @@ export function browseGate(profile, signedIn) {
  * taste of it, and the owner's rule has always been that browsing does not
  * download.
  */
+/**
+ * How many assistant questions a visitor gets before being asked for a
+ * profile.
+ *
+ * Counted per device, in a localStorage key kept outside the app's own store
+ * so neither a data reset nor a sign-out restarts it (see `useDurable`).
+ *
+ * What that does NOT stop: clearing site data, a private window, or a second
+ * device. Making the trial genuinely once-per-person needs the count on the
+ * server, against the signed device cookie (`deviceIdentity`) or the caller's
+ * IP — the shape `claim_quiz_trial` already uses for the quiz trial. That
+ * needs a table, so it is the owner's call to make, not a silent addition.
+ */
 export const BROWSE_TRIAL_AI = 3
 
 /**

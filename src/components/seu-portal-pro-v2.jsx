@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE, levelsOf, titleOf, titleArOf, isCourseCode, searchCourses, canonicalCourse } from "@/lib/courses";
+import { CATALOGUE, levelsOf, titleOf, titleArOf, isCourseCode, searchCourses, canonicalCourse, shelfOf, PROGRAM_LEVELS } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -68,7 +68,67 @@ const storage = {
       }
     } catch (e) {}
   },
+  /** Every key currently held, for the by-prefix operations below. */
+  keys() {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const raw = window.localStorage.getItem(STORE_KEY);
+        return Object.keys(raw ? JSON.parse(raw) : {});
+      }
+    } catch (e) {}
+    return Object.keys(memCache);
+  },
+  /**
+   * Drop every key starting with `prefix`.
+   *
+   * Flashcard decks are stored one key per course (`fc_STAT101`), so there is
+   * no single piece of state that owns them. Without this, "بيانات الدراسة
+   * فقط" reset the lists it could see and quietly left every deck behind —
+   * data the dialog had just told the student it was clearing.
+   */
+  removePrefix(prefix) {
+    Object.keys(memCache).forEach(k => { if (k.startsWith(prefix)) delete memCache[k]; });
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const raw = window.localStorage.getItem(STORE_KEY);
+        const data = raw ? JSON.parse(raw) : {};
+        let hit = false;
+        Object.keys(data).forEach(k => { if (k.startsWith(prefix)) { delete data[k]; hit = true; } });
+        if (hit) window.localStorage.setItem(STORE_KEY, JSON.stringify(data));
+      }
+    } catch (e) {}
+  },
 };
+
+/**
+ * A value kept OUTSIDE the app's own store, so a reset cannot clear it.
+ *
+ * Everything in `storage` lives under one key that "إعادة تعيين البيانات →
+ * كل شيء" removes wholesale — which is right for the student's own data and
+ * wrong for a one-per-device allowance, where wiping it is the bypass. Same
+ * reasoning as the track-lock stamp, which is kept apart for the same reason.
+ *
+ * Honest about its limits: this survives a reset and a sign-out, not a
+ * browser's "clear site data". A trial that truly cannot be restarted has to
+ * be counted on the server against the signed device cookie or the caller's
+ * IP; see the note in auth-config.js.
+ */
+function useDurable(key, initial) {
+  const [val, setVal] = useState(initial);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw != null) setVal(JSON.parse(raw));
+    } catch (e) {}
+    setReady(true);
+  }, [key]);
+  useEffect(() => {
+    if (!ready) return;
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+  }, [ready, key, val]);
+  return [val, setVal];
+}
 
 function useStored(key, initial) {
   // Always render `initial` first so the server HTML and the browser's first
@@ -306,6 +366,26 @@ const ALL_COURSES = (() => {
   return [...out];
 })();
 
+/**
+ * How a subject reads in the assistant's picker.
+ *
+ * A bare «ACCT101» in a dropdown is a filing key. The name is what someone
+ * scanning for "the accounting one" recognises, so it leads and the code
+ * follows — the same order the course page and the plan table use.
+ */
+const aiOptionLabel = (c) => {
+  const name = titleOf(c);
+  return name && name !== c ? `${c} — ${name}` : c;
+};
+
+/** Every course code in every plan — the real subjects, not the programmes. */
+const ALL_COURSE_CODES = (() => {
+  const out = new Set();
+  Object.values(PROGRAM_LEVELS).forEach(levels =>
+    Object.values(levels).forEach(codes => codes.forEach(c => out.add(c))));
+  return [...out];
+})();
+
 /* XP Level helper */
 function getXpLevel(xp) {
   if (xp >= 5000) return { name: "أستاذ", stars: "⭐⭐⭐⭐⭐", next: null, min: 5000 };
@@ -365,16 +445,13 @@ const NOTIFS_SEED = [
  * site draws them with. The three tools at the end are not files.
  */
 const SECTIONS = [
-  { id: "slides", Icon: Layers, label: "السلايدات", color: "#1d4ed8", desc: "سلايدات المقرر كاملة" },
+  { id: "slides", Icon: Layers, label: "السلايدات والكتب", color: "#1d4ed8", desc: "سلايدات المقرر وكتبه ومراجعه" },
   { id: "summary", Icon: Bookmark, label: "الملخصات", color: "#0891b2", desc: "ملخصات المحتوى والمراجعة" },
-  { id: "mid", Icon: FileText, label: "تجميعات الميد", color: "#b45309", desc: "أسئلة اختبارات نصفية سابقة" },
-  { id: "final", Icon: Award, label: "تجميعات الفاينل", color: "#be123c", desc: "أسئلة اختبارات نهائية سابقة" },
+  { id: "collections", Icon: FileText, label: "التجميعات", color: "#b45309", desc: "أسئلة الاختبارات السابقة" },
   { id: "solved", Icon: CheckCircle2, label: "واجبات وحلول", color: "#065f46", desc: "الواجبات وحلولها والأنشطة" },
-  { id: "book", Icon: BookOpen, label: "الكتاب والمراجع", color: "#6d28d9", desc: "الكتاب المقرر والمراجع" },
   { id: "plans", Icon: Calendar, label: "الخطط الدراسية", color: "#6d28d9", desc: "الخطة الكاملة وجدول المستويات" },
   { id: "curriculum", Icon: Layers, label: "المقررات الدراسية", color: "#065f46", desc: "توصيف المقررات ومحتواها" },
   { id: "programs", Icon: Award, label: "البرامج والتخصصات", color: "#b45309", desc: "نظرة عامة وشروط القبول والرسوم" },
-  { id: "collections", Icon: FolderOpen, label: "ملفات أخرى", color: "#475569", desc: "ملفات رُفعت قبل تقسيم الأنواع" },
   { id: "flashcards", Icon: Hash, label: "بطاقات تعليمية", color: "#0891b2", desc: "أنشئ بطاقات سؤال وجواب للمراجعة" },
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
@@ -382,10 +459,10 @@ const SECTIONS = [
 // Which sections hold uploaded files (the rest are tools or contact info).
 const FILE_SECTIONS = SECTIONS.filter(s => !["flashcards", "notes", "support"].includes(s.id)).map(s => s.id);
 // A single course gets the study shelf; a programme gets what is written about
-// the programme. Showing all ten to both would put "شروط القبول" on STAT101 and
-// "تجميعات الفاينل" on a programme that does not sit an exam.
-const COURSE_SECTION_IDS = ["slides", "summary", "mid", "final", "solved", "book", "collections"];
-const PROGRAM_SECTION_IDS = ["plans", "curriculum", "programs", "collections"];
+// the programme. Showing both to both would put "شروط القبول" on STAT101 and
+// "تجميعات" on a programme that does not sit an exam.
+const COURSE_SECTION_IDS = ["slides", "summary", "collections", "solved"];
+const PROGRAM_SECTION_IDS = ["plans", "curriculum", "programs"];
 /**
  * Is this course a whole programme, or one subject inside the prep year?
  *
@@ -626,6 +703,40 @@ function EmptyState({ Icon, title, desc, action, t }) {
  * Neither clears the track lock stamp: a reset must not become a way around
  * the 15-day hold on changing tracks.
  */
+/**
+ * One of the two reset options.
+ *
+ * At module scope on purpose. It used to be declared inside ResetDialog's
+ * render, which made it a different component type on every state change — so
+ * choosing an option unmounted and remounted both buttons rather than
+ * restyling them, and the selection did not visibly take. Same trap that made
+ * the admin panel's inputs lose focus on every keystroke.
+ */
+function ResetChoice({ id, title, desc, color, mode, setMode, t }) {
+  const on = mode === id;
+  return (
+    <button onClick={() => setMode(id)} style={{
+      width: "100%", textAlign: "right", background: on ? `${color}12` : t.s2,
+      border: `1.5px solid ${on ? color : t.bd}`, borderRadius: 14,
+      padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
+      display: "flex", gap: 10, alignItems: "flex-start",
+    }}>
+      <div style={{
+        width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+        border: `2px solid ${on ? color : t.dim}`,
+        background: on ? color : "transparent",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {on && <Check size={11} color="#fff" strokeWidth={3.5} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{title}</div>
+        <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.65, marginTop: 3 }}>{desc}</div>
+      </div>
+    </button>
+  );
+}
+
 function ResetDialog({ open, counts, onClose, onResetData, onResetAll, t }) {
   const [mode, setMode] = useState("data"); // data | all
   if (!open) return null;
@@ -636,31 +747,12 @@ function ResetDialog({ open, counts, onClose, onResetData, onResetAll, t }) {
     { label: "المهام", n: counts.tasks, keep: false },
     { label: "المحاضرات في جدولك", n: counts.schedule, keep: false },
     { label: "الاختبارات", n: counts.exams, keep: false },
-    { label: "جلسات التركيز والإحصائيات", n: counts.sessions, keep: false },
+    // Was "جلسات التركيز والإحصائيات" against a count nothing supplied, so it
+    // read «undefined» — for a feature that no longer exists. The decks are
+    // what actually gets cleared here, and they were never listed.
+    { label: "البطاقات التعليمية", n: counts.cards, keep: false },
     { label: "ملفك الشخصي ومسارك", n: counts.profile, keep: mode === "data" },
   ];
-
-  const Choice = ({ id, title, desc, color }) => (
-    <button onClick={() => setMode(id)} style={{
-      width: "100%", textAlign: "right", background: mode === id ? `${color}12` : t.s2,
-      border: `1.5px solid ${mode === id ? color : t.bd}`, borderRadius: 14,
-      padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
-      display: "flex", gap: 10, alignItems: "flex-start",
-    }}>
-      <div style={{
-        width: 18, height: 18, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-        border: `2px solid ${mode === id ? color : t.dim}`,
-        background: mode === id ? color : "transparent",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        {mode === id && <Check size={11} color="#fff" strokeWidth={3.5} />}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{title}</div>
-        <div style={{ fontSize: 11.5, color: t.mu, lineHeight: 1.65, marginTop: 3 }}>{desc}</div>
-      </div>
-    </button>
-  );
 
   return (
     <div onClick={onClose} style={{
@@ -681,10 +773,10 @@ function ResetDialog({ open, counts, onClose, onResetData, onResetAll, t }) {
           كل شيء محفوظ على هذا الجهاز وحده. اختر ما تريد حذفه:
         </p>
 
-        <Choice id="data" color={P.orange}
+        <ResetChoice id="data" color={P.orange} mode={mode} setMode={setMode} t={t}
           title="بيانات الدراسة فقط"
           desc="المفضلة والملاحظات والمهام والجدول والإحصائيات — مع الاحتفاظ باسمك ومسارك." />
-        <Choice id="all" color={P.red}
+        <ResetChoice id="all" color={P.red} mode={mode} setMode={setMode} t={t}
           title="كل شيء"
           desc="ما سبق، بالإضافة إلى ملفك الشخصي والحساب المحفوظ على هذا الجهاز." />
 
@@ -4340,7 +4432,13 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
           // too, and a file in a category missing from this object was dropped
           // on the floor without a word.
           const grouped = Object.fromEntries(FILE_SECTIONS.map(id => [id, []]));
-          data.files.forEach(f => { if (grouped[f.category]) grouped[f.category].push(f); });
+          // Through shelfOf, so a file filed under a shelf that has since been
+          // merged away (تجميعات الميد، الكتاب والمراجع) lands on the shelf that
+          // replaced it instead of being dropped on the floor without a word.
+          data.files.forEach(f => {
+            const id = shelfOf(f.category);
+            if (grouped[id]) grouped[id].push(f);
+          });
           setRealFiles(grouped);
         }
       })
@@ -4356,12 +4454,7 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
     ? COURSE_SECTION_IDS
     : PROGRAM_SECTION_IDS.filter(id => id !== "programs" || isProgramme(subject));
   const sections = SECTIONS
-    .filter(sec => shelf.includes(sec.id) || !FILE_SECTIONS.includes(sec.id))
-    // «ملفات أخرى» exists only so files uploaded before the shelf was split
-    // stay reachable. On a course with none it is a drawer that opens onto
-    // nothing, so it appears only when it actually holds something — and only
-    // once the listing has loaded, so it does not flash in and out.
-    .filter(sec => sec.id !== "collections" || (realFiles.collections || []).length > 0);
+    .filter(sec => shelf.includes(sec.id) || !FILE_SECTIONS.includes(sec.id));
 
   // Your own cards for this subject, counted for the header badge. Read after
   // mount, never during render — reading storage while rendering is what made
@@ -4559,7 +4652,14 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                             )}
                           </div>
                         )}
-                        {shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} canOpen={canOpenFiles} onNeedAccount={onNeedAccount} />)}
+                        {/* Assignments come in pairs — the work and its
+                            solution — so that shelf is grouped rather than
+                            listed. Every other shelf holds one kind of thing. */}
+                        {sec.id === "solved"
+                          ? <SolvedShelf files={shown} subject={subject} t={t} color={sec.color}
+                              onToast={onToast} canOpen={canOpenFiles} onNeedAccount={onNeedAccount}
+                              onAskAI={onAskAI} />
+                          : shown.map((f, i) => <RealFileItem key={f.id || `real-${i}`} file={f} t={t} onToast={onToast} canOpen={canOpenFiles} onNeedAccount={onNeedAccount} />)}
                         {shown.length === 0 && (
                           <div style={{ textAlign: "center", padding: "16px 0", color: t.mu, fontSize: 13 }}>لا نتائج لـ «{fileFilter[sec.id]}»</div>
                         )}
@@ -4571,6 +4671,145 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * «واجبات وحلول» — the one shelf where the files are not a flat list.
+ *
+ * Every other shelf is "here are the summaries, take one". This one holds two
+ * different kinds of thing that belong in pairs: the assignment, and its
+ * solution. As a flat list they arrived as «واجب ٣» and «حل واجب ٣» three rows
+ * apart, and matching them up was the student's job.
+ *
+ * Three decisions worth stating:
+ *
+ *  • The solution starts hidden behind a tap. Not to gate it — one tap is not
+ *    a gate — but because a solution sitting open next to the question is the
+ *    answer you read instead of the exercise you do. Anyone who wants it gets
+ *    it immediately; nobody gets it by accident.
+ *  • «حلّيته» is marked on the device and says so. It is a private checklist,
+ *    not a score, and it is labelled as one rather than dressed up as
+ *    progress that someone else can see.
+ *  • «اسأل عن هذا الواجب» hands the assistant the file's name and the course,
+ *    so the question is already asked.
+ *
+ * What is deliberately NOT here: student ratings and a discussion thread under
+ * each file. Both need accounts, moderation and — before either — files worth
+ * discussing. A five-star widget nobody can vote on is decoration.
+ */
+function SolvedShelf({ files, subject, t, color, onToast, canOpen, onNeedAccount, onAskAI }) {
+  const [done, setDone] = useStored(`solved_${subject}`, []);
+  const [shown, setShown] = useState({});
+
+  // «حل واجب ٣.pdf» and «واجب ٣» are the same piece of work. Strip what marks
+  // one as the solution, plus the extension and the noise, and what is left is
+  // the key they share.
+  //
+  // The boundaries are spelled out rather than written `\b`: in JavaScript
+  // `\b` is defined against [A-Za-z0-9_], so no Arabic letter ever sits on a
+  // word boundary and `/\bحل\b/` matches nothing at all. With it, every
+  // Arabic solution filed itself under its own key and sat in the list as a
+  // second, headless card beside the assignment it answers.
+  const MARK = "(?:حل|حلول|الحل|solutions?|answers?|key)";
+  const STRIP = new RegExp(`(^|[\\s_\\-])${MARK}(?=[\\s_\\-]|$)`, "gi");
+  const MATCH = new RegExp(`(^|[\\s_\\-])${MARK}(?=[\\s_\\-]|$)`, "i");
+  const keyOf = (name) => String(name || "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(STRIP, " ")
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .toLowerCase();
+  const isSolution = (name) => MATCH.test(String(name || "").replace(/\.[a-z0-9]+$/i, ""));
+
+  const groups = [];
+  const byKey = new Map();
+  files.forEach(f => {
+    const k = keyOf(f.name) || f.id;
+    if (!byKey.has(k)) { byKey.set(k, { key: k, task: null, solutions: [] }); groups.push(byKey.get(k)); }
+    const g = byKey.get(k);
+    if (isSolution(f.name) || g.task) g.solutions.push(f);
+    else g.task = f;
+  });
+
+  const toggleDone = (k) => setDone(prev => (prev || []).includes(k)
+    ? (prev || []).filter(x => x !== k)
+    : [...(prev || []), k]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {groups.map(g => {
+        const head = g.task || g.solutions[0];
+        const isDone = (done || []).includes(g.key);
+        const open = !!shown[g.key];
+        return (
+          <div key={g.key} style={{
+            background: t.s2, border: `1px solid ${isDone ? color + "45" : t.bd}`,
+            borderRadius: 14, padding: 12, transition: "border-color .2s",
+          }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 9, marginBottom: 9 }}>
+              <button onClick={() => toggleDone(g.key)}
+                title={isDone ? "أزل علامة الحل" : "علّمه كمحلول"}
+                aria-label={isDone ? "أزل علامة الحل" : "علّمه كمحلول"}
+                style={{
+                  width: 21, height: 21, borderRadius: 7, flexShrink: 0, marginTop: 1,
+                  border: `1.5px solid ${isDone ? color : t.dim}`, cursor: "pointer",
+                  background: isDone ? color : "transparent", padding: 0,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                {isDone && <Check size={12} color="#fff" strokeWidth={3.5} />}
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.45,
+                  textDecoration: isDone ? "line-through" : "none",
+                  textDecorationColor: t.dim,
+                }}>{head?.name}</div>
+                <div style={{ fontSize: 11, color: t.dim, marginTop: 2 }}>
+                  {g.solutions.length > 0
+                    ? `الواجب + ${g.solutions.length === 1 ? "الحل" : `${g.solutions.length} حلول`}`
+                    : "الواجب — بلا حل منشور بعد"}
+                </div>
+              </div>
+            </div>
+
+            {g.task && <RealFileItem file={g.task} t={t} onToast={onToast} canOpen={canOpen} onNeedAccount={onNeedAccount} />}
+
+            {g.solutions.length > 0 && (open
+              ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                  {g.solutions.map((f, i) => (
+                    <RealFileItem key={f.id || `sol-${i}`} file={f} t={t} onToast={onToast} canOpen={canOpen} onNeedAccount={onNeedAccount} />
+                  ))}
+                </div>
+              )
+              : (
+                <button onClick={() => setShown(s => ({ ...s, [g.key]: true }))} style={{
+                  width: "100%", marginTop: 8, background: "none", border: `1px dashed ${t.bd}`,
+                  borderRadius: 11, padding: "9px 12px", cursor: "pointer", fontFamily: "inherit",
+                  fontSize: 12, fontWeight: 700, color: t.mu,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}>
+                  <Eye size={13} /> أظهر الحل
+                </button>
+              ))}
+
+            {onAskAI && (
+              <button onClick={() => onAskAI(subject, `اشرح لي طريقة حل «${head?.name}» في مقرر ${titleOf(subject) || subject} خطوة بخطوة.`)} style={{
+                width: "100%", marginTop: 8, background: "none", border: "none",
+                padding: "7px 2px 1px", cursor: "pointer", fontFamily: "inherit",
+                fontSize: 11.5, fontWeight: 700, color: P.blue2,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+              }}>
+                <Sparkles size={12} /> اسأل المساعد عن هذا الواجب
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ fontSize: 11, color: t.dim, textAlign: "center", lineHeight: 1.7, paddingTop: 2 }}>
+        علامة «تمّ» محفوظة على جهازك وحدك.
       </div>
     </div>
   );
@@ -5185,8 +5424,21 @@ function PlanLevelTable({ codes, fileCounts, color, t, onCourse }) {
  * programme with how many levels and courses its plan holds, and a mark on the
  * ones with no plan yet, so nothing is promised that is not there.
  */
+// «خطة أ» is what a prep student's profile stores, but it says nothing on a
+// directory row sitting between «محاسبة» and «قانون». The stored key stays the
+// key; only the row and the heading read the fuller name.
+const DIR_LABEL = {
+  'خطة أ': 'السنة التحضيرية — الخطة (أ)',
+  'خطة ب': 'السنة التحضيرية — الخطة (ب)',
+};
+
 function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, onClose, open, setOpen }) {
   const colleges = [
+    // The prep year first, because it is where every bachelor student starts —
+    // and it was the one thing missing from a directory that claims to list
+    // everything the platform covers. Its two plans are what a prep student's
+    // profile actually holds, so they are what the rest of the app looks up.
+    { label: TREE.preparatory.label, color: TREE.preparatory.color, programs: ['خطة أ', 'خطة ب'] },
     ...TREE.bachelor.colleges.map(c => ({ label: c.label, color: c.color || P.blue2, programs: c.programs })),
     { label: TREE.diploma.label, color: P.green, programs: TREE.diploma.programs },
     { label: TREE.graduate.label, color: P.gold, programs: TREE.graduate.programs },
@@ -5225,7 +5477,7 @@ function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, on
           <ArrowLeft size={12} /> كل البرامج
         </button>
 
-        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 3 }}>{open.name}</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 3 }}>{DIR_LABEL[open.name] || open.name}</h2>
         <div style={{ fontSize: 12, color: t.mu, marginBottom: 14 }}>
           {open.college}
           {plan && <span style={{ color: t.dim }}> · {levels} مستويات · {courses} مقرراً</span>}
@@ -5333,7 +5585,7 @@ function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, on
                   borderTop: i === 0 ? "none" : `1px solid ${t.bd}`,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{pr}</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{DIR_LABEL[pr] || pr}</div>
                     <div style={{ fontSize: 11, color: plan ? t.mu : t.dim, marginTop: 2 }}>
                       {plan ? `${levels} مستويات · ${courses} مقرراً` : "الخطة لم تُضف بعد"}
                     </div>
@@ -6804,7 +7056,11 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               <Edit3 size={16} color={P.green} /> تعديل ملفي
             </button>
           )}
-          <button onClick={() => onMessages?.()} style={{
+          {/* Only for someone who has a profile. A visitor has no inbox, no
+              favourites and no tasks, so these opened onto empty rooms and
+              made the page look like a broken account rather than an
+              invitation to make one. */}
+          {profile && <button onClick={() => onMessages?.()} style={{
             flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
             background: t.s1, border: `1.5px solid ${msgUnread > 0 ? `${P.gold}55` : t.bd}`,
             borderRadius: 14, padding: "13px 10px",
@@ -6818,7 +7074,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
                 fontSize: 11, fontWeight: 900, color: "#1a1a1a",
               }}>{msgUnread > 9 ? "9+" : msgUnread}</span>
             )}
-          </button>
+          </button>}
         </div>
       )}
 
@@ -6942,7 +7198,7 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       )}
 
       {/* Quick actions dashboard */}
-      {!editing && (
+      {!editing && profile && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 16 }}>
           {quickActions.map(({ Icon, label, tab, color, n }) => (
             <button key={label} onClick={() => setActiveTab(tab)} style={{
@@ -7508,10 +7764,9 @@ function SettingsPanel({ t, onClose, dark, setDark, soundOn, setSoundOn, notifSo
             </Btn>
           )}
 
-          <Btn variant="ghost" onClick={() => { onSupport?.(); onClose(); }} style={{ width: "100%", marginBottom: 8 }}>
-            <MessageCircle size={14} /> تواصل معنا
-          </Btn>
-
+          {/* «تواصل معنا» was here too. It has its own tab in the bar, and a
+              settings sheet is where you change settings — a second door to
+              the same room only makes the room harder to find. */}
           <Btn variant="danger" onClick={() => setShowConfirm(true)} style={{ width: "100%" }}>
             <Trash2 size={14} /> إعادة تعيين البيانات
           </Btn>
@@ -8365,6 +8620,12 @@ export default function App() {
   const [trackLock, setTrackLock] = useStored("track_lock", null);
   const [gpaCalcs, setGpaCalcs] = useStored("gpaCalcs", 0);
   const [aiChats, setAiChats] = useStored("aiChats", 0);
+  // Flashcard decks are one storage key per course, so they have no owning
+  // state. Counted after mount (never during render — reading storage while
+  // rendering broke hydration once already) purely so the reset dialog can
+  // say how many it is about to delete.
+  const [cardDecks, setCardDecks] = useState(0);
+  useEffect(() => { setCardDecks(storage.keys().filter(k => k.startsWith("fc_")).length); }, [tab, course]);
   const [semesters, setSemesters] = useStored("semesters", []);
   const [soundOn, setSoundOn] = useSyncedSetting("soundOn", "sound_on", true);
   // Notification chime is its own switch: plenty of people want the lecture
@@ -8380,10 +8641,6 @@ export default function App() {
   // Only ever a widening, never the default: the picker below shows the
   // student's own plan and nothing else until they ask for the rest.
   const [aiAllSubjects, setAiAllSubjects] = useState(false);
-  const aiSubjectGroups = useMemo(() => {
-    const mine = myTrackSubjects(profile).filter(s => ALL_COURSES.includes(s));
-    return { mine, rest: ALL_COURSES.filter(c => !mine.includes(c)) };
-  }, [profile]);
   const [aiGlobalTab, setAiGlobalTab] = useState("chat");
   // Has the student confirmed WHAT they are about to do? Reset whenever the
   // course or the mode changes, because the confirmation was about that pair —
@@ -8432,6 +8689,33 @@ export default function App() {
   // the fallback so the page still works before this resolves — or if it never
   // does.
   const [programPlans, setProgramPlans] = useState(null);
+  /**
+   * What the assistant can be pointed at.
+   *
+   * «موادي» used to be `myTrackSubjects`, which for a bachelor student returns
+   * one entry: the programme name. So a محاسبة student at level 3 was told to
+   * "choose a course from your level" and offered exactly «محاسبة» — the one
+   * thing that is not a course. Their level's real codes are the list now,
+   * with the programme kept at the end for questions about the plan itself.
+   *
+   * Declared below `programPlans` on purpose — it reads it, and a hook that
+   * reads state declared further down is in its temporal dead zone.
+   *
+   * «كل المواد» widens to every code in the catalogue, not just the 25
+   * programme names, so the widen button can actually reach another course.
+   */
+  const aiSubjectGroups = useMemo(() => {
+    const live = programPlans && programPlans[profile?.plan];
+    const built = levelsOf(profile?.plan);
+    const plan = Array.isArray(live) && live.length
+      ? live
+      : (built ? Object.entries(built).map(([label, courses]) => ({ label, courses })) : null);
+    const level = plan && (plan.find(l => l.label === profile?.level) || plan[0]);
+    const codes = level?.courses || [];
+    const mine = [...new Set([...codes, ...myTrackSubjects(profile)])];
+    const everything = [...new Set([...ALL_COURSE_CODES, ...ALL_COURSES])];
+    return { mine, rest: everything.filter(c => !mine.includes(c)) };
+  }, [profile, programPlans]);
   useEffect(() => {
     let alive = true;
     fetch("/api/program-plans")
@@ -8620,7 +8904,11 @@ export default function App() {
   // A visitor with no profile gets a few assistant questions before being
   // asked to finish one — the product first, the form second. Downloads are
   // not part of the trial: a file is the thing itself, not a taste of it.
-  const [aiTrialUsed, setAiTrialUsed] = useStored("browse_trial_ai", 0);
+  // Durable on purpose: in the app's own store the count was cleared by
+  // «إعادة تعيين البيانات» and by signing out, so the trial restarted every
+  // time — which made it not a trial. See useDurable for what it does and does
+  // not survive.
+  const [aiTrialUsed, setAiTrialUsed] = useDurable("browse_trial_ai", 0);
   const ai = aiGate(profile, account.signedIn, aiTrialUsed);
 
   const requestAI = (seed) => {
@@ -8628,6 +8916,12 @@ export default function App() {
     // Spend a trial question when this is not an account's own use, so the
     // count moves on the thing that costs, not on merely opening the panel.
     if (ai.trial) setAiTrialUsed(n => (Number(n) || 0) + 1);
+    // Opening the assistant from anywhere but a course page starts general.
+    // `aiSubject` used to persist from the last time it was opened, so a
+    // student who had once asked about a course found the confirm screen
+    // naming that course days later, when they had asked for nothing of the
+    // sort. Opening from a course still pins that course — see onAskAI.
+    setAiSubject("عام");
     setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true);
   };
 
@@ -8649,9 +8943,20 @@ export default function App() {
    * one-tap way past the 15-day track lock.
    */
   const resetStudyData = () => {
+    // `setTotalSessions` and `setSessionLog` used to be called on the line
+    // below. Neither has existed since focus mode was removed, so the very
+    // first thing this function did was throw a ReferenceError — and every
+    // reset after it, the whole point of the dialog, never ran. That is the
+    // "إعادة تعيين البيانات مش شغالة" the owner reported.
     setFavorites([]); setNotifs(NOTIFS_SEED); setNotes({});
-    setTotalSessions(0); setSessionLog([]); setGpaCalcs(0); setAiChats(0); setSemesters([]);
+    setGpaCalcs(0); setAiChats(0); setSemesters([]);
     setTasks([]); setSchedule([]); setExams([]);
+    // Flashcard decks and saved course marks live one key per course, so no
+    // piece of state owns them and setState cannot clear them. They were
+    // surviving a reset that had just promised to remove them.
+    storage.removePrefix("fc_");
+    storage.removePrefix("grade_");
+    setCardDecks(0);
     setTab("home"); setCourse(null);
   };
 
@@ -8691,8 +8996,9 @@ export default function App() {
     tasks: (tasks || []).length,
     schedule: (schedule || []).length,
     exams: (exams || []).length,
+    cards: cardDecks,
     profile: profile ? 1 : 0,
-  }), [favorites, notes, tasks, schedule, exams, profile]);
+  }), [favorites, notes, tasks, schedule, exams, cardDecks, profile]);
 
   // After the welcome, land straight on the (public) site — no gate.
   const finishOnboard = () => { setSeen(true); setShowOnboard(false); };
@@ -8853,9 +9159,13 @@ export default function App() {
           subject={course} favorites={favorites} toggleFav={toggleFav}
           notes={notes} setNotes={setNotes} t={t}
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
-          onAskAI={(subj) => {
+          onAskAI={(subj, seed) => {
             if (!ai.ok) { setNeedAccount("ai"); return; }
             if (ai.trial) setAiTrialUsed(n => (Number(n) || 0) + 1);
+            // A seed lets a shelf hand the assistant the actual question —
+            // "اشرح لي حل هذا الواجب" — instead of dropping the student into an
+            // empty box and making them retype what they were just looking at.
+            setAiSeed(typeof seed === "string" ? seed : "");
             setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true);
           }}
           canOpenFiles={allowed} onNeedAccount={() => setNeedAccount("file")}
@@ -9068,16 +9378,16 @@ export default function App() {
                       and "كل المواد" below widens it back for the rest. */}
                   {aiSubjectGroups.mine.length > 0 && (
                     <optgroup label="موادي" style={{ background: "#0a3d29", color: "#fff" }}>
-                      {aiSubjectGroups.mine.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                      {aiSubjectGroups.mine.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{aiOptionLabel(c)}</option>)}
                     </optgroup>
                   )}
                   {(aiSubjectGroups.mine.length === 0 || aiAllSubjects) && (
                     aiSubjectGroups.mine.length > 0 ? (
                       <optgroup label="كل المواد" style={{ background: "#0a3d29", color: "#fff" }}>
-                        {aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)}
+                        {aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{aiOptionLabel(c)}</option>)}
                       </optgroup>
                     ) : (
-                      aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{c}</option>)
+                      aiSubjectGroups.rest.map(c => <option key={c} value={c} style={{ background: "#0a3d29", color: "#fff" }}>{aiOptionLabel(c)}</option>)
                     )
                   )}
                 </select>
@@ -9169,8 +9479,21 @@ const SEARCH_PAGES = [
   { tab: "profile", label: "حسابي", Icon: CircleUser, color: "#6d28d9", kw: "حساب ملف اعدادات بروفايل خطة تخصص" },
 ];
 
+// One real example, drawn fresh each time the box opens. A fixed list of four
+// ("STAT101، إحصاء، تخصص، صفحة") read as a syntax to obey; a single thing
+// somebody would actually type reads as an invitation, and over a few openings
+// it shows the range — a code, an Arabic name, a page, a whole programme.
+const SEARCH_HINTS = [
+  "STAT101", "إحصاء", "مبادئ الإدارة", "محاسبة", "جدولي", "حاسبة المعدل",
+  "CS230", "الخطط الدراسية", "تجميعات", "قانون", "ملخص", "المفضلة",
+];
+
 function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate, plans = null, myProgram = "" }) {
   const ref = useRef(null);
+  // Picked once on open, not per render — a placeholder that reshuffles under
+  // the cursor while you type is a distraction, not a hint. useState's lazy
+  // initialiser also keeps the random call out of the server render.
+  const [searchHint] = useState(() => SEARCH_HINTS[Math.floor(Math.random() * SEARCH_HINTS.length)]);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
     <div style={{
@@ -9190,7 +9513,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate, plan
           }}>
             <Search size={18} color={t.mu} />
             <input ref={ref} value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="ابحث برمز المقرر أو اسمه — STAT101، إحصاء، تخصص، صفحة..."
+              placeholder={`ابحث عن أي شيء — جرّب «${searchHint}»`}
               style={{
                 flex: 1, border: "none", outline: "none", fontSize: 14, color: t.tx,
                 background: "transparent", fontFamily: "inherit", direction: "rtl",
