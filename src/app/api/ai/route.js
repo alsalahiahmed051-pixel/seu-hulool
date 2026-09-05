@@ -2,6 +2,8 @@ import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota, PAID_DAILY_LIMIT } from '@/lib/ai-quota'
 import { readUsage, spendPoints, isSubscribed, looksLikeEmail, readPointsConfig } from '@/lib/ai-usage'
 import { ownerKey, costOf } from '@/lib/ai-points'
+import { claimTrial } from '@/lib/ai-trial'
+import { BROWSE_TRIAL_AI } from '@/lib/auth-config'
 import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 
@@ -363,6 +365,42 @@ export async function POST(request) {
   const hasImage = Boolean(image)
   const cost = costOf(hasImage ? 'image' : 'message', points)
 
+  // Filled in below when this was a trial question, so the reply can carry the
+  // server's own count — the client should render what was actually spent,
+  // not its own guess at it.
+  let trialState = null
+
+  // 3d) The browse trial, for a visitor who has not made a profile yet.
+  //
+  // The client says whether this is a trial question, because only the client
+  // can see a device-local profile — the server has nothing to read. That is
+  // safe in the direction that matters: forging `trial:false` skips the trial,
+  // but a profile is a free form anyone can fill in a few seconds, so there is
+  // nothing there worth defending. What this DOES close is the loophole the
+  // count had while it lived in localStorage — clearing site data or opening a
+  // private window no longer restores it, because the count is keyed on the
+  // signed device cookie and the caller's IP, neither of which the page can
+  // touch. See src/lib/ai-trial.js for why the IP is a ceiling, not the trial.
+  if (body.trial === true && !(await isSubscribed(deviceId))) {
+    const trial = await claimTrial(request, deviceId)
+    if (trial.error) {
+      // A database that cannot answer must not become a free pass — nor a
+      // silent ban. Refuse this one request and say why.
+      return reply({ error: 'تعذّر التحقق من تجربتك — حاول بعد قليل.' }, 503)
+    }
+    if (!trial.ok) {
+      return reply({
+        error: `انتهت تجربتك المجانية (${BROWSE_TRIAL_AI} أسئلة). أكمل ملفك لاستخدام المساعد بلا حدود.`,
+        need: 'profile',
+        trialUsed: true,
+        trialLimit: BROWSE_TRIAL_AI,
+        used: trial.used,
+        remaining: 0,
+      }, 402)
+    }
+    trialState = trial
+  }
+
   const subscribed = await isSubscribed(deviceId)
   if (!subscribed) {
     const usage = await readUsage(owner, points.free)
@@ -451,6 +489,9 @@ export async function POST(request) {
           limit: points.free,
           cost,
           ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
+          // The server's own count, so the trial bar shows what was really
+          // spent rather than a number the page kept for itself.
+          ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
         })
       }
     } catch (err) {

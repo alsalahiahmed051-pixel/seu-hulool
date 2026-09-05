@@ -66,7 +66,15 @@ export function deviceIdentity(request) {
   return { deviceId: token.split('.')[0], setCookie }
 }
 
-function ipHash(request) {
+/**
+ * A stable, non-reversible stand-in for the caller's IP.
+ *
+ * Exported so the browse trial counts against the same identity this quota
+ * does — two different hashes of the same address would be two different
+ * people as far as the database is concerned. The raw address is never stored
+ * anywhere; only this HMAC.
+ */
+export function ipHash(request) {
   return createHmac('sha256', secret()).update(callerKey(request)).digest('hex').slice(0, 16)
 }
 

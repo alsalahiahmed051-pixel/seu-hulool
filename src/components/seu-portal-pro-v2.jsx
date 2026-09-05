@@ -1531,7 +1531,7 @@ const untilLabel = (resetAt) => {
   return `خلال ${h} ساعة${m ? ` و${m} د` : ""}`;
 };
 
-function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null, onToast = null }) {
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null, onToast = null, isTrial = false, onTrialSpent = null, onTrialExhausted = null }) {
   // This component called `onToast?.(...)` in a dozen places without ever
   // receiving it. Optional chaining does not save an *undeclared* identifier:
   // every one of those lines threw ReferenceError and took the whole click
@@ -1852,7 +1852,11 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined }),
+        // `trial` tells the server this is a browse-trial question. Only the
+        // client can see a device-local profile, so only the client can say —
+        // see the note in /api/ai for why that is safe in the one direction
+        // that matters.
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial }),
       });
       const d = await res.json();
       // The server is the authority on what is left; mirror whatever it says.
@@ -1865,6 +1869,16 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           resetAt: d.resetAt || 0,
           blocked: !d.subscribed && d.need === "subscription",
         });
+      }
+      // The server counts the trial, not the page: mirror whatever it spent.
+      if (d.trial) onTrialSpent?.(d.trial);
+      if (d.need === "profile") {
+        // The trial is spent. The message the server sent is the honest one,
+        // but the way forward is the profile sheet, not a line in the chat.
+        setMsgs(m => m.slice(0, -1));
+        onTrialExhausted?.();
+        setLoading(false);
+        return;
       }
       if (d.need === "email") { setAskEmail(true); setLoading(false); return; }
       if (d.need === "subscription") { onSubscribe?.({ used: d.used, limit: d.limit, resetAt: d.resetAt }); setLoading(false); return; }
@@ -8679,6 +8693,7 @@ export default function App() {
   // defines it put it in the temporal dead zone — which took the whole app down
   // on load, not just the assistant.
   useEffect(() => { setAiConfirmed(false); }, [aiSubject, aiGlobalTab, showAI]);
+
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark, brandPreset);
   const toasts = useToasts();
@@ -8911,11 +8926,42 @@ export default function App() {
   const [aiTrialUsed, setAiTrialUsed] = useDurable("browse_trial_ai", 0);
   const ai = aiGate(profile, account.signedIn, aiTrialUsed);
 
+  // The server's own trial count, read when the assistant opens.
+  //
+  // On open rather than on load, for two reasons: a stored profile arrives
+  // only after hydration, so on first render every student looks like a
+  // visitor and would fire a request about a trial that is not theirs; and a
+  // visitor who never opens the assistant should not be asked about one.
+  //
+  // And below `ai`, not up with the other effects — a hook that reads a value
+  // declared further down sits in its temporal dead zone and takes the whole
+  // app out on load. This file has been down that road twice.
+  useEffect(() => {
+    if (!showAI || !ai.trial) return;
+    let cancelled = false;
+    fetch("/api/ai/trial")
+      .then(r => r.json())
+      .then(d => { if (!cancelled && typeof d?.used === "number") setAiTrialUsed(d.used); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [showAI, ai.trial]);
+
+  // The server owns the trial count (see /api/ai/trial). Read it when the
+  // assistant is opened, so the bar cannot show "3 left" to a device the
+  // server already knows has none — which is exactly what a localStorage
+  // counter did once the browser's data was cleared.
+  //
+  // On open rather than on load, for two reasons: a stored profile arrives
+  // only after hydration, so on first render every student looks like a
+  // visitor and would fire a request about a trial that is not theirs; and a
+  // visitor who never opens the assistant should not be asked about either.
+
   const requestAI = (seed) => {
     if (!ai.ok) { setNeedAccount("ai"); return; }
-    // Spend a trial question when this is not an account's own use, so the
-    // count moves on the thing that costs, not on merely opening the panel.
-    if (ai.trial) setAiTrialUsed(n => (Number(n) || 0) + 1);
+    // Opening the panel spends nothing. It used to increment the counter here,
+    // so a visitor who tapped the button and read the confirm screen had lost
+    // a third of their trial without asking anything. The server counts an
+    // answered question and nothing else.
     // Opening the assistant from anywhere but a course page starts general.
     // `aiSubject` used to persist from the last time it was opened, so a
     // student who had once asked about a course found the confirm screen
@@ -9161,7 +9207,6 @@ export default function App() {
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
           onAskAI={(subj, seed) => {
             if (!ai.ok) { setNeedAccount("ai"); return; }
-            if (ai.trial) setAiTrialUsed(n => (Number(n) || 0) + 1);
             // A seed lets a shelf hand the assistant the actual question —
             // "اشرح لي حل هذا الواجب" — instead of dropping the student into an
             // empty box and making them retype what they were just looking at.
@@ -9448,7 +9493,14 @@ export default function App() {
             ) : aiGlobalTab === "chat"
               ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} onToast={toasts.push}
                   profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
-                  email={aiEmail} onSaveEmail={setAiEmail} />
+                  email={aiEmail} onSaveEmail={setAiEmail}
+                  isTrial={ai.trial}
+                  onTrialSpent={(tr) => setAiTrialUsed(Number(tr.used) || 0)}
+                  onTrialExhausted={() => {
+                    setAiTrialUsed(BROWSE_TRIAL_AI);
+                    setShowAI(false);
+                    setNeedAccount("ai");
+                  }} />
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} onSubscribe={() => setSubOpen({})} /></div>
             }
           </div>
