@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { COURSE_GROUPS, CATALOGUE } from '@/lib/courses'
+import { COURSE_GROUPS, CATALOGUE, levelsOf } from '@/lib/courses'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
@@ -341,6 +341,104 @@ function OverviewTab({ flash }) {
 }
 
 /* ══════════════ FILES ══════════════ */
+/**
+ * Pick the course a file belongs to by walking the study plan: مسار → تخصص →
+ * مستوى → مقرر.
+ *
+ * The flat dropdown that came before could only name a *programme* ("إدارة
+ * أعمال"), so every summary for every one of that programme's twenty-eight
+ * courses landed in the same bucket, and a student opening MGT101 found nothing
+ * — the course pages are keyed by code. This walks the same plan the student
+ * walks in «مساري ← خطتي الدراسية», so what the owner files under is exactly
+ * what the student's screen asks for.
+ *
+ * Published plans (`plans`) win over the built-in ones, matching the site: a
+ * level the owner added in «الخطط الدراسية» is pickable here the moment it is
+ * saved, with no deploy.
+ *
+ * Declared at module scope, not inside FilesTab. A component redefined inside a
+ * render gets a new identity every keystroke, and React then throws the subtree
+ * away and rebuilds it — which is how the services page ended up jumping to the
+ * top on every click.
+ */
+function CoursePicker({ value, onChange, plans }) {
+  const [track, setTrack] = useState('bachelor')
+  const [program, setProgram] = useState('')
+  const [level, setLevel] = useState('')
+
+  // The programmes on offer for the chosen track, flat — the college grouping
+  // matters to a student choosing a future, not to an owner filing a PDF.
+  const programs = track === 'bachelor'
+    ? CATALOGUE.bachelor.colleges.flatMap(c => c.programs)
+    : (CATALOGUE[track]?.programs || [])
+
+  const planOf = (pr) => {
+    const live = plans && plans[pr]
+    if (Array.isArray(live) && live.length) return live
+    const built = levelsOf(pr)
+    return built ? Object.entries(built).map(([label, courses]) => ({ label, courses })) : null
+  }
+  const plan = program ? planOf(program) : null
+  const codes = (plan || []).find(l => l.label === level)?.courses || []
+
+  // Changing anything higher up invalidates what is below it, including the
+  // course already chosen — silently keeping a code from the previous programme
+  // is how a file ends up filed under a course nobody in that plan sits.
+  const pickTrack = (v) => { setTrack(v); setProgram(''); setLevel(''); onChange('') }
+  const pickProgram = (v) => { setProgram(v); setLevel(''); onChange('') }
+  const pickLevel = (v) => { setLevel(v); onChange('') }
+
+  const half = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }
+
+  return (
+    <div>
+      <div style={half}>
+        <div>
+          <label style={S.label}>المسار</label>
+          <select value={track} onChange={e => pickTrack(e.target.value)} style={S.input}>
+            {TRACKS.filter(t => t.id !== 'preparatory').map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={S.label}>التخصص</label>
+          <select value={program} onChange={e => pickProgram(e.target.value)} style={S.input}>
+            <option value="">— اختر —</option>
+            {programs.map(p => {
+              const has = !!planOf(p)
+              return <option key={p} value={p}>{has ? p : `${p} (بلا خطة)`}</option>
+            })}
+          </select>
+        </div>
+      </div>
+
+      {program && !plan && (
+        <div style={{ fontSize: 12.5, color: 'var(--warnTx)', background: 'var(--warnBg)', border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px', marginBottom: 10, lineHeight: 1.7 }}>
+          لا توجد خطة محفوظة لـ«{program}» بعد. أضفها من تبويب «الخطط الدراسية» لتظهر مستوياتها ومقرراتها هنا.
+        </div>
+      )}
+
+      {plan && (
+        <div style={half}>
+          <div>
+            <label style={S.label}>المستوى</label>
+            <select value={level} onChange={e => pickLevel(e.target.value)} style={S.input}>
+              <option value="">— اختر —</option>
+              {plan.map(l => <option key={l.label} value={l.label}>{l.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>المقرر</label>
+            <select value={value} onChange={e => onChange(e.target.value)} disabled={!level} style={{ ...S.input, opacity: level ? 1 : 0.55 }}>
+              <option value="">{level ? '— اختر —' : 'اختر المستوى أولاً'}</option>
+              {codes.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FilesTab({ flash }) {
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -348,6 +446,12 @@ function FilesTab({ flash }) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [course, setCourse] = useState('')
+  // 'plan' walks مسار → تخصص → مستوى → مقرر; 'catalog' is the old flat list,
+  // kept for what has no course code: prep-year subjects, and the plan/programme
+  // sheets that belong to a programme as a whole rather than to one of its
+  // courses.
+  const [pickMode, setPickMode] = useState('plan')
+  const [plans, setPlans] = useState({})
   const [category, setCategory] = useState('collections')
   const [displayName, setDisplayName] = useState('')
   const [selected, setSelected] = useState(null)
@@ -361,6 +465,20 @@ function FilesTab({ flash }) {
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
+
+  // The owner's own published plans, so the picker offers the levels they
+  // actually saved rather than only the ones compiled into the app.
+  useEffect(() => {
+    apiJSON('/api/admin/program-plans').then(({ data }) => {
+      const map = {}
+      ;(data?.plans || []).forEach(p => { map[p.program] = p.levels })
+      setPlans(map)
+    }).catch(() => {})
+  }, [])
+
+  // What is already filed under the chosen course. Answers "did I upload this
+  // one already?" before the upload, not after it.
+  const existing = course ? files.filter(f => f.courseName === course) : []
 
   async function upload(e) {
     e.preventDefault()
@@ -435,21 +553,48 @@ function FilesTab({ flash }) {
       {blobEnabled && (
         <form onSubmit={upload} style={S.card}>
           <h3 style={{ fontSize: 14, fontWeight: 800, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}><Upload size={15} color={P.blue2} /> رفع ملف جديد</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-            <div>
-              <label style={S.label}>المادة</label>
-              <select value={course} onChange={e => setCourse(e.target.value)} required style={S.input}>
+
+          <div style={{ display: 'flex', gap: 7, marginBottom: 12 }}>
+            {[
+              { id: 'plan', label: 'حسب الخطة الدراسية' },
+              { id: 'catalog', label: 'حسب الكتالوج' },
+            ].map(m => (
+              <button key={m.id} type="button" onClick={() => { setPickMode(m.id); setCourse('') }} style={{
+                padding: '7px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 12.5, fontWeight: 700,
+                background: pickMode === m.id ? 'var(--brand)' : 'var(--soft)',
+                color: pickMode === m.id ? '#fff' : 'var(--tx)',
+                border: `1.5px solid ${pickMode === m.id ? 'var(--brand)' : 'var(--bd)'}`,
+              }}>{m.label}</button>
+            ))}
+          </div>
+
+          {pickMode === 'plan' ? (
+            <CoursePicker value={course} onChange={setCourse} plans={plans} />
+          ) : (
+            <div style={{ marginBottom: 10 }}>
+              <label style={S.label}>المادة / البرنامج</label>
+              <select value={course} onChange={e => setCourse(e.target.value)} style={S.input}>
                 <option value="">— اختر —</option>
                 {FILE_COURSES.map(g => <optgroup key={g.group} label={g.group}>{g.items.map(i => <option key={i} value={i}>{i}</option>)}</optgroup>)}
               </select>
             </div>
-            <div>
-              <label style={S.label}>التصنيف</label>
-              <select value={category} onChange={e => setCategory(e.target.value)} style={S.input}>
-                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
-              </select>
-            </div>
+          )}
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={S.label}>التصنيف</label>
+            <select value={category} onChange={e => setCategory(e.target.value)} style={S.input}>
+              {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
           </div>
+
+          {course && (
+            <div style={{ fontSize: 12.5, color: 'var(--mu)', background: 'var(--soft)', border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px', marginBottom: 10, lineHeight: 1.7 }}>
+              سيُرفع تحت <strong style={{ color: 'var(--tx)' }}>{course}</strong> — وهذا ما تفتحه صفحة المقرر عند الطالب.
+              {' '}{existing.length ? `يوجد ${existing.length} ملف مرفوع له.` : 'لا توجد ملفات له بعد.'}
+            </div>
+          )}
+
           <label style={S.label}>اسم الملف (اختياري)</label>
           <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="مثال: تجميع نهائي 1446" style={{ ...S.input, marginBottom: 10 }} />
           <div onClick={() => fileRef.current?.click()} style={{ border: '2px dashed var(--bd)', borderRadius: 10, padding: 16, textAlign: 'center', cursor: 'pointer', marginBottom: 12 }}>
@@ -626,8 +771,17 @@ function PlansTab({ flash }) {
   const openProgram = (pr) => {
     setProgram(pr)
     const found = plans.find(x => x.program === pr)
-    setLevels(found && Array.isArray(found.levels) && found.levels.length
-      ? found.levels.map(l => ({ label: l.label, courses: (l.courses || []).join('، ') }))
+    if (found && Array.isArray(found.levels) && found.levels.length) {
+      setLevels(found.levels.map(l => ({ label: l.label, courses: (l.courses || []).join('، ') })))
+      return
+    }
+    // Nothing saved yet: open on the plan the app already ships for this
+    // programme rather than on an empty form. It is what the student is being
+    // shown right now, so editing from it is editing what they see — and a
+    // programme with no built-in plan still opens blank, as before.
+    const built = levelsOf(pr)
+    setLevels(built
+      ? Object.entries(built).map(([label, courses]) => ({ label, courses: courses.join('، ') }))
       : [{ label: 'المستوى الثالث', courses: '' }])
   }
 
@@ -673,7 +827,10 @@ function PlansTab({ flash }) {
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
           {allPrograms.map(({ program: pr, college }) => {
-            const has = plans.some(x => x.program === pr && (x.levels || []).length)
+            // A programme counts as covered whether its plan is saved here or
+            // shipped with the app — both reach the student, and a red dot on a
+            // programme students already see a plan for would be a lie.
+            const has = plans.some(x => x.program === pr && (x.levels || []).length) || !!levelsOf(pr)
             const on = program === pr
             return (
               <button key={pr} onClick={() => openProgram(pr)} title={college} style={{

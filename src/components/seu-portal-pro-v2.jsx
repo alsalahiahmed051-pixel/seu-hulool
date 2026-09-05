@@ -5251,7 +5251,12 @@ function ExplorePage({ onCourse, t, profile, plans = null }) {
                                 background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11,
                                 padding: "11px 8px", cursor: "pointer", fontFamily: "inherit",
                                 fontSize: 12.5, fontWeight: 800, color: t.tx,
-                                fontFeatureSettings: '"tnum"', direction: "ltr",
+                                fontFeatureSettings: '"tnum"',
+                                // Two programmes — إعلام رقمي and لغة إنجليزية
+                                // وترجمة — carry Arabic codes (علم٢٠١). Forcing
+                                // LTR on those puts the digits on the wrong side
+                                // of the letters.
+                                direction: /[؀-ۿ]/.test(code) ? "rtl" : "ltr",
                               }}>{code}</button>
                             ))}
                           </div>
