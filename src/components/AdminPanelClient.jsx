@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { COURSE_GROUPS, CATALOGUE, levelsOf } from '@/lib/courses'
+import { COURSE_GROUPS, CATALOGUE, levelsOf, isCourseCode, COURSE_CATEGORIES, PROGRAM_CATEGORIES } from '@/lib/courses'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
@@ -59,12 +59,23 @@ const TRACKS = [
 // and had drifted apart, which is why uploads never appeared.
 const FILE_COURSES = COURSE_GROUPS
 
-const CATEGORIES = [
-  { id: 'collections', label: 'تجميعات وملخصات' },
-  { id: 'plans', label: 'الخطط الدراسية' },
-  { id: 'curriculum', label: 'المقررات الدراسية' },
-  { id: 'programs', label: 'البرامج والتخصصات' },
-]
+/**
+ * What a file can be filed as, decided by what was picked.
+ *
+ * A course has slides, summaries and past papers; a programme has a study plan
+ * and admission terms. Offering all of both put «تجميعات الفاينل» on a
+ * programme and «شروط القبول» on STAT101, and the owner had to know which of
+ * the ten was meaningful. The legacy bucket is filtered out for new uploads —
+ * it exists to keep old files visible, not to file new ones into.
+ */
+const CATEGORY_LABEL = Object.fromEntries(
+  [...COURSE_CATEGORIES, ...PROGRAM_CATEGORIES].map(c => [c.id, c.label])
+)
+
+const categoriesFor = (course) => {
+  const list = !course || isCourseCode(course) ? COURSE_CATEGORIES : PROGRAM_CATEGORIES
+  return list.filter(c => !c.legacy)
+}
 
 function fmtSize(b) {
   if (!b) return '—'
@@ -452,7 +463,7 @@ function FilesTab({ flash }) {
   // courses.
   const [pickMode, setPickMode] = useState('plan')
   const [plans, setPlans] = useState({})
-  const [category, setCategory] = useState('collections')
+  const [category, setCategory] = useState('slides')
   const [displayName, setDisplayName] = useState('')
   const [selected, setSelected] = useState(null)
   const fileRef = useRef(null)
@@ -475,6 +486,15 @@ function FilesTab({ flash }) {
       setPlans(map)
     }).catch(() => {})
   }, [])
+
+  // Keep the type valid for what was picked. A course's types and a
+  // programme's types share no ids, so switching between them would otherwise
+  // leave a type selected that the list no longer offers — the <select> shows
+  // blank and the upload files under a type the owner never saw.
+  useEffect(() => {
+    const allowed = categoriesFor(course).map(c => c.id)
+    if (!allowed.includes(category)) setCategory(allowed[0])
+  }, [course, category])
 
   // What is already filed under the chosen course. Answers "did I upload this
   // one already?" before the upload, not after it.
@@ -582,10 +602,13 @@ function FilesTab({ flash }) {
           )}
 
           <div style={{ marginBottom: 10 }}>
-            <label style={S.label}>التصنيف</label>
+            <label style={S.label}>نوع الملف</label>
             <select value={category} onChange={e => setCategory(e.target.value)} style={S.input}>
-              {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
+              {categoriesFor(course).map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
+            <div style={{ fontSize: 11.5, color: 'var(--mu2)', marginTop: 5 }}>
+              {categoriesFor(course).find(c => c.id === category)?.desc || ''}
+            </div>
           </div>
 
           {course && (
@@ -620,7 +643,9 @@ function FilesTab({ flash }) {
             <div style={{ width: 34, height: 34, borderRadius: 9, background: `${P.blue2}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><FileText size={15} color={P.blue2} /></div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={ellipsis}>{f.name}</div>
-              <div style={{ fontSize: 12, color: 'var(--mu)' }}>{f.courseName} • {f.sizeLabel} • {fmtDate(f.uploadedAt)}</div>
+              <div style={{ fontSize: 12, color: 'var(--mu)' }}>
+                {f.courseName} • {CATEGORY_LABEL[f.category] || f.category} • {f.sizeLabel} • {fmtDate(f.uploadedAt)}
+              </div>
             </div>
             <a href={`/api/download?url=${encodeURIComponent(f.blobUrl)}`} target="_blank" rel="noopener noreferrer" style={{ ...S.iconBtn(P.blue2), textDecoration: 'none' }}><Eye size={14} /></a>
             <button onClick={() => remove(f)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>

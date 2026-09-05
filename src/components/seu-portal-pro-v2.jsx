@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE, levelsOf } from "@/lib/courses";
+import { CATALOGUE, levelsOf, titleOf, isCourseCode } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -28,6 +28,7 @@ import {
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
   AlertTriangle, PartyPopper, Zap as Lightning, CalendarDays, CircleUser,
   Mic, MicOff, FileQuestion, BarChart, Brain, FileBarChart, LogOut,
+  FolderOpen, CheckCircle2,
   Instagram, Youtube, Twitter, Ghost, LogIn,
   List, LayoutGrid, MapPin, Upload,
 } from "lucide-react";
@@ -355,17 +356,36 @@ const NOTIFS_SEED = [
  * shelf of props is not.
  */
 
+/**
+ * A course's shelf, in the order a student reaches for it through a term:
+ * the slides they study from, the summary before the exam, then the past
+ * papers for each exam, then the coursework and the book.
+ *
+ * These mirror `COURSE_CATEGORIES` — same ids, plus the icon and colour the
+ * site draws them with. The three tools at the end are not files.
+ */
 const SECTIONS = [
-  { id: "collections", Icon: Bookmark, label: "تجميعات وملخصات", color: "#1d4ed8", desc: "تجميعات الاختبارات والملخصات الشاملة" },
-  { id: "plans", Icon: Calendar, label: "الخطط الدراسية", color: "#6d28d9", desc: "الخطة الكاملة وجدول الوحدات والتوصيف" },
-  { id: "curriculum", Icon: Layers, label: "المقررات الدراسية", color: "#065f46", desc: "المحتوى الكامل والواجبات والمشاريع" },
+  { id: "slides", Icon: Layers, label: "السلايدات", color: "#1d4ed8", desc: "سلايدات المقرر كاملة" },
+  { id: "summary", Icon: Bookmark, label: "الملخصات", color: "#0891b2", desc: "ملخصات المحتوى والمراجعة" },
+  { id: "mid", Icon: FileText, label: "تجميعات الميد", color: "#b45309", desc: "أسئلة اختبارات نصفية سابقة" },
+  { id: "final", Icon: Award, label: "تجميعات الفاينل", color: "#be123c", desc: "أسئلة اختبارات نهائية سابقة" },
+  { id: "solved", Icon: CheckCircle2, label: "واجبات وحلول", color: "#065f46", desc: "الواجبات وحلولها والأنشطة" },
+  { id: "book", Icon: BookOpen, label: "الكتاب والمراجع", color: "#6d28d9", desc: "الكتاب المقرر والمراجع" },
+  { id: "plans", Icon: Calendar, label: "الخطط الدراسية", color: "#6d28d9", desc: "الخطة الكاملة وجدول المستويات" },
+  { id: "curriculum", Icon: Layers, label: "المقررات الدراسية", color: "#065f46", desc: "توصيف المقررات ومحتواها" },
   { id: "programs", Icon: Award, label: "البرامج والتخصصات", color: "#b45309", desc: "نظرة عامة وشروط القبول والرسوم" },
+  { id: "collections", Icon: FolderOpen, label: "ملفات أخرى", color: "#475569", desc: "ملفات رُفعت قبل تقسيم الأنواع" },
   { id: "flashcards", Icon: Hash, label: "بطاقات تعليمية", color: "#0891b2", desc: "أنشئ بطاقات سؤال وجواب للمراجعة" },
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
   { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
 ];
 // Which sections hold uploaded files (the rest are tools or contact info).
-const FILE_SECTIONS = ["collections", "plans", "curriculum", "programs"];
+const FILE_SECTIONS = SECTIONS.filter(s => !["flashcards", "notes", "support"].includes(s.id)).map(s => s.id);
+// A single course gets the study shelf; a programme gets what is written about
+// the programme. Showing all ten to both would put "شروط القبول" on STAT101 and
+// "تجميعات الفاينل" on a programme that does not sit an exam.
+const COURSE_SECTION_IDS = ["slides", "summary", "mid", "final", "solved", "book", "collections"];
+const PROGRAM_SECTION_IDS = ["plans", "curriculum", "programs", "collections"];
 /**
  * Is this course a whole programme, or one subject inside the prep year?
  *
@@ -4299,7 +4319,11 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
       .then(r => r.json())
       .then(data => {
         if (data.files) {
-          const grouped = { collections: [], plans: [], curriculum: [], programs: [] };
+          // Seeded from FILE_SECTIONS rather than a hand-written list of four:
+          // adding a shelf to SECTIONS used to mean remembering to add it here
+          // too, and a file in a category missing from this object was dropped
+          // on the floor without a word.
+          const grouped = Object.fromEntries(FILE_SECTIONS.map(id => [id, []]));
           data.files.forEach(f => { if (grouped[f.category]) grouped[f.category].push(f); });
           setRealFiles(grouped);
         }
@@ -4310,13 +4334,27 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
 
   // Only the sections that mean something for this course. A prep-year
   // subject has no admission requirements or fee schedule to show.
-  const sections = SECTIONS.filter(sec => sec.id !== "programs" || isProgramme(subject));
+  // A course code gets the study shelf; a programme (or a prep-year subject)
+  // gets what is written about the programme. Both keep the tools at the end.
+  const shelf = isCourseCode(subject)
+    ? COURSE_SECTION_IDS
+    : PROGRAM_SECTION_IDS.filter(id => id !== "programs" || isProgramme(subject));
+  const sections = SECTIONS
+    .filter(sec => shelf.includes(sec.id) || !FILE_SECTIONS.includes(sec.id))
+    // «ملفات أخرى» exists only so files uploaded before the shelf was split
+    // stay reachable. On a course with none it is a drawer that opens onto
+    // nothing, so it appears only when it actually holds something — and only
+    // once the listing has loaded, so it does not flash in and out.
+    .filter(sec => sec.id !== "collections" || (realFiles.collections || []).length > 0);
 
   // Your own cards for this subject, counted for the header badge. Read after
   // mount, never during render — reading storage while rendering is what made
   // the whole app die on hydration once already.
   const [cardCount, setCardCount] = useState(null);
   useEffect(() => { setCardCount((storage.get(`fc_${subject}`, []) || []).length); }, [subject, open]);
+
+  // The course's real name, where the plans give one.
+  const courseName = titleOf(subject);
 
   return (
     <div style={{ animation: "fadeUp .35s ease" }}>
@@ -4341,10 +4379,20 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
           }}>
             <Icon size={28} color="#fff" strokeWidth={1.5} />
           </div>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ color: "#fff", margin: 0, fontSize: 22, fontWeight: 900 }}>{subject}</h2>
-            <div style={{ color: P.gold, fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-              <Award size={12} /> الجامعة السعودية الإلكترونية
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* The name is the heading and the code the subtitle. Landing on a
+                page titled «STAT101» told a student nothing they did not
+                already type to get here. */}
+            <h2 style={{ color: "#fff", margin: 0, fontSize: courseName ? 19 : 22, fontWeight: 900, lineHeight: 1.35 }}>
+              {courseName || subject}
+            </h2>
+            <div style={{ color: P.gold, fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              {courseName
+                ? <span style={{
+                    fontWeight: 800, fontFeatureSettings: '"tnum"',
+                    direction: /[؀-ۿ]/.test(subject) ? "rtl" : "ltr",
+                  }}>{subject}</span>
+                : <><Award size={12} /> الجامعة السعودية الإلكترونية</>}
             </div>
           </div>
           <button onClick={() => toggleFav(subject)} style={{
@@ -4974,7 +5022,80 @@ function SearchResults({ query, onCourse, onClose, t }) {
 const TRACK_TO_TREE = { "تحضيري": "preparatory", "تخصص": "bachelor", "دبلوم": "diploma", "دراسات عليا": "graduate" };
 const PLAN_TO_SUB = { "خطة أ": "a", "خطة ب": "b" };
 
-function ExplorePage({ onCourse, t, profile, plans = null }) {
+/**
+ * One course in a study plan: its name, its code, and what the library holds
+ * for it.
+ *
+ * The code alone was never the thing a student was looking for — «STAT101» is
+ * a filing key, and the person scanning their level is looking for «الإحصاء».
+ * The name leads, the code stays underneath because it is what they type to
+ * each other and what Blackboard shows, and the badge answers the question
+ * they actually open the app with: is there anything here for this one?
+ *
+ * Module scope, not nested in a page. A component redefined during render gets
+ * a fresh identity every time and React rebuilds the whole list — the bug that
+ * made the services page jump to the top on every tap.
+ */
+function CourseTile({ code, count = 0, color, t, onClick }) {
+  const name = titleOf(code);
+  // Two programmes carry Arabic codes (علم٤٠٢). Forcing LTR on those puts the
+  // digits on the wrong side of the letters.
+  const ltr = !/[؀-ۿ]/.test(code);
+  return (
+    <button onClick={onClick} style={{
+      background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
+      padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", textAlign: "right",
+      display: "flex", alignItems: "center", gap: 10, width: "100%", transition: "all .2s",
+    }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = color + "70"}
+      onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.4 }}>
+          {name || code}
+        </div>
+        {name && (
+          <div style={{
+            fontSize: 11, fontWeight: 700, color: t.dim, marginTop: 2,
+            fontFeatureSettings: '"tnum"', direction: ltr ? "ltr" : "rtl",
+            textAlign: "right",
+          }}>{code}</div>
+        )}
+      </div>
+      {count > 0 && (
+        <span style={{
+          fontSize: 10.5, fontWeight: 800, color, background: `${color}15`,
+          border: `1px solid ${color}30`, borderRadius: 20, padding: "2px 8px", flexShrink: 0,
+        }}>{count} ملف</span>
+      )}
+      <ChevronLeft size={14} color={t.dim} style={{ flexShrink: 0 }} />
+    </button>
+  );
+}
+
+/** The plan's levels as a row of chips — the student taps the one they're in. */
+function LevelChips({ plan, value, onPick, color, t }) {
+  return (
+    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
+      {plan.map(({ label }) => {
+        const on = label === value;
+        // "المستوى الثالث" → "٣": the word is the same on every chip, so it is
+        // the ordinal that has to be readable at a glance in a scrolling row.
+        const short = label.replace(/^المستوى\s*/, "");
+        return (
+          <button key={label} onClick={() => onPick(label)} title={label} style={{
+            flexShrink: 0, padding: "7px 13px", borderRadius: 20, cursor: "pointer",
+            fontFamily: "inherit", fontSize: 12, fontWeight: 800,
+            background: on ? color : t.s2,
+            color: on ? "#fff" : t.mu,
+            border: `1px solid ${on ? color : t.bd}`, transition: "all .2s",
+          }}>{short}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setProfile = null }) {
   /**
    * The plan the admin has published wins over the one compiled into the app.
    * The constant is the seed and the offline fallback — the database is the
@@ -4991,8 +5112,17 @@ function ExplorePage({ onCourse, t, profile, plans = null }) {
   const [sub, setSub] = useState(null);
   // Opt back out of the student's own programme to the full college/track list.
   const [showAll, setShowAll] = useState(false);
-  // Which level of the student's own study plan is expanded.
-  const [openLevel, setOpenLevel] = useState(null);
+  // Which level of the student's own study plan is expanded. Opens on the one
+  // the student has told us they're in, so the courses they sit this term are
+  // on screen without a tap — the plan is eight levels and only one is theirs.
+  const [openLevel, setOpenLevel] = useState(profile?.level || null);
+  // The profile is read from storage after mount, so on a fresh load the state
+  // above is initialised before the level exists. Adopt it when it arrives —
+  // but only to fill a blank, never to overrule a level the student has since
+  // tapped open in this session.
+  useEffect(() => {
+    if (profile?.level) setOpenLevel(cur => cur || profile.level);
+  }, [profile?.level]);
 
   // Open on the student's own subjects, not on a picker they already answered.
   //
@@ -5215,49 +5345,64 @@ function ExplorePage({ onCourse, t, profile, plans = null }) {
               <div style={{ marginTop: 18 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 900, color: t.tx, marginBottom: 4 }}>خطتي الدراسية</div>
                 <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 10 }}>
-                  اضغط على أي مستوى لعرض مواده، ثم على المادة لفتحها.
+                  اضغط على أي مستوى لعرض مواده، ثم على المادة لفتح تجميعاتها وملخصاتها.
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {planOf(profile.plan).map(({ label: lvl, courses: codes }) => {
                     const on = openLevel === lvl;
+                    // Files are filed under the course code, so that is what
+                    // the badge counts.
+                    const withFiles = codes.filter(c => (fileCounts[c] || 0) > 0).length;
                     return (
                       <div key={lvl} style={{
                         background: t.s1, border: `1px solid ${on ? col.color + "55" : t.bd}`,
                         borderRadius: 14, overflow: "hidden", transition: "border-color .2s",
                       }}>
-                        <button onClick={() => setOpenLevel(on ? null : lvl)} style={{
-                          width: "100%", background: "none", border: "none", cursor: "pointer",
-                          padding: "12px 14px", fontFamily: "inherit", textAlign: "right",
-                          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                        }}>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{lvl}</span>
+                        <button
+                          onClick={() => {
+                            const next = on ? null : lvl;
+                            setOpenLevel(next);
+                            // Opening a level is the student telling us which
+                            // one they're in — remember it, so حسابي and the
+                            // next visit open there. Not part of the track
+                            // lock: a level changes every term and belongs to
+                            // the student, unlike their programme.
+                            if (next && setProfile && profile?.level !== next) {
+                              setProfile(p => (p ? { ...p, level: next } : p));
+                            }
+                          }}
+                          style={{
+                            width: "100%", background: "none", border: "none", cursor: "pointer",
+                            padding: "12px 14px", fontFamily: "inherit", textAlign: "right",
+                            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                          }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                            {lvl}
+                            {profile?.level === lvl && (
+                              <span style={{
+                                fontSize: 10, fontWeight: 800, color: "#fff", background: col.color,
+                                borderRadius: 20, padding: "2px 7px",
+                              }}>مستواي</span>
+                            )}
+                          </span>
                           <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
                             <span style={{
                               fontSize: 11, fontWeight: 800, color: col.color,
                               background: `${col.color}15`, border: `1px solid ${col.color}30`,
                               borderRadius: 20, padding: "2px 8px",
-                            }}>{codes.length} مواد</span>
+                            }}>{withFiles > 0 ? `${codes.length} مواد · ${withFiles} فيها ملفات` : `${codes.length} مواد`}</span>
                             <ChevronDown size={15} color={t.mu}
                               style={{ transform: on ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                           </span>
                         </button>
                         {on && (
                           <div style={{
-                            display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8,
+                            display: "flex", flexDirection: "column", gap: 7,
                             padding: "0 12px 12px", animation: "fadeUp .22s ease",
                           }}>
                             {codes.map(code => (
-                              <button key={code} onClick={() => onCourse(code)} style={{
-                                background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 11,
-                                padding: "11px 8px", cursor: "pointer", fontFamily: "inherit",
-                                fontSize: 12.5, fontWeight: 800, color: t.tx,
-                                fontFeatureSettings: '"tnum"',
-                                // Two programmes — إعلام رقمي and لغة إنجليزية
-                                // وترجمة — carry Arabic codes (علم٢٠١). Forcing
-                                // LTR on those puts the digits on the wrong side
-                                // of the letters.
-                                direction: /[؀-ۿ]/.test(code) ? "rtl" : "ltr",
-                              }}>{code}</button>
+                              <CourseTile key={code} code={code} count={fileCounts[code] || 0}
+                                color={col.color} t={t} onClick={() => onCourse(code)} />
                             ))}
                           </div>
                         )}
@@ -5724,7 +5869,7 @@ function genStudentCode() {
   return `SEU-${s}`;
 }
 
-function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "", onMessages = null, msgUnread = 0, semesters = [] }) {
+function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast, onSignOut, trackLock, setTrackLock, tasks, schedule, notes, openCourse, openSettings, aiEmail = "", setAiEmail = null, savedAccount = null, onLogin = null, accounts = false, signedIn = false, studentCode = "", onMessages = null, msgUnread = 0, semesters = [], plans = null, fileCounts = {}, onOpenPlan = null }) {
   // Not auto-opened: a visitor landing on حسابي gets the explanation above
   // and chooses, instead of being dropped into a form they didn't ask for.
   const [editing, setEditing] = useState(false);
@@ -5841,6 +5986,12 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       track: draft.track,
       college: draft.college || "",
       plan: draft.plan || "",
+      // Carried through the save rather than rebuilt from the form: the level
+      // is set by tapping it in «خطتي», not in this editor, and rebuilding the
+      // profile from the form fields alone would silently drop it. Cleared
+      // when the programme changes — a level of the old plan means nothing in
+      // the new one.
+      level: (draft.plan || "") === (profile?.plan || "") ? (profile?.level || "") : "",
       avatarColor: draft.avatarColor || AVATAR_COLORS[0][0],
       avatarIcon: draft.avatarIcon || "",
       // Minted once and kept for the life of the profile — the owner's handle
@@ -6433,6 +6584,19 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
       {/* My plan — the track spelled out, with its subjects and what's due */}
       {!editing && profile && (() => {
         const subjects = myTrackSubjects(profile);
+        // The student's own study plan, published copy first, exactly as
+        // «مساري» resolves it.
+        const livePlan = plans && plans[profile.plan];
+        const builtPlan = levelsOf(profile.plan);
+        const plan = Array.isArray(livePlan) && livePlan.length
+          ? livePlan
+          : (builtPlan ? Object.entries(builtPlan).map(([label, courses]) => ({ label, courses })) : null);
+        // Fall back to the first level rather than showing nothing: a student
+        // who has never picked one still gets courses on screen, and tapping a
+        // chip records the right one.
+        const level = (plan && (plan.find(l => l.label === profile.level)?.label || plan[0].label)) || "";
+        const codes = plan ? (plan.find(l => l.label === level)?.courses || []) : [];
+        const pickLevel = (lvl) => setProfile(p => (p ? { ...p, level: lvl } : p));
         return (
           <div style={{ background: t.s1, borderRadius: 18, padding: 16, marginBottom: 16, border: `1.5px solid ${P.gold}35`, boxShadow: t.shSm }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -6446,7 +6610,37 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
             </div>
             <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 14 }}>{trackLabel(profile)}</div>
 
-            {subjects.length > 0 && (
+            {/* The plan itself, at the student's level. «خطتي» used to be the
+                programme's name handed back — one button saying «إدارة أعمال»
+                to a student who is already in إدارة أعمال. This is the level
+                they're in and the courses they actually sit in it, each one a
+                tap from its تجميعات and ملخصات. */}
+            {plan && (
+              <>
+                <div style={{ fontSize: 11.5, color: t.dim, fontWeight: 700, marginBottom: 8 }}>
+                  مستواي — اضغط مستواك لعرض مواده
+                </div>
+                <LevelChips plan={plan} value={level} onPick={pickLevel} color={P.gold} t={t} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 12 }}>
+                  {codes.map(code => (
+                    <CourseTile key={code} code={code} count={fileCounts[code] || 0}
+                      color={P.gold} t={t} onClick={() => openCourse(code)} />
+                  ))}
+                </div>
+                {onOpenPlan && (
+                  <button onClick={onOpenPlan} style={{
+                    width: "100%", background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 12,
+                    padding: "10px 12px", cursor: "pointer", fontFamily: "inherit",
+                    fontSize: 12.5, fontWeight: 800, color: t.mu, marginBottom: 4,
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  }}>
+                    عرض الخطة كاملة <ChevronLeft size={13} />
+                  </button>
+                )}
+              </>
+            )}
+
+            {!plan && subjects.length > 0 && (
               <>
                 <div style={{ fontSize: 11.5, color: t.dim, fontWeight: 700, marginBottom: 8 }}>
                   {subjects.length === 1 ? "مادتي" : `موادي (${subjects.length})`}
@@ -7820,6 +8014,28 @@ export default function App() {
     return () => { alive = false; };
   }, []);
 
+  // How many files the library holds per course, so a plan can say which of its
+  // courses actually has something before the student taps into an empty one.
+  // One request for the whole index, read at the top and handed down, rather
+  // than a request per course tile.
+  const [fileCounts, setFileCounts] = useState({});
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/files")
+      .then(r => r.json())
+      .then(d => {
+        if (!alive || !Array.isArray(d?.files)) return;
+        const counts = {};
+        d.files.forEach(f => {
+          const key = f?.courseName;
+          if (key) counts[key] = (counts[key] || 0) + 1;
+        });
+        setFileCounts(counts);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   useReminderSync(schedule, tasks, profile);
 
   /**
@@ -8153,7 +8369,7 @@ export default function App() {
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} profile={profile} />}
 
-        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} plans={programPlans} />}
+        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} plans={programPlans} fileCounts={fileCounts} setProfile={setProfile} />}
         {tab === "services" && !course && <ServicesPage t={t} dark={dark} />}
         {tab === "tasks" && !course && <TasksHub
           t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams}
@@ -8196,6 +8412,8 @@ export default function App() {
           accounts={account.configured} signedIn={account.signedIn}
           onMessages={() => setMessagesOpen(true)} msgUnread={msgUnread}
           semesters={semesters}
+          plans={programPlans} fileCounts={fileCounts}
+          onOpenPlan={() => { setTab("explore"); setCourse(null); }}
           studentCode={profile?.studentCode || ""} />}
       </div>
 

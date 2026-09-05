@@ -84,7 +84,7 @@ export const PROGRAM_LEVELS = {
   // ── العلوم والدراسات النظرية ────────────────────────────────────────────
   'قانون': {
     // Law is the one programme whose published plan starts at level 2.
-    'المستوى الثاني': ['ISLM101', 'COMM003', 'MATH003', 'LAW121', 'LAW122', 'LAW123'],
+    'المستوى الثاني': ['ISLM101', 'COM003', 'MATH003', 'LAW121', 'LAW122', 'LAW123'],
     'المستوى الثالث': ['ISLM102', 'LAW211', 'LAW212', 'LAW213', 'LAW214'],
     'المستوى الرابع': ['LAW221', 'LAW222', 'LAW223', 'LAW224', 'LAW225'],
     'المستوى الخامس': ['ISLM103', 'LAW311', 'LAW312', 'LAW313', 'LAW314', 'LAW315'],
@@ -171,6 +171,267 @@ export const PROGRAM_LEVELS = {
 
 /** The levels for a programme, or null when its plan isn't transcribed yet. */
 export const levelsOf = (program) => PROGRAM_LEVELS[program] || null;
+
+/**
+ * What each course code is actually called.
+ *
+ * A code alone is a filing key, not a subject: a student scanning their level
+ * for "the statistics one" reads `الإحصاء`, not `STAT101`. Taken from the same
+ * twelve plans as the levels above — no name is written here that is not
+ * printed next to that code in one of them.
+ *
+ * Computer Science and Data Science are in English because their plans print
+ * only English names; translating them would be inventing, and these are the
+ * names those students see on Blackboard anyway. Where a code they share with
+ * Information Technology has an Arabic name there (MATH150, SCI101, ENG103…),
+ * the Arabic one is used for everybody.
+ *
+ * One genuine disagreement between two of the documents, left visible rather
+ * than silently resolved: the Accounting plan lists FIN401 as «إدارة البنوك»
+ * and FIN402 as «المؤسسات والأسواق المالية», while the Finance programme —
+ * whose courses these are — swaps them. The Finance plan is followed here.
+ */
+export const COURSE_TITLES = {
+  // السنة الأولى المشتركة
+  ENG001: 'مهارات اللغة الإنجليزية', ENG002: 'مهارات اللغة الإنجليزية 2',
+  ENG102: 'مهارات اللغة الإنجليزية', ENG103: 'الكتابة التقنية',
+  CS001: 'أساسيات الحاسب', CI001: 'المهارات الأكاديمية',
+  COMM001: 'مهارات الاتصال', COMM101: 'مهارات الاتصال', COM003: 'مهارات الاتصال',
+  MATH001: 'أساسيات الرياضيات', MATH003: 'مقدمة في الرياضيات',
+
+  // الثقافة الإسلامية — أربعة مقررات مشتركة بين كل البرامج
+  ISLM101: 'الثقافة الإسلامية 1 (العقيدة الإسلامية)',
+  ISLM102: 'الأخلاق وآداب المهنة في الإسلام',
+  ISLM103: 'النظام الاقتصادي في الإسلام وقضاياه',
+  ISLM104: 'النظام الاجتماعي وحقوق الإنسان في الإسلام',
+
+  // جذع العلوم الإدارية والمالية
+  STAT101: 'الإحصاء', STAT201: 'الأساليب الكمية',
+  LAW101: 'البيئة القانونية للأعمال',
+  ECON101: 'الاقتصاد الجزئي', ECON201: 'الاقتصاد الكلي',
+  MGT101: 'مبادئ الإدارة', ACCT101: 'مبادئ المحاسبة',
+  FIN101: 'مبادئ التمويل', MGT201: 'إدارة التسويق', MGT211: 'إدارة الموارد البشرية',
+  ECOM101: 'التجارة الإلكترونية', ECOM201: 'مقدمة في الإدارة الإلكترونية',
+  MIS201: 'إدارة نظم المعلومات', MGT301: 'السلوك التنظيمي',
+  MGT311: 'مقدمة في إدارة العمليات', ACCT301: 'محاسبة التكاليف',
+  MGT321: 'مقدمة في الأعمال الدولية', MGT322: 'إدارة سلسلة التوريد',
+  MGT401: 'الإدارة الاستراتيجية',
+
+  // إدارة أعمال
+  MGT312: 'اتخاذ القرار وحل المشكلات', MGT323: 'إدارة المشاريع',
+  MGT324: 'الإدارة العامة', MGT402: 'ريادة الأعمال', MGT403: 'إدارة المعرفة',
+  MGT404: 'تصميم وتطوير المنظمات', MGT421: 'إدارة الاتصالات',
+  MGT422: 'أخلاقيات الأعمال والمسؤولية الاجتماعية', MGT430: 'التدريب التعاوني',
+
+  // محاسبة
+  ACCT201: 'المحاسبة المالية', ACCT302: 'المحاسبة المالية المتقدمة',
+  ACCT401: 'مبادئ وإجراءات التدقيق', ACCT402: 'مقدمة في نظم المعلومات المحاسبية',
+  ACCT403: 'البحث والممارسة في المحاسبة', ACCT322: 'المحاسبة الإدارية',
+  ACCT422: 'المحاسبة الضريبية والزكاة', ACCT430: 'التدريب الداخلي',
+  LAW401: 'قانون الشركات',
+
+  // تمويل
+  FIN201: 'الإدارة المالية', FIN301: 'إدارة الاستثمار',
+  FIN401: 'الأسواق والمؤسسات المالية', FIN402: 'التحليل المالي',
+  FIN403: 'التمويل الدولي', FIN405: 'إدارة المخاطر المالية',
+  FIN406: 'المشتقات المالية', FIN424: 'إدارة المحافظ الاستثمارية',
+  FIN408: 'التخطيط المالي',
+
+  // تجارة إلكترونية
+  ECOM301: 'التسويق الإلكتروني', ECOM402: 'إدارة سلسلة التوريد الإلكترونية',
+  ECOM421: 'استراتيجيات ونماذج الأعمال الإلكترونية', ECOM430: 'التدريب العملي',
+  IT401: 'لغات الحاسب للأعمال', IT402: 'نظم المؤسسة المتكاملة',
+  IT403: 'أساسيات قواعد البيانات', IT404: 'تصميم المواقع الإلكترونية',
+  LAW402: 'قانون التجارة الإلكترونية',
+
+  // قانون
+  LAW121: 'المدخل لدراسة علم القانون', LAW122: 'القانون الدستوري',
+  LAW123: 'علم الإجرام والعقاب', LAW211: 'المدخل لدراسة الفقه الإسلامي',
+  LAW212: 'تاريخ القانون', LAW213: 'أحكام العقد', LAW214: 'القانون الإداري',
+  LAW221: 'القانون الجزائي العام', LAW222: 'المسؤولية المدنية',
+  LAW223: 'القانون التجاري', LAW224: 'القضاء والإثبات', LAW225: 'القانون الدولي العام',
+  LAW311: 'قانون العمل والتأمينات الاجتماعية', LAW312: 'القضاء الإداري',
+  LAW313: 'العقود المدنية', LAW314: 'المواريث والوصايا والوقف',
+  LAW315: 'إجراءات التقاضي', LAW321: 'ضمانات الديون', LAW322: 'الملكية والأموال',
+  LAW323: 'العقود التجارية وعمليات البنوك', LAW324: 'القانون الجزائي الخاص',
+  LAW325: 'قانون الأسرة', LAW411: 'الأوراق التجارية', LAW412: 'الزكاة والضرائب',
+  LAW413: 'العقود الإدارية', LAW414: 'أصول الفقه', LAW415: 'الملكية الفكرية',
+  LAW421: 'الإجراءات الجزائية', LAW422: 'القانون الدولي الخاص',
+  LAW423: 'قانون التنفيذ', LAW424: 'القانون البحري والجوي',
+  LAW425: 'مبادئ البحث العلمي',
+
+  // إعلام رقمي — رموزه عربية على صفحة الجامعة
+  عال003: 'أساسيات الحاسب', نهج003: 'المهارات الأكاديمية',
+  نجل003: 'مهارات اللغة الإنجليزية', علم003: 'مهارات الاتصال',
+  ريض003: 'مقدمة في الرياضيات', علم101: 'مقدمة في الإعلام الرقمي',
+  علم102: 'التصميم الغرافيكي 1', علم103: 'نظريات الاتصال',
+  علم201: 'فن التصوير الرقمي', علم202: 'تحرير الأخبار',
+  علم203: 'المدخل إلى تقنيات الاتصال', علم204: 'التصميم الغرافيكي 2',
+  علم205: 'قانون وأخلاقيات الإعلام الرقمي', علم206: 'العلاقات العامة الرقمية',
+  علم207: 'الفنون الصحفية', علم208: 'النشر الرقمي',
+  علم301: 'الكتابة والتدوين', علم302: 'المونتاج',
+  علم303: 'الاتصال المؤسسي الرقمي', علم304: 'الإنتاج التلفزيوني',
+  علم305: 'كتابة النصوص', علم306: 'الإبداع الإعلامي',
+  علم401: 'التدريب العملي', علم402: 'صحافة الهواتف الذكية',
+  علم403: 'استراتيجيات الإعلان', علم404: 'الرسوم المتحركة',
+  علم405: 'البحوث الإعلامية', علم406: 'تحليل ونقد الإعلام الرقمي',
+  علم407: 'حالات دراسية في الإعلام الرقمي', علم408: 'إدارة الإعلام الرقمي',
+  علم409: 'مشروع التخرج',
+  ساس101: 'المدخل إلى علم السياسة', نطق101: 'التفكير المنطقي',
+  نفس101: 'علم النفس الاجتماعي', تام202: 'التفاعل بين الإنسان والحاسب',
+  تجر333: 'التسويق الرقمي',
+
+  // لغة إنجليزية وترجمة
+  علم001: 'مهارات الاتصال', ريض001: 'مقدمة في الرياضيات',
+  نجل001: 'مهارات اللغة الإنجليزية', عال001: 'أساسيات الحاسب',
+  نهج001: 'المهارات الأكاديمية',
+  نجل201: 'قواعد اللغة الإنجليزية 1', نجل202: 'القراءة وبناء المفردات',
+  نجل210: 'الكتابة الأكاديمية 1', نجل220: 'استماع ومحادثة 1',
+  نجل230: 'قراءة متقدمة بالإنجليزية', نجل231: 'استماع ومحادثة 2',
+  نجل240: 'قواعد اللغة الإنجليزية 2', نجل250: 'الكتابة الأكاديمية 2',
+  نجل301: 'مقدمة في اللغويات', نجل310: 'المعاجم اللغوية',
+  نجل320: 'التراكيب المقارنة', نجل340: 'قراءات في ثقافة اللغة الإنجليزية',
+  نجل350: 'مقدمة في علم الدلالة والتداولية', نجل360: 'لسانيات النص وتحليل الخطاب',
+  نجل380: 'علم الأسلوب', نجل401: 'مقدمة في النحو والصرف',
+  ترج330: 'مقدمة في الترجمة', ترج370: 'الترجمة التجارية والقانونية',
+  ترج410: 'الترجمة الثنائية والتتابعية', ترج420: 'استخدام الحاسوب في تطبيقات الترجمة',
+  ترج430: 'الترجمة المنظورة والتلخيصية', ترج440: 'الترجمة العلمية والتقنية',
+  ترج450: 'أساليب البحث العلمي', ترج460: 'الترجمة الفورية',
+  ترج470: 'قضايا ومشكلات في دراسة الترجمة', ترج480: 'الترجمة الإعلامية',
+  ترج490: 'ترجمة المؤتمرات', ترج499: 'مشروع التخرج',
+  عرب211: 'التحرير العربي 1', عرب221: 'التحرير العربي 2',
+  عرب260: 'النحو والصرف التطبيقي',
+  سلم101: 'العقيدة الإسلامية', سلم102: 'الأخلاق وآداب المهنة في الإسلام',
+  سلم103: 'النظام الاقتصادي الإسلامي', سلم104: 'النظام الاجتماعي الإسلامي',
+
+  // العلوم الصحية
+  BIO101: 'المصطلحات الطبية الأساسية', BIO102: 'مقدمة في التشريح وعلم وظائف الأعضاء',
+  BIOL101: 'المصطلحات الطبية الأساسية', BIOL102: 'مقدمة في التشريح وعلم وظائف الأعضاء',
+  BIOL103: 'مبادئ علم الأحياء الدقيقة للصحة العامة',
+  HCM101: 'إدارة الرعاية الصحية', HCM102: 'السلوك التنظيمي',
+  HCM113: 'السياسات الصحية السعودية ونظام الرعاية الصحية',
+  HCM213: 'الإدارة المالية في الرعاية الصحية',
+  PHC101: 'مقدمة في الصحة العامة', PHC121: 'مقدمة في الإحصاء الحيوي',
+  PHC131: 'مقدمة في علم الأوبئة', PHC151: 'الصحة البيئية',
+  PHC181: 'علم اجتماع الصحة والمرض والرعاية الصحية',
+  PHC212: 'مفاهيم التثقيف والتعزيز الصحي', PHC215: 'مناهج البحث وتحليل البيانات الصحية',
+  PHC216: 'أخلاقيات وتشريعات الرعاية الصحية', PHC231: 'مقدمة في وبائيات المستشفيات',
+  PHC241: 'المفاهيم الأساسية في الغذاء والتغذية', PHC261: 'الصحة المهنية',
+  PHC271: 'مقدمة في الأمراض', PHC273: 'مقدمة في الصحة النفسية',
+  PHC274: 'التخطيط الصحي', PHC281: 'السلوك الصحي',
+  PHC311: 'الصحة العالمية', PHC312: 'الاتصال الصحي',
+  PHC313: 'إصابات حوادث الطرق والوقاية من الإعاقة',
+  PHC314: 'المجتمع والإدمان', PHC331: 'وبائيات الأمراض المزمنة والوقاية منها',
+  PHC372: 'إدارة الأوبئة والكوارث في الصحة العامة',
+  PHC373: 'صحة الأم والطفل', PHC374: 'تعزيز صحة الفم',
+  HCI111: 'مقدمة في المعلوماتية الصحية', HCI112: 'السجلات الصحية الإلكترونية',
+  HCI213: 'الترميز والفوترة الطبية', HCI214: 'معلوماتية صحة المستهلك',
+  HCI215: 'مناهج البحث وتحليل البيانات الصحية',
+  HCI216: 'أخلاقيات وتشريعات الرعاية الصحية',
+  HCI312: 'الاتصال الصحي', HCI314: 'معلوماتية الصحة العامة',
+  HCI315: 'الصحة عن بُعد والطب عن بُعد', HCI316: 'الصحة الإلكترونية',
+
+  // الحوسبة والمعلوماتية — المشترك
+  MATH150: 'الرياضيات المتقطعة', MATH251: 'الجبر الخطي',
+  MATH241: 'التفاضل والتكامل لعلوم البيانات',
+  SCI101: 'الفيزياء العامة 1', SCI201: 'الفيزياء العامة 2',
+  STAT202: 'مقدمة في الإحصاء والاحتمالات',
+
+  // تقنية معلومات
+  IT231: 'مقدمة في تقنية المعلومات ونظم المعلومات', IT232: 'البرمجة كائنية التوجه',
+  IT233: 'تنظيم الحاسب', IT241: 'نظم التشغيل', IT244: 'مقدمة في قواعد البيانات',
+  IT245: 'هياكل البيانات', IT342: 'هندسة البرمجيات', IT351: 'شبكات الحاسب',
+  IT352: 'التفاعل بين الإنسان والحاسب', IT353: 'تحليل وتصميم النظم',
+  IT354: 'نظم إدارة قواعد البيانات', IT361: 'تقنيات الويب',
+  IT362: 'إدارة مشاريع تقنية المعلومات', IT451: 'إدارة مشاريع تقنية المعلومات',
+  IT452: 'أمن المعلومات', IT453: 'الحوسبة السحابية',
+  IT454: 'تطبيقات الويب المتقدمة', IT475: 'نظم دعم القرار',
+  IT476: 'سياسات وأمن تقنية المعلومات', IT487: 'تطوير تطبيقات الجوال',
+  IT488: 'مشروع التخرج 1', IT489: 'مشروع التخرج 2',
+
+  // علوم حاسب — خطتها تطبع الأسماء بالإنجليزية فقط
+  CS230: 'Object Oriented Programming', CS231: 'Digital Logic Design',
+  CS240: 'Data Structure', CS241: 'Computer Architecture and Organization',
+  CS242: 'Theory of Computing', CS243: 'Discrete Mathematics for CS',
+  CS350: 'Introduction to Database', CS351: 'Operating Systems',
+  CS352: 'System Analysis and Design', CS353: 'Design and Analysis of Algorithms',
+  CS360: 'Computer Networks', CS361: 'Web Programming',
+  CS362: 'Artificial Intelligence', CS363: 'Principles of Programming Languages',
+  CS364: 'Computing Entrepreneurship & Innovation',
+  CS470: 'Human Computer Interaction', CS471: 'Computer Security',
+  CS479: 'Senior Project 1', CS480: 'Project Management in Computing',
+  CS481: 'Professional Ethics in Computer Science', CS489: 'Senior Project 2',
+  CS499: 'Practical Training',
+
+  // علوم البيانات — كذلك
+  DS230: 'Object Oriented Programming', DS231: 'Introduction to Data Science Programming',
+  DS240: 'Data Structure', DS242: 'Advanced Data Science Programming',
+  DS243: 'Computer Architecture and Organization', DS350: 'Introduction to Database',
+  DS351: 'Operating Systems', DS352: 'Design and Analysis of Algorithms',
+  DS353: 'Project Management in Computing', DS360: 'Computer Networks',
+  DS361: 'System Analysis and Design', DS362: 'Web Programming',
+  DS363: 'Artificial Intelligence', DS364: 'Data Curation, Management & Organization',
+  DS470: 'Data Security and Privacy', DS471: 'Machine Learning',
+  DS472: 'Data Mining', DS479: 'Senior Project 1', DS480: 'Data Visualization',
+  DS481: 'Professional Ethics in Data Science', DS489: 'Senior Project 2',
+  DS499: 'Practical Training',
+};
+
+/**
+ * The course's name, or '' when we don't have one.
+ *
+ * Empty rather than the code repeated back: the caller already shows the code,
+ * and a name that is just the code again is noise dressed as information.
+ */
+export const titleOf = (code) => COURSE_TITLES[String(code || '').trim()] || '';
+
+/** Every course code across every plan, for telling a code from a programme. */
+const ALL_CODES = new Set(
+  Object.values(PROGRAM_LEVELS).flatMap(levels => Object.values(levels).flat())
+);
+
+/**
+ * Is this a single course, or a whole programme?
+ *
+ * The two want different shelves: a course has slides, summaries and past
+ * papers; a programme has a study plan, a course list and admission terms.
+ * The catalogue's own plans decide, so a code the owner adds in the panel
+ * counts the moment it is saved — no second list to keep in step.
+ */
+export const isCourseCode = (name) => ALL_CODES.has(String(name || '').trim());
+
+/**
+ * What a course's library is divided into — the same shelf the students'
+ * Telegram bot hands them, because that is the division they already ask in:
+ * «تجميعات ميد» is a different request from «ملخص», and one bucket called
+ * "تجميعات وملخصات" cannot answer either.
+ *
+ * `collections` stays at the end and is not offered for new uploads: it is the
+ * single bucket everything was filed under before, and dropping it would hide
+ * every file already in the library.
+ */
+export const COURSE_CATEGORIES = [
+  { id: 'slides', label: 'السلايدات', desc: 'سلايدات المقرر كاملة' },
+  { id: 'summary', label: 'الملخصات', desc: 'ملخصات المحتوى والمراجعة' },
+  { id: 'mid', label: 'تجميعات الميد', desc: 'أسئلة اختبارات نصفية سابقة' },
+  { id: 'final', label: 'تجميعات الفاينل', desc: 'أسئلة اختبارات نهائية سابقة' },
+  { id: 'solved', label: 'واجبات وحلول', desc: 'الواجبات وحلولها والأنشطة' },
+  { id: 'book', label: 'الكتاب والمراجع', desc: 'الكتاب المقرر والمراجع' },
+  { id: 'collections', label: 'ملفات أخرى', desc: 'ملفات رُفعت قبل تقسيم الأنواع', legacy: true },
+];
+
+/** What a programme's own page holds — about the programme, not one course. */
+export const PROGRAM_CATEGORIES = [
+  { id: 'plans', label: 'الخطط الدراسية', desc: 'الخطة الكاملة وجدول المستويات' },
+  { id: 'curriculum', label: 'المقررات الدراسية', desc: 'توصيف المقررات ومحتواها' },
+  { id: 'programs', label: 'البرامج والتخصصات', desc: 'نظرة عامة وشروط القبول' },
+  { id: 'collections', label: 'ملفات أخرى', desc: 'ملفات رُفعت قبل تقسيم الأنواع', legacy: true },
+];
+
+/** Every category id the library accepts, old ones included. */
+export const ALL_CATEGORY_IDS = [
+  ...new Set([...COURSE_CATEGORIES, ...PROGRAM_CATEGORIES].map(c => c.id)),
+];
 
 export const CATALOGUE = {
   preparatory: {
