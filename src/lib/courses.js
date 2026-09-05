@@ -385,6 +385,99 @@ export const COURSE_TITLES = {
  */
 export const titleOf = (code) => COURSE_TITLES[String(code || '').trim()] || '';
 
+/**
+ * Fold a query and a target to the same shape before comparing them.
+ *
+ * A student typing «احصاء» must find «الإحصاء», and «stat 101» must find
+ * STAT101. So: case folded, Arabic diacritics and tatweel dropped, the
+ * alef/ya/ta-marbuta variants that people type interchangeably unified, and
+ * every space and punctuation mark removed — the space in «stat 101» carries
+ * no meaning, and neither does the one in «مبادئ الإدارة».
+ */
+export function normalizeSearch(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[ً-ْـ]/g, '')
+    .replace(/[أإآٱ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+/**
+ * Find courses by code or by name, across every plan.
+ *
+ * Search knew only programme names, so a student who typed the one thing they
+ * actually have in front of them — «STAT101» off a lecture slide, or «إحصاء»
+ * because that is what they call it — got "لا توجد نتائج" for a course the app
+ * holds a page for.
+ *
+ * `plans` is the published map, so a course the owner added in the panel is
+ * findable without a deploy; the built-in plans fill in the rest. A code shared
+ * by several programmes (ISLM101 is in all twelve) is one result, and the
+ * student's own programme is the one named on it.
+ *
+ * Ranked, because "STAT101" typed in full should not sit under a course whose
+ * name merely contains it: exact code, then code prefix, then name prefix, then
+ * anything containing it.
+ */
+export function searchCourses(query, { plans = null, myProgram = '', limit = 30 } = {}) {
+  const q = normalizeSearch(query);
+  if (q.length < 2) return [];
+
+  // Published plan first, built-in second — the same precedence the site uses.
+  const byProgram = {};
+  Object.entries(PROGRAM_LEVELS).forEach(([program, levels]) => {
+    byProgram[program] = Object.entries(levels).map(([label, courses]) => ({ label, courses }));
+  });
+  if (plans) {
+    Object.entries(plans).forEach(([program, levels]) => {
+      if (Array.isArray(levels) && levels.length) byProgram[program] = levels;
+    });
+  }
+
+  const found = new Map();
+  Object.entries(byProgram).forEach(([program, levels]) => {
+    levels.forEach(({ label, courses }) => {
+      (courses || []).forEach(code => {
+        const name = titleOf(code);
+        const nCode = normalizeSearch(code);
+        const nName = normalizeSearch(name);
+        let rank;
+        if (nCode === q) rank = 0;
+        else if (nCode.startsWith(q)) rank = 1;
+        else if (nName && nName.startsWith(q)) rank = 2;
+        else if (nCode.includes(q)) rank = 3;
+        else if (nName && nName.includes(q)) rank = 4;
+        else return;
+
+        const prev = found.get(code);
+        // Prefer the student's own programme as the one shown beside the code:
+        // "المستوى الثالث" means something to them only in their own plan.
+        const mine = program === myProgram;
+        if (!prev) found.set(code, { code, name, program, level: label, rank, mine, count: 1 });
+        else {
+          prev.count += 1;
+          if (mine && !prev.mine) { prev.program = program; prev.level = label; prev.mine = true; }
+          if (rank < prev.rank) prev.rank = rank;
+        }
+      });
+    });
+  });
+
+  return [...found.values()]
+    .sort((a, b) =>
+      a.rank - b.rank ||
+      (b.mine - a.mine) ||
+      // At equal rank the shorter name is the closer match: «الإحصاء» is what
+      // someone typing «احصاء» meant, not «مقدمة في الإحصاء الحيوي».
+      (a.name || a.code).length - (b.name || b.code).length ||
+      a.code.localeCompare(b.code, 'ar'))
+    .slice(0, limit);
+}
+
 /** Every course code across every plan, for telling a code from a programme. */
 const ALL_CODES = new Set(
   Object.values(PROGRAM_LEVELS).flatMap(levels => Object.values(levels).flat())

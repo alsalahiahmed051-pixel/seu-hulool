@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE, levelsOf, titleOf, isCourseCode } from "@/lib/courses";
+import { CATALOGUE, levelsOf, titleOf, isCourseCode, searchCourses } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -4929,113 +4929,71 @@ function HomePage({ setActiveTab, openCourse, onOpenAI, t, weeklyGoal, semesters
 /* ══════════════════════════════════════════════════════════════
    SEARCH RESULTS (modal overlay)
    ══════════════════════════════════════════════════════════════ */
-function SearchResults({ query, onCourse, onClose, t }) {
-  const q = query.trim().toLowerCase();
-  const groups = q ? (() => {
-    const out = [];
-    const cats = [
-      { key: "preparatory", label: "السنة الأولى المشتركة", color: P.blue2 },
-      { key: "bachelor", label: "بكالوريوس", color: P.purple },
-      { key: "diploma", label: "دبلوم", color: P.green },
-      { key: "graduate", label: "دراسات عليا", color: P.gold },
-    ];
-    cats.forEach(({ key, label, color }) => {
-      let items = [];
-      if (key === "preparatory") {
-        items = Object.values(TREE.preparatory.plans).flatMap(p => p.subjects).filter(s => s.toLowerCase().includes(q));
-      } else if (key === "bachelor") {
-        items = TREE.bachelor.colleges.flatMap(c => c.programs).filter(s => s.toLowerCase().includes(q));
-      } else if (key === "diploma") {
-        items = TREE.diploma.programs.filter(s => s.toLowerCase().includes(q));
-      } else {
-        items = TREE.graduate.programs.filter(s => s.toLowerCase().includes(q));
-      }
-      if (items.length) out.push({ label, color, items });
-    });
-    return out;
-  })() : [];
-  const total = groups.reduce((a, g) => a + g.items.length, 0);
-
+/**
+ * Courses matching a search, as a group of results.
+ *
+ * Search used to know programme names and nothing else, so the two things a
+ * student actually has in front of them — the code off a lecture slide, and
+ * what they call the subject out loud — both returned «لا توجد نتائج» for a
+ * course the app holds a page for. One component, rendered by both search
+ * surfaces, so the two cannot answer the same query differently.
+ */
+function CourseSearchGroup({ query, plans, myProgram, onCourse, onClose, t, color = P.blue2, compact = false }) {
+  const hits = searchCourses(query, { plans, myProgram });
+  if (!hits.length) return null;
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 200,
-      backdropFilter: "blur(6px)", animation: "fadeIn .2s ease",
-    }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: t.bgMesh, maxWidth: 620, margin: "60px auto 0", borderRadius: 22,
-        padding: 20, border: `1px solid ${t.bd}`, boxShadow: t.sh,
-        maxHeight: "70vh", overflowY: "auto", animation: "scaleIn .25s ease",
+    <div style={{ marginBottom: compact ? 12 : 14 }}>
+      <div style={{
+        fontSize: compact ? 11.5 : 12, fontWeight: 800, color, marginBottom: compact ? 5 : 6,
+        display: "flex", alignItems: "center", gap: 5,
       }}>
-        {!q ? (
-          <div style={{ textAlign: "center", padding: 20 }}>
-            <Search size={36} color={t.dim} style={{ margin: "0 auto 10px" }} />
-            <div style={{ fontSize: 14, color: t.mu }}>ابحث عن مادة أو تخصص…</div>
-          </div>
-        ) : groups.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 30 }}>
-            <div style={{ fontSize: 14, color: t.mu }}>لا توجد نتائج لـ «{query}»</div>
-          </div>
-        ) : (
-          <>
-            <div style={{ fontSize: 13, color: t.mu, marginBottom: 14 }}>{total} نتيجة</div>
-            {groups.map((g, gi) => (
-              <div key={gi} style={{ marginBottom: 14 }}>
-                <div style={{
-                  fontSize: 12, fontWeight: 800, color: g.color, marginBottom: 6,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
-                  <div style={{ width: 3, height: 12, borderRadius: 2, background: g.color }} />
-                  {g.label}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  {g.items.map((s, i) => {
-                    const SIcon = getIcon(s);
-                    return (
-                      <button key={i} onClick={() => { onCourse(s); onClose(); }} style={{
-                        background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 12,
-                        padding: "11px 13px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10,
-                        fontFamily: "inherit", textAlign: "right", transition: "all .2s",
-                      }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = g.color + "60"; e.currentTarget.style.background = t.s2; }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.background = t.s1; }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 10, background: `${g.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <SIcon size={15} color={g.color} />
-                        </div>
-                        <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
-                        <ChevronLeft size={14} color={t.dim} />
-                      </button>
-                    );
-                  })}
-                </div>
+        <div style={{ width: 3, height: compact ? 10 : 12, borderRadius: 2, background: color }} />
+        المقررات
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {hits.map(h => (
+          <button key={h.code} onClick={() => { onCourse(h.code); onClose(); }} style={{
+            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: compact ? 11 : 12,
+            padding: compact ? "10px 12px" : "11px 13px", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 10, fontFamily: "inherit",
+            textAlign: "right", transition: "all .2s",
+          }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = color + "60"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10, background: `${color}15`,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <BookOpen size={15} color={color} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.4 }}>
+                {h.name || h.code}
               </div>
-            ))}
-          </>
-        )}
+              <div style={{ fontSize: 11, color: t.dim, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span style={{
+                  fontWeight: 800, fontFeatureSettings: '"tnum"',
+                  direction: /[؀-ۿ]/.test(h.code) ? "rtl" : "ltr",
+                }}>{h.code}</span>
+                {/* Where it sits — their own plan when it is in it, and how many
+                    other programmes share it, since a course like ISLM101 is
+                    the same course in all twelve. */}
+                <span>· {h.program} — {h.level}</span>
+                {h.count > 1 && <span>· و{h.count - 1} تخصص آخر</span>}
+              </div>
+            </div>
+            <ChevronLeft size={14} color={t.dim} style={{ flexShrink: 0 }} />
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-/* ══════════════════════════════════════════════════════════════
-   EXPLORE (with breadcrumbs)
-   ══════════════════════════════════════════════════════════════ */
+// The profile's track/plan words, mapped onto the catalogue's keys.
 const TRACK_TO_TREE = { "تحضيري": "preparatory", "تخصص": "bachelor", "دبلوم": "diploma", "دراسات عليا": "graduate" };
 const PLAN_TO_SUB = { "خطة أ": "a", "خطة ب": "b" };
 
-/**
- * One course in a study plan: its name, its code, and what the library holds
- * for it.
- *
- * The code alone was never the thing a student was looking for — «STAT101» is
- * a filing key, and the person scanning their level is looking for «الإحصاء».
- * The name leads, the code stays underneath because it is what they type to
- * each other and what Blackboard shows, and the badge answers the question
- * they actually open the app with: is there anything here for this one?
- *
- * Module scope, not nested in a page. A component redefined during render gets
- * a fresh identity every time and React rebuilds the whole list — the bug that
- * made the services page jump to the top on every tap.
- */
 function CourseTile({ code, count = 0, color, t, onClick }) {
   const name = titleOf(code);
   // Two programmes carry Arabic codes (علم٤٠٢). Forcing LTR on those puts the
@@ -8315,7 +8273,10 @@ export default function App() {
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, lineHeight: 1 }}>حلول</div>
           <div style={{ fontSize: 11.5, color: t.mu }}>SEU • الجامعة السعودية الإلكترونية</div>
         </div>
-        <button onClick={() => setSearchOpen(true)} style={{
+        {/* Named, not just drawn: an icon-only button is an unlabelled control
+            to a screen reader, and this one is the way into the whole
+            library. */}
+        <button onClick={() => setSearchOpen(true)} title="بحث" aria-label="بحث" style={{
           background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 10,
           padding: 8, cursor: "pointer", display: "flex", color: t.mu,
         }}>
@@ -8506,6 +8467,7 @@ export default function App() {
         onToast={toasts.push} onUnread={setMsgUnread} />}
       {searchOpen && <SearchOverlay t={t} onClose={() => { setSearchOpen(false); setSearchQuery(""); }}
         query={searchQuery} setQuery={setSearchQuery} onCourse={openCourse}
+        plans={programPlans} myProgram={profile?.plan || ""}
         onNavigate={(id) => { setTab(id); setCourse(null); }} />}
       {supportOpen && <SupportSheet t={t} onClose={() => setSupportOpen(false)}
         profile={profile} email={profile?.email || aiEmail} page={tab} onToast={toasts.push} />}
@@ -8649,7 +8611,7 @@ const SEARCH_PAGES = [
   { tab: "profile", label: "حسابي", Icon: CircleUser, color: "#6d28d9", kw: "حساب ملف اعدادات بروفايل خطة تخصص" },
 ];
 
-function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate }) {
+function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate, plans = null, myProgram = "" }) {
   const ref = useRef(null);
   useEffect(() => { ref.current?.focus(); }, []);
   return (
@@ -8670,7 +8632,7 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate }) {
           }}>
             <Search size={18} color={t.mu} />
             <input ref={ref} value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="ابحث عن أي شيء — مادة، تخصص، صفحة، أداة..."
+              placeholder="ابحث برمز المقرر أو اسمه — STAT101، إحصاء، تخصص، صفحة..."
               style={{
                 flex: 1, border: "none", outline: "none", fontSize: 14, color: t.tx,
                 background: "transparent", fontFamily: "inherit", direction: "rtl",
@@ -8716,7 +8678,8 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate }) {
               }).filter(g => g.items.length);
               // Pages/tools that match the query (label or keywords).
               const pageHits = onNavigate ? SEARCH_PAGES.filter(p => p.label.toLowerCase().includes(q) || p.kw.includes(q)) : [];
-              const total = groups.reduce((a, g) => a + g.items.length, 0) + pageHits.length;
+              const courseHits = searchCourses(query, { plans, myProgram }).length;
+              const total = groups.reduce((a, g) => a + g.items.length, 0) + pageHits.length + courseHits;
               if (!total) return (
                 <div style={{ textAlign: "center", padding: 30, color: t.mu, fontSize: 13 }}>
                   لا توجد نتائج لـ «{query}»
@@ -8725,6 +8688,10 @@ function SearchOverlay({ query, setQuery, onCourse, onClose, t, onNavigate }) {
               return (
                 <>
                   <div style={{ fontSize: 12, color: t.mu, marginBottom: 10, padding: "0 4px" }}>{total} نتيجة</div>
+                  {/* Courses lead: someone typing STAT101 or «إحصاء» wants the
+                      course, not the programme that happens to contain it. */}
+                  <CourseSearchGroup query={query} plans={plans} myProgram={myProgram}
+                    onCourse={onCourse} onClose={onClose} t={t} compact />
                   {pageHits.length > 0 && (
                     <div style={{ marginBottom: 12 }}>
                       <div style={{ fontSize: 11.5, fontWeight: 800, color: t.mu, marginBottom: 5, display: "flex", alignItems: "center", gap: 4 }}>
