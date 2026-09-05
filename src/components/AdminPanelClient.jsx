@@ -68,6 +68,11 @@ const FILE_COURSES = COURSE_GROUPS
  * the ten was meaningful. The legacy bucket is filtered out for new uploads —
  * it exists to keep old files visible, not to file new ones into.
  */
+// Mirrors the server's cap and its accepted types, so the picker offers
+// exactly what /api/upload will issue a token for.
+const MAX_UPLOAD = 200 * 1024 * 1024
+const ACCEPT_EXT = '.pdf,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.zip'
+
 const CATEGORY_LABEL = Object.fromEntries(
   [...COURSE_CATEGORIES, ...PROGRAM_CATEGORIES].map(c => [c.id, c.label])
 )
@@ -503,6 +508,10 @@ function FilesTab({ flash }) {
   async function upload(e) {
     e.preventDefault()
     if (!selected || !course) return
+    if (selected.size > MAX_UPLOAD) {
+      flash(`الملف ${fmtSize(selected.size)} — الحد ${fmtSize(MAX_UPLOAD)}`, 'error')
+      return
+    }
     setUploading(true)
     setProgress(0)
     try {
@@ -515,7 +524,9 @@ function FilesTab({ flash }) {
         // through /api/download rather than being reachable at a raw URL.
         access: 'private',
         handleUploadUrl: '/api/upload',
-        contentType: 'application/pdf',
+        // The file's own type. It was pinned to application/pdf, so a PPTX
+        // uploaded as a PDF and then would not open for the student.
+        contentType: selected.type || 'application/octet-stream',
         onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
       })
 
@@ -621,11 +632,16 @@ function FilesTab({ flash }) {
           <label style={S.label}>اسم الملف (اختياري)</label>
           <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="مثال: تجميع نهائي 1446" style={{ ...S.input, marginBottom: 10 }} />
           <div onClick={() => fileRef.current?.click()} style={{ border: '2px dashed var(--bd)', borderRadius: 10, padding: 16, textAlign: 'center', cursor: 'pointer', marginBottom: 12 }}>
-            <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }} onChange={e => { setSelected(e.target.files[0]); setDisplayName(e.target.files[0]?.name?.replace(/\.pdf$/i, '') || '') }} />
+            <input ref={fileRef} type="file" accept={ACCEPT_EXT} style={{ display: 'none' }} onChange={e => {
+              const f = e.target.files[0]
+              setSelected(f)
+              // Strip whatever extension it has, not just .pdf.
+              setDisplayName(f?.name?.replace(/\.[^.]+$/, '') || '')
+            }} />
             {selected ? (
               <div><CheckCircle size={22} color={P.green} /><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--mu)' }}>{fmtSize(selected.size)}</div></div>
             ) : (
-              <div><Upload size={22} color="var(--dim)" /><div style={{ fontSize: 13, color: 'var(--mu)', marginTop: 4 }}>اضغط لاختيار PDF (حد 20MB)</div></div>
+              <div><Upload size={22} color="var(--dim)" /><div style={{ fontSize: 13, color: 'var(--mu)', marginTop: 4 }}>اضغط لاختيار ملف — PDF أو عرض أو مستند أو صورة (حتى 200MB)</div></div>
             )}
           </div>
           <button type="submit" disabled={uploading || !selected || !course} style={{ ...S.btn(), width: '100%', opacity: (uploading || !selected || !course) ? 0.5 : 1 }}>

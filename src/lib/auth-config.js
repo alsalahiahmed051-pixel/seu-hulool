@@ -35,3 +35,29 @@ export const ACCOUNTS_ONLY = false
 export function browseGate(profile, signedIn) {
   return ACCOUNTS_ONLY ? !!signedIn : !!profile
 }
+
+/**
+ * How many assistant questions someone may ask before completing a profile.
+ *
+ * Browse mode used to be a tour of locked doors: the assistant refused on the
+ * first tap, so a visitor never saw the thing the platform is actually for and
+ * had no reason to finish a profile. A short trial shows them the product and
+ * then asks — which is the honest order.
+ *
+ * Downloads stay behind the profile at zero: a file is the thing itself, not a
+ * taste of it, and the owner's rule has always been that browsing does not
+ * download.
+ */
+export const BROWSE_TRIAL_AI = 3
+
+/**
+ * May this person ask the assistant right now?
+ *
+ * Returns { ok, trial, left } — `trial` marks an answer given on the trial
+ * rather than by right, so the UI can say so instead of quietly spending it.
+ */
+export function aiGate(profile, signedIn, trialUsed = 0) {
+  if (browseGate(profile, signedIn)) return { ok: true, trial: false, left: Infinity }
+  const left = Math.max(0, BROWSE_TRIAL_AI - (Number(trialUsed) || 0))
+  return { ok: left > 0, trial: true, left }
+}
