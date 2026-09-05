@@ -42,6 +42,24 @@
  * is one save in the admin panel, not a deploy.
  */
 export const PROGRAM_LEVELS = {
+  // ── السنة الأولى المشتركة ───────────────────────────────────────────────
+  // The prep year was the one track with no plan: its students got three cards
+  // named «مهارات الحاسب» while every bachelor student got codes, a shelf, file
+  // counts and search. Same courses, same codes — CS001 is CS001 on the bot and
+  // on every one of the twelve plans that prints a prep year.
+  //
+  // Registered under both plan names because that is what a prep student's
+  // profile holds; each sits one level, and both levels are shown so they can
+  // see the term ahead.
+  'خطة أ': {
+    'المستوى الأول': ['ENG001', 'CS001', 'CI001'],
+    'المستوى الثاني': ['ENG002', 'MATH001', 'COMM001'],
+  },
+  'خطة ب': {
+    'المستوى الأول': ['ENG001', 'CS001', 'CI001'],
+    'المستوى الثاني': ['ENG002', 'MATH001', 'COMM001'],
+  },
+
   // ── العلوم الإدارية والمالية ────────────────────────────────────────────
   // The four share a college core at levels 3 and 4 and diverge after it.
   'إدارة أعمال': {
@@ -692,8 +710,8 @@ export const CATALOGUE = {
   preparatory: {
     label: 'السنة الأولى المشتركة (CFY)',
     plans: {
-      a: { label: 'الفصل الأول', subjects: ['مهارات اللغة الإنجليزية 1', 'مهارات الحاسب', 'مهارات أكاديمية'] },
-      b: { label: 'الفصل الثاني', subjects: ['مهارات اللغة الإنجليزية 2', 'الرياضيات', 'مهارات الاتصال والتواصل'] },
+      a: { label: 'الفصل الأول', subjects: ['ENG001', 'CS001', 'CI001'] },
+      b: { label: 'الفصل الثاني', subjects: ['ENG002', 'MATH001', 'COMM001'] },
     },
   },
   bachelor: {
@@ -744,12 +762,23 @@ export const ALL_COURSE_NAMES = [...new Set(COURSE_GROUPS.flatMap(g => g.items))
  * them, and the admin panel now lets you move such a file to a real course.
  */
 export const LEGACY_COURSE_ALIASES = {
-  'حاسب': 'مهارات الحاسب',
-  'إنجليزي': 'مهارات اللغة الإنجليزية 1',
-  'رياضيات': 'الرياضيات',
-  'مهارات اتصال': 'مهارات الاتصال والتواصل',
   'مالية': 'تمويل',
   'إعلام إلكتروني': 'إعلام رقمي',
+
+  // The prep year moved from display names to the codes the university and the
+  // students' own bot both use. Every name it was ever filed under — the
+  // original short ones and the catalogue's longer ones — resolves to the code,
+  // so nothing already uploaded goes missing.
+  'حاسب': 'CS001',
+  'مهارات الحاسب': 'CS001',
+  'إنجليزي': 'ENG001',
+  'مهارات اللغة الإنجليزية 1': 'ENG001',
+  'مهارات اللغة الإنجليزية 2': 'ENG002',
+  'رياضيات': 'MATH001',
+  'الرياضيات': 'MATH001',
+  'مهارات اتصال': 'COMM001',
+  'مهارات الاتصال والتواصل': 'COMM001',
+  'مهارات أكاديمية': 'CI001',
 }
 
 /** The catalogue name a stored courseName refers to. */
