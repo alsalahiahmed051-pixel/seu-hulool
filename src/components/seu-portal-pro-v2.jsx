@@ -4,7 +4,7 @@ import { CATALOGUE, levelsOf, titleOf, titleArOf, isCourseCode, searchCourses } 
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
-import { browseGate } from "@/lib/auth-config";
+import { browseGate, aiGate, BROWSE_TRIAL_AI } from "@/lib/auth-config";
 import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
@@ -2678,25 +2678,34 @@ function GradeCalc({ subject, t }) {
   const EMPTY = { activity: "", homework: "", midterm: "", final: "" };
   const [gradesRaw, setGrades] = useStored(key, EMPTY);
   const grades = gradesRaw && typeof gradesRaw === "object" ? gradesRaw : EMPTY;
+  // Each mark is entered OUT OF ITS OWN WEIGHT, exactly as the grade sheet
+  // prints it — «النشاط ١٣ من ١٥». The fields used to ask for a mark out of
+  // 100 and silently weight it, so a student typing their real 13 had it read
+  // as 13% and the card told them they were failing a course they were
+  // passing. That is the bug: the honest fix is to ask for the number they
+  // actually have.
   const fields = [
-    { id: "activity", label: "النشاط", pct: 15 },
-    { id: "homework", label: "الواجبات", pct: 15 },
-    { id: "midterm", label: "الميدترم", pct: 30 },
-    { id: "final", label: "النهائي", pct: 40 },
+    { id: "activity", label: "النشاط", max: 15 },
+    { id: "homework", label: "الواجبات", max: 15 },
+    { id: "midterm", label: "الميدترم", max: 30 },
+    { id: "final", label: "النهائي", max: 40 },
   ];
+  const maxOf = (id) => fields.find(f => f.id === id).max;
 
   const val = (id) => {
     const n = parseFloat(grades[id]);
-    // Clamp rather than trust: a typo'd 900 would otherwise report a total no
-    // grade sheet can produce.
-    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+    // Clamped to the component's own ceiling: a typo'd 90 in a field out of 15
+    // would otherwise report a total no grade sheet can produce.
+    return Number.isFinite(n) ? Math.max(0, Math.min(maxOf(id), n)) : 0;
   };
   const filled = fields.filter(f => String(grades[f.id]).trim() !== "");
-  const earned = fields.reduce((a, f) => a + val(f.id) * (f.pct / 100), 0);
+  // The marks ARE the total — no weighting, because the weights are the
+  // denominators the student already typed against.
+  const earned = fields.reduce((a, f) => a + val(f.id), 0);
   const finalOpen = String(grades.final).trim() === "";
-  const beforeFinal = earned - (finalOpen ? 0 : val("final") * 0.4);
-  // What the final has to be for a target — only meaningful while it is unsat.
-  const need = (target) => (target - beforeFinal) / 0.4;
+  const beforeFinal = earned - (finalOpen ? 0 : val("final"));
+  // What the final has to be, out of its own 40, for a target.
+  const need = (target) => target - beforeFinal;
 
   const colorFor = (v) => (v >= 90 ? P.green : v >= 60 ? P.orange : P.red);
   const inputStyle = {
@@ -2717,15 +2726,15 @@ function GradeCalc({ subject, t }) {
     if (n60 <= 0) {
       return { tone: P.green, lead: "النجاح مضمون",
         sub: n90 <= 0 ? "والامتياز كذلك — حتى بصفر في النهائي"
-          : n90 <= 100 ? `وللامتياز (90) تحتاج ${n90.toFixed(1)} في النهائي`
+          : n90 <= 40 ? `وللامتياز (٩٠) تحتاج ${n90.toFixed(1)} من ٤٠ في النهائي`
           : "لكن الامتياز لم يعد ممكناً" };
     }
-    if (n60 > 100) {
+    if (n60 > 40) {
       return { tone: P.red, lead: "النجاح غير ممكن بهذه الدرجات",
-        sub: `تحتاج ${n60.toFixed(1)} في النهائي، والنهائي من 100` };
+        sub: `تحتاج ${n60.toFixed(1)} في النهائي، والنهائي من 40` };
     }
-    return { tone: colorFor(100 - n60), lead: `تحتاج ${n60.toFixed(1)} في النهائي للنجاح`,
-      sub: n90 <= 100 ? `و${n90.toFixed(1)} للامتياز (90)` : "والامتياز لم يعد ممكناً" };
+    return { tone: colorFor(100 - (n60 / 40) * 100), lead: `تحتاج ${n60.toFixed(1)} من ٤٠ في النهائي للنجاح`,
+      sub: n90 <= 40 ? `و${n90.toFixed(1)} للامتياز (٩٠)` : "والامتياز لم يعد ممكناً" };
   })();
 
   return (
@@ -2755,8 +2764,8 @@ function GradeCalc({ subject, t }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {fields.map(f => (
           <div key={f.id}>
-            <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 4 }}>{f.label} — {f.pct}%</div>
-            <input type="number" inputMode="decimal" min="0" max="100" step="0.5" placeholder="—"
+            <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 4 }}>{f.label} — من {f.max}</div>
+            <input type="number" inputMode="decimal" min="0" max={f.max} step="0.5" placeholder={`/${f.max}`}
               value={grades[f.id]}
               onChange={e => setGrades(g => ({ ...(g && typeof g === "object" ? g : EMPTY), [f.id]: e.target.value }))}
               style={inputStyle} />
@@ -2765,7 +2774,8 @@ function GradeCalc({ subject, t }) {
       </div>
 
       <div style={{ fontSize: 11, color: t.dim, marginTop: 9, lineHeight: 1.6 }}>
-        على توزيع الجامعة المعتاد (١٥ · ١٥ · ٣٠ · ٤٠). إن كان مقررك يوزّع غير ذلك فالنتيجة لا تنطبق عليه.
+        أدخل درجتك كما هي في كشفك — النشاط من ١٥، الواجبات من ١٥، الميدترم من ٣٠، النهائي من ٤٠.
+        إن كان مقررك يوزّع غير ذلك فالنتيجة لا تنطبق عليه.
       </div>
     </div>
   );
@@ -5101,6 +5111,141 @@ function AIStartGate({ t, mode, subject, canWiden, onWiden, onStart }) {
   );
 }
 
+/**
+ * One level of a study plan, as a table.
+ *
+ * The plan is a table on every document the university publishes — code, name,
+ * hours — and reading it as a column of cards means re-scanning for the code
+ * on every row. A table puts the codes in one column the eye can run down,
+ * which is how a student actually looks for «the one I need».
+ *
+ * Rows stay buttons, so the whole row is the tap target on a phone; only the
+ * layout is tabular. It scrolls inside its own container, so a long English
+ * name can never push the page sideways.
+ */
+function PlanLevelTable({ codes, fileCounts, color, t, onCourse }) {
+  const head = {
+    fontSize: 10.5, fontWeight: 800, color: t.dim, padding: "0 4px 6px",
+    textAlign: "right", whiteSpace: "nowrap",
+  };
+  return (
+    <div style={{ padding: "0 10px 12px", overflowX: "auto" }}>
+      <div style={{ minWidth: 260 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "76px 1fr auto", alignItems: "end" }}>
+          <div style={head}>الرمز</div>
+          <div style={head}>المقرر</div>
+          <div style={{ ...head, textAlign: "left", paddingLeft: 8 }}>الملفات</div>
+        </div>
+        {codes.map((code, i) => {
+          const name = titleOf(code);
+          const nameAr = titleArOf(code);
+          const n = fileCounts[code] || 0;
+          const ltr = !/[؀-ۿ]/.test(code);
+          return (
+            <button key={code} onClick={() => onCourse(code)} style={{
+              display: "grid", gridTemplateColumns: "76px 1fr auto", alignItems: "center",
+              width: "100%", gap: 6, padding: "9px 4px", cursor: "pointer",
+              fontFamily: "inherit", textAlign: "right", border: "none",
+              borderTop: `1px solid ${t.bd}`,
+              // A quiet zebra: enough to keep the eye on one row across three
+              // columns, not enough to read as a stack of separate cards.
+              background: i % 2 ? "transparent" : `${color}08`,
+            }}>
+              <span style={{
+                fontSize: 11.5, fontWeight: 800, color, fontFeatureSettings: '"tnum"',
+                direction: ltr ? "ltr" : "rtl", textAlign: "right", whiteSpace: "nowrap",
+              }}>{code}</span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{
+                  display: "block", fontSize: 12.5, fontWeight: 700, color: t.tx, lineHeight: 1.4,
+                  direction: /[؀-ۿ]/.test(name || code) ? "rtl" : "ltr", textAlign: "right",
+                }}>{name || code}</span>
+                {nameAr && (
+                  <span style={{ display: "block", fontSize: 10.5, color: t.dim, marginTop: 1 }}>{nameAr}</span>
+                )}
+              </span>
+              <span style={{
+                fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap", paddingLeft: 6,
+                color: n > 0 ? color : t.dim,
+              }}>{n > 0 ? `${n} ملف` : "—"}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Every college and programme the platform covers, as a directory.
+ *
+ * The five college cards used to be the only way in, and they were a dead end
+ * for the question people actually bring — "which programmes do you have, and
+ * do you have anything for mine?" This answers both in one screen: each
+ * programme with how many levels and courses its plan holds, and a mark on the
+ * ones with no plan yet, so nothing is promised that is not there.
+ */
+function ProgramsDirectory({ t, planOf, onProgram, onClose }) {
+  const colleges = [
+    ...TREE.bachelor.colleges.map(c => ({ label: c.label, color: c.color || P.blue2, programs: c.programs })),
+    { label: TREE.diploma.label, color: P.green, programs: TREE.diploma.programs },
+    { label: TREE.graduate.label, color: P.gold, programs: TREE.graduate.programs },
+  ];
+  return (
+    <div style={{ animation: "fadeUp .3s ease" }}>
+      <button onClick={onClose} style={{
+        background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20, padding: "6px 12px",
+        cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
+        display: "flex", alignItems: "center", gap: 5, marginBottom: 14,
+      }}>
+        <ArrowLeft size={12} /> رجوع
+      </button>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 4 }}>البرامج والتخصصات</h2>
+      <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 16, lineHeight: 1.7 }}>
+        كل ما تغطّيه المنصّة، وكم مستوىً ومقرراً في خطة كل تخصص.
+      </div>
+
+      {colleges.map(col => (
+        <div key={col.label} style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize: 12.5, fontWeight: 900, color: col.color, marginBottom: 7,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <div style={{ width: 3, height: 13, borderRadius: 2, background: col.color }} />
+            {col.label}
+            <span style={{ color: t.dim, fontWeight: 700 }}>· {col.programs.length}</span>
+          </div>
+          <div style={{
+            background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14, overflow: "hidden",
+          }}>
+            {col.programs.map((pr, i) => {
+              const plan = planOf(pr);
+              const levels = plan ? plan.length : 0;
+              const courses = plan ? plan.reduce((a, l) => a + (l.courses || []).length, 0) : 0;
+              return (
+                <button key={pr} onClick={() => onProgram(pr)} style={{
+                  width: "100%", display: "flex", alignItems: "center", gap: 10,
+                  padding: "12px 13px", cursor: "pointer", fontFamily: "inherit",
+                  textAlign: "right", background: "none", border: "none",
+                  borderTop: i === 0 ? "none" : `1px solid ${t.bd}`,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{pr}</div>
+                    <div style={{ fontSize: 11, color: plan ? t.mu : t.dim, marginTop: 2 }}>
+                      {plan ? `${levels} مستويات · ${courses} مقرراً` : "الخطة لم تُضف بعد"}
+                    </div>
+                  </div>
+                  <ChevronLeft size={14} color={t.dim} style={{ flexShrink: 0 }} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CourseTile({ code, count = 0, color, t, onClick }) {
   const name = titleOf(code);
   const nameAr = titleArOf(code);
@@ -5186,6 +5331,9 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
   // the student has told us they're in, so the courses they sit this term are
   // on screen without a tap — the plan is eight levels and only one is theirs.
   const [openLevel, setOpenLevel] = useState(profile?.level || null);
+  // The whole catalogue as a directory, opened from the card below. A view,
+  // not a tab: it is a reference you consult, not somewhere you live.
+  const [showPrograms, setShowPrograms] = useState(false);
   // The profile is read from storage after mount, so on a fresh load the state
   // above is initialised before the level exists. Adopt it when it arrives —
   // but only to fill a blank, never to overrule a level the student has since
@@ -5253,6 +5401,16 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
     if (col) crumbs.push({ label: col.label });
   } else if (step === "level3" && path === "preparatory" && sub) {
     crumbs.push({ label: TREE.preparatory.plans[sub].label });
+  }
+
+  if (showPrograms) {
+    return (
+      <ProgramsDirectory
+        t={t} planOf={planOf}
+        onProgram={(pr) => { setShowPrograms(false); onCourse(pr); }}
+        onClose={() => setShowPrograms(false)}
+      />
+    );
   }
 
   return (
@@ -5387,9 +5545,33 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
         const shown = scoped ? [profile.plan] : col.programs;
         return (
           <>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 12 }}>
               {scoped ? "تخصصي" : col.label}
             </h2>
+            {/* The catalogue, one tap from the student's own programme.
+                «البرامج والتخصصات» used to be a drawer on a course page, next
+                to "شروط القبول" on a maths subject. It is about programmes, and
+                this is the screen about programmes. */}
+            <button onClick={() => setShowPrograms(true)} style={{
+              width: "100%", background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14,
+              padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", textAlign: "right",
+              display: "flex", alignItems: "center", gap: 11, marginBottom: 14,
+            }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 11, background: `${col.color}15`,
+                border: `1px solid ${col.color}28`,
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <Layers size={17} color={col.color} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>البرامج والتخصصات</div>
+                <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2 }}>
+                  كل الكليات والبرامج، وخطة كل تخصص
+                </div>
+              </div>
+              <ChevronLeft size={15} color={t.dim} />
+            </button>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {shown.map((p, i) => {
                 const PIcon = getIcon(p);
@@ -5466,14 +5648,9 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
                           </span>
                         </button>
                         {on && (
-                          <div style={{
-                            display: "flex", flexDirection: "column", gap: 7,
-                            padding: "0 12px 12px", animation: "fadeUp .22s ease",
-                          }}>
-                            {codes.map(code => (
-                              <CourseTile key={code} code={code} count={fileCounts[code] || 0}
-                                color={col.color} t={t} onClick={() => onCourse(code)} />
-                            ))}
+                          <div style={{ animation: "fadeUp .22s ease" }}>
+                            <PlanLevelTable codes={codes} fileCounts={fileCounts}
+                              color={col.color} t={t} onCourse={onCourse} />
                           </div>
                         )}
                       </div>
@@ -8275,8 +8452,17 @@ export default function App() {
   const allowed = browseGate(profile, account.signedIn);
   const [needAccount, setNeedAccount] = useState(null);   // null | "file" | "ai" | "save"
 
+  // A visitor with no profile gets a few assistant questions before being
+  // asked to finish one — the product first, the form second. Downloads are
+  // not part of the trial: a file is the thing itself, not a taste of it.
+  const [aiTrialUsed, setAiTrialUsed] = useStored("browse_trial_ai", 0);
+  const ai = aiGate(profile, account.signedIn, aiTrialUsed);
+
   const requestAI = (seed) => {
-    if (!allowed) { setNeedAccount("ai"); return; }
+    if (!ai.ok) { setNeedAccount("ai"); return; }
+    // Spend a trial question when this is not an account's own use, so the
+    // count moves on the thing that costs, not on merely opening the panel.
+    if (ai.trial) setAiTrialUsed(n => (Number(n) || 0) + 1);
     setAiSeed(typeof seed === "string" ? seed : ""); setShowAI(true);
   };
 
@@ -8495,7 +8681,11 @@ export default function App() {
           subject={course} favorites={favorites} toggleFav={toggleFav}
           notes={notes} setNotes={setNotes} t={t}
           onChat={() => setAiChats(c => c + 1)} onToast={toasts.push}
-          onAskAI={(subj) => { if (!allowed) { setNeedAccount("ai"); return; } setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true); }}
+          onAskAI={(subj) => {
+            if (!ai.ok) { setNeedAccount("ai"); return; }
+            if (ai.trial) setAiTrialUsed(n => (Number(n) || 0) + 1);
+            setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true);
+          }}
           canOpenFiles={allowed} onNeedAccount={() => setNeedAccount("file")}
           onBack={() => { setCourse(null); setTab("explore"); }} />}
 
@@ -8730,6 +8920,19 @@ export default function App() {
           </div>
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
+            {ai.trial && (
+              <div style={{
+                background: `${P.gold}14`, borderBottom: `1px solid ${P.gold}30`,
+                padding: "9px 16px", display: "flex", alignItems: "center", gap: 9,
+              }}>
+                <Sparkles size={14} color={P.gold} style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, fontSize: 12, color: t.tx, lineHeight: 1.6 }}>
+                  {ai.left > 0
+                    ? <>تجربة مجانية — بقي لك <strong>{ai.left}</strong> من {BROWSE_TRIAL_AI}. أكمل ملفك لاستخدام غير محدود.</>
+                    : <>انتهت التجربة المجانية. أكمل ملفك للمتابعة.</>}
+                </div>
+              </div>
+            )}
             {!aiConfirmed ? (
               <AIStartGate
                 t={t} mode={aiGlobalTab} subject={aiSubject}

@@ -6,7 +6,30 @@ export const runtime = 'nodejs'
 const BLOB_ENABLED = !!process.env.BLOB_READ_WRITE_TOKEN &&
   !process.env.BLOB_READ_WRITE_TOKEN.includes('placeholder')
 
-const MAX_SIZE = 20 * 1024 * 1024
+// 200 MB. A full set of course slides runs to 150 MB, and the old 20 MB cap
+// rejected those with a message the owner read as "upload is broken". The file
+// goes browser → Blob directly, so nothing on our side has to hold it.
+const MAX_SIZE = 200 * 1024 * 1024
+
+/**
+ * What a course library actually holds.
+ *
+ * PDF-only silently refused every slide deck, spreadsheet and scanned image the
+ * owner tried to upload — the browser's own picker offered them, the token then
+ * would not cover them, and the failure surfaced as a bare "تعذّر". These are
+ * the types a course file plausibly is; executables stay out.
+ */
+const ALLOWED_TYPES = [
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // pptx
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',   // docx
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',         // xlsx
+  'application/vnd.ms-excel',
+  'image/png', 'image/jpeg', 'image/webp',
+  'application/zip', 'application/x-zip-compressed',
+]
 
 /**
  * Issues a short-lived token so the browser uploads straight to Blob storage.
@@ -35,7 +58,7 @@ export async function POST(request) {
       // Admin identity is already verified above; constrain what the issued
       // token may store so it can't be repurposed for arbitrary content.
       onBeforeGenerateToken: async () => ({
-        allowedContentTypes: ['application/pdf'],
+        allowedContentTypes: ALLOWED_TYPES,
         maximumSizeInBytes: MAX_SIZE,
         addRandomSuffix: true,
       }),
