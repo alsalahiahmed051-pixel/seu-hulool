@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { COURSE_GROUPS, CATALOGUE, levelsOf, isCourseCode, COURSE_CATEGORIES, PROGRAM_CATEGORIES } from '@/lib/courses'
+import { COURSE_GROUPS, CATALOGUE, levelsOf, isCourseCode, titleOf, COURSE_CATEGORIES, PROGRAM_CATEGORIES } from '@/lib/courses'
 import {
   Upload, Trash2, FileText, CheckCircle, Eye, GraduationCap, AlertCircle,
   RefreshCw, LogOut, Lock, Database, HardDrive, Users, Bell, BookOpen,
@@ -470,7 +470,9 @@ function FilesTab({ flash }) {
   const [plans, setPlans] = useState({})
   const [category, setCategory] = useState('slides')
   const [displayName, setDisplayName] = useState('')
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState([])
+  // Progress across a whole batch, so «٧ من ٣٠» is visible, not just one bar.
+  const [batch, setBatch] = useState(null)
   const fileRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -505,54 +507,86 @@ function FilesTab({ flash }) {
   // one already?" before the upload, not after it.
   const existing = course ? files.filter(f => f.courseName === course) : []
 
+  /**
+   * Upload every chosen file, one after another, under the same course + type.
+   *
+   * It used to take exactly one file. The library has 292 courses and each
+   * wants slides, a summary and two past papers — that is a four-step dance
+   * per course, roughly a thousand times, and it is the reason the shelves are
+   * empty. Now the picker takes a whole folder's worth and they go up in
+   * sequence.
+   *
+   * Sequential rather than parallel on purpose: each upload is a signed
+   * handshake plus a large transfer, and firing thirty at once on a phone's
+   * connection is how they all slow down and some time out. One at a time is
+   * slower on paper and finishes sooner in practice.
+   *
+   * One failure does not sink the batch — it is recorded and the rest continue,
+   * because losing 29 good uploads to one bad file is the worst outcome here.
+   */
   async function upload(e) {
     e.preventDefault()
-    if (!selected || !course) return
-    if (selected.size > MAX_UPLOAD) {
-      flash(`الملف ${fmtSize(selected.size)} — الحد ${fmtSize(MAX_UPLOAD)}`, 'error')
+    if (!selected.length || !course) return
+
+    const tooBig = selected.filter(f => f.size > MAX_UPLOAD)
+    if (tooBig.length) {
+      flash(`${tooBig.length} ملف يتجاوز الحد (${fmtSize(MAX_UPLOAD)}): ${tooBig[0].name}`, 'error')
       return
     }
+
     setUploading(true)
     setProgress(0)
-    try {
-      // Send the file straight to Blob storage. Routing it through our own
-      // function meant a double transfer that stalled and then timed out; the
-      // function now only signs the upload.
-      const { upload: blobUpload } = await import('@vercel/blob/client')
-      const blob = await blobUpload(selected.name, selected, {
-        // Private, matching how every existing file is stored: PDFs are served
-        // through /api/download rather than being reachable at a raw URL.
-        access: 'private',
-        handleUploadUrl: '/api/upload',
-        // The file's own type. It was pinned to application/pdf, so a PPTX
-        // uploaded as a PDF and then would not open for the student.
-        contentType: selected.type || 'application/octet-stream',
-        onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
-      })
+    setBatch({ done: 0, total: selected.length, failed: [] })
+    const { upload: blobUpload } = await import('@vercel/blob/client')
+    const failed = []
 
-      // Then record it in the library index.
-      const { ok, data } = await apiJSON('/api/files', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          blobUrl: blob.url,
-          courseName: course,
-          category,
-          name: displayName || selected.name.replace(/\.pdf$/i, ''),
-          size: selected.size,
-        }),
-      })
-      if (!ok) throw new Error(data.error || 'تعذّر حفظ بيانات الملف')
+    for (let i = 0; i < selected.length; i++) {
+      const file = selected[i]
+      setBatch(b => ({ ...b, done: i, current: file.name }))
+      setProgress(0)
+      try {
+        const blob = await blobUpload(file.name, file, {
+          // Private, matching how every existing file is stored: served through
+          // /api/download rather than reachable at a raw URL.
+          access: 'private',
+          handleUploadUrl: '/api/upload',
+          // The file's own type. It was pinned to application/pdf, so a PPTX
+          // uploaded as a PDF and then would not open for the student.
+          contentType: file.type || 'application/octet-stream',
+          onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
+        })
+        const { ok, data } = await apiJSON('/api/files', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            blobUrl: blob.url,
+            courseName: course,
+            category,
+            // The typed name applies only when one file was chosen; naming
+            // thirty files the same thing would make the shelf unreadable.
+            name: (selected.length === 1 && displayName.trim())
+              ? displayName.trim()
+              : file.name.replace(/\.[^.]+$/, ''),
+            size: file.size,
+          }),
+        })
+        if (!ok) throw new Error(data.error || 'تعذّر حفظ بيانات الملف')
+      } catch (err) {
+        failed.push({ name: file.name, why: err.message || 'فشل' })
+      }
+    }
 
-      flash('تم رفع الملف بنجاح')
-      setSelected(null); setDisplayName('')
+    setBatch({ done: selected.length, total: selected.length, failed })
+    setUploading(false)
+    setProgress(0)
+    const okCount = selected.length - failed.length
+    if (!failed.length) flash(okCount === 1 ? 'تم رفع الملف' : `تم رفع ${okCount} ملفات`)
+    else flash(`رُفع ${okCount} وفشل ${failed.length} — ${failed[0].name}: ${failed[0].why}`, 'error')
+
+    if (okCount > 0) {
+      setSelected([]); setDisplayName('')
       if (fileRef.current) fileRef.current.value = ''
       load()
-    } catch (err) {
-      flash(err.message || 'فشل الرفع', 'error')
-    } finally {
-      setUploading(false)
-      setProgress(0)
     }
   }
 
@@ -607,7 +641,18 @@ function FilesTab({ flash }) {
               <label style={S.label}>المادة / البرنامج</label>
               <select value={course} onChange={e => setCourse(e.target.value)} style={S.input}>
                 <option value="">— اختر —</option>
-                {FILE_COURSES.map(g => <optgroup key={g.group} label={g.group}>{g.items.map(i => <option key={i} value={i}>{i}</option>)}</optgroup>)}
+                {/* Named, not bare: the prep year moved to real codes, and a
+                    list reading «CS001 · CI001» tells the owner nothing about
+                    which is which. The value stays the code — that is what a
+                    file is filed under. */}
+                {FILE_COURSES.map(g => (
+                  <optgroup key={g.group} label={g.group}>
+                    {g.items.map(i => {
+                      const n = titleOf(i)
+                      return <option key={i} value={i}>{n && n !== i ? `${i} — ${n}` : i}</option>
+                    })}
+                  </optgroup>
+                ))}
               </select>
             </div>
           )}
@@ -629,26 +674,55 @@ function FilesTab({ flash }) {
             </div>
           )}
 
-          <label style={S.label}>اسم الملف (اختياري)</label>
-          <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="مثال: تجميع نهائي 1446" style={{ ...S.input, marginBottom: 10 }} />
+          {selected.length > 1 ? (
+            <div style={{ fontSize: 12, color: 'var(--mu2)', marginBottom: 10, lineHeight: 1.7 }}>
+              كل ملف يحتفظ باسمه — الاسم اليدوي متاح عند اختيار ملف واحد فقط.
+            </div>
+          ) : (
+            <>
+              <label style={S.label}>اسم الملف (اختياري)</label>
+              <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="مثال: تجميع نهائي 1446" style={{ ...S.input, marginBottom: 10 }} />
+            </>
+          )}
           <div onClick={() => fileRef.current?.click()} style={{ border: '2px dashed var(--bd)', borderRadius: 10, padding: 16, textAlign: 'center', cursor: 'pointer', marginBottom: 12 }}>
-            <input ref={fileRef} type="file" accept={ACCEPT_EXT} style={{ display: 'none' }} onChange={e => {
-              const f = e.target.files[0]
-              setSelected(f)
-              // Strip whatever extension it has, not just .pdf.
-              setDisplayName(f?.name?.replace(/\.[^.]+$/, '') || '')
+            <input ref={fileRef} type="file" accept={ACCEPT_EXT} multiple style={{ display: 'none' }} onChange={e => {
+              const list = Array.from(e.target.files || [])
+              setSelected(list)
+              setBatch(null)
+              // The name field is only meaningful for a single file; with many,
+              // each keeps its own, so offering one name to type would be a lie.
+              setDisplayName(list.length === 1 ? list[0].name.replace(/\.[^.]+$/, '') : '')
             }} />
-            {selected ? (
-              <div><CheckCircle size={22} color={P.green} /><div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>{selected.name}</div><div style={{ fontSize: 12, color: 'var(--mu)' }}>{fmtSize(selected.size)}</div></div>
+            {selected.length ? (
+              <div>
+                <CheckCircle size={22} color={P.green} />
+                <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4 }}>
+                  {selected.length === 1 ? selected[0].name : `${selected.length} ملفات مختارة`}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--mu)' }}>
+                  {fmtSize(selected.reduce((a, f) => a + f.size, 0))}
+                </div>
+              </div>
             ) : (
               <div><Upload size={22} color="var(--dim)" /><div style={{ fontSize: 13, color: 'var(--mu)', marginTop: 4 }}>اضغط لاختيار ملف — PDF أو عرض أو مستند أو صورة (حتى 200MB)</div></div>
             )}
           </div>
-          <button type="submit" disabled={uploading || !selected || !course} style={{ ...S.btn(), width: '100%', opacity: (uploading || !selected || !course) ? 0.5 : 1 }}>
+          <button type="submit" disabled={uploading || !selected.length || !course} style={{ ...S.btn(), width: '100%', opacity: (uploading || !selected.length || !course) ? 0.5 : 1 }}>
             {uploading
-              ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> جارٍ الرفع {progress > 0 ? `${progress}%` : '...'}</>
-              : <><Upload size={14} /> رفع الملف</>}
+              ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  {batch && batch.total > 1 ? ` ${batch.done + 1} من ${batch.total} — ` : ' جارٍ الرفع '}
+                  {progress > 0 ? `${progress}%` : '...'}</>
+              : <><Upload size={14} /> {selected.length > 1 ? `رفع ${selected.length} ملفات` : 'رفع الملف'}</>}
           </button>
+
+          {batch && !uploading && batch.failed.length > 0 && (
+            <div style={{ marginTop: 10, background: 'var(--errBg)', border: '1px solid #dc262655', borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--errTx)', lineHeight: 1.8 }}>
+              فشل {batch.failed.length} من {batch.total}. البقية رُفعت.
+              <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
+                {batch.failed.slice(0, 5).map(f => <li key={f.name}>{f.name} — {f.why}</li>)}
+              </ul>
+            </div>
+          )}
         </form>
       )}
 

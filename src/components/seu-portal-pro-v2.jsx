@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE, levelsOf, titleOf, titleArOf, isCourseCode, searchCourses } from "@/lib/courses";
+import { CATALOGUE, levelsOf, titleOf, titleArOf, isCourseCode, searchCourses, canonicalCourse } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -5508,30 +5508,86 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
       </>;
       })()}
 
-      {step === "level3" && path === "preparatory" && <>
-        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
-          {sub === "a" ? "مواد الفصل الأول" : "مواد الفصل الثاني"}
-        </h2>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          {TREE.preparatory.plans[sub].subjects.map((s, i) => {
-            const SIcon = getIcon(s);
-            const colors = [P.blue2, P.purple, "#065f46"];
-            return (
-              <button key={i} onClick={() => onCourse(s)} style={{
-                background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "18px 12px",
-                cursor: "pointer", textAlign: "center", transition: "all .22s", fontFamily: "inherit",
-              }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = colors[i] + "70"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: `${colors[i]}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px" }}>
-                  <SIcon size={22} color={colors[i]} strokeWidth={1.8} />
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{s}</div>
-              </button>
-            );
-          })}
-        </div>
-      </>}
+      {step === "level3" && path === "preparatory" && (() => {
+        // The prep year gets the same plan every other track gets. It used to
+        // be the one exception — three cards named «مهارات الحاسب» while a
+        // bachelor student one tap away had codes, a shelf, file counts and a
+        // searchable course page for the very same CS001.
+        const plan = planOf(profile?.plan);
+        const color = TREE.preparatory.color;
+        if (!plan) return (
+          <>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 16 }}>
+              {sub === "a" ? "مواد الفصل الأول" : "مواد الفصل الثاني"}
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+              {TREE.preparatory.plans[sub].subjects.map(code => (
+                <CourseTile key={code} code={code} count={fileCounts[code] || 0}
+                  color={color} t={t} onClick={() => onCourse(code)} />
+              ))}
+            </div>
+          </>
+        );
+        return (
+          <>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 4 }}>خطتي الدراسية</h2>
+            <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 12 }}>
+              اضغط على أي مستوى لعرض مواده، ثم على المادة لفتح تجميعاتها وملخصاتها.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {plan.map(({ label: lvl, courses: codes }) => {
+                const on = openLevel === lvl;
+                const withFiles = codes.filter(c => (fileCounts[c] || 0) > 0).length;
+                return (
+                  <div key={lvl} style={{
+                    background: t.s1, border: `1px solid ${on ? color + "55" : t.bd}`,
+                    borderRadius: 14, overflow: "hidden", transition: "border-color .2s",
+                  }}>
+                    <button
+                      onClick={() => {
+                        const next = on ? null : lvl;
+                        setOpenLevel(next);
+                        if (next && setProfile && profile?.level !== next) {
+                          setProfile(p => (p ? { ...p, level: next } : p));
+                        }
+                      }}
+                      style={{
+                        width: "100%", background: "none", border: "none", cursor: "pointer",
+                        padding: "12px 14px", fontFamily: "inherit", textAlign: "right",
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                      }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+                        {lvl}
+                        {profile?.level === lvl && (
+                          <span style={{
+                            fontSize: 10, fontWeight: 800, color: "#fff", background: color,
+                            borderRadius: 20, padding: "2px 7px",
+                          }}>مستواي</span>
+                        )}
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 800, color,
+                          background: `${color}15`, border: `1px solid ${color}30`,
+                          borderRadius: 20, padding: "2px 8px",
+                        }}>{withFiles > 0 ? `${codes.length} مواد · ${withFiles} فيها ملفات` : `${codes.length} مواد`}</span>
+                        <ChevronDown size={15} color={t.mu}
+                          style={{ transform: on ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+                      </span>
+                    </button>
+                    {on && (
+                      <div style={{ animation: "fadeUp .22s ease" }}>
+                        <PlanLevelTable codes={codes} fileCounts={fileCounts}
+                          color={color} t={t} onCourse={onCourse} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {step === "level3" && path === "bachelor" && (() => {
         const col = TREE.bachelor.colleges.find(c => c.id === sub);
@@ -8311,7 +8367,11 @@ export default function App() {
         if (!alive || !Array.isArray(d?.files)) return;
         const counts = {};
         d.files.forEach(f => {
-          const key = f?.courseName;
+          // Through the catalogue, exactly as /api/files matches: a file stored
+          // under an old name («مهارات الحاسب») belongs to the course it was
+          // renamed to (CS001). Counting the raw string meant the course page
+          // listed the file while the plan beside it said the course had none.
+          const key = canonicalCourse(f?.courseName);
           if (key) counts[key] = (counts[key] || 0) + 1;
         });
         setFileCounts(counts);
