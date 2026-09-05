@@ -1,13 +1,16 @@
 import { del } from '@vercel/blob'
 import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
-import { courseMatches, canonicalCourse } from '@/lib/courses'
+import { courseMatches, canonicalCourse, ALL_CATEGORY_IDS } from '@/lib/courses'
 import { ACCOUNTS_ONLY } from '@/lib/auth-config'
 import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
-const CATEGORIES = ['collections', 'plans', 'curriculum', 'programs']
+// The shelf a file can be filed on. Shared with the site and the panel so the
+// three cannot drift — the drift between two hand-written course lists is what
+// once made every upload invisible.
+const CATEGORIES = ALL_CATEGORY_IDS
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
