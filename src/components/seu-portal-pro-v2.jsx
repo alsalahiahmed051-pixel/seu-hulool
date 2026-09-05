@@ -5185,12 +5185,115 @@ function PlanLevelTable({ codes, fileCounts, color, t, onCourse }) {
  * programme with how many levels and courses its plan holds, and a mark on the
  * ones with no plan yet, so nothing is promised that is not there.
  */
-function ProgramsDirectory({ t, planOf, onProgram, onClose }) {
+function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, onClose, open, setOpen }) {
   const colleges = [
     ...TREE.bachelor.colleges.map(c => ({ label: c.label, color: c.color || P.blue2, programs: c.programs })),
     { label: TREE.diploma.label, color: P.green, programs: TREE.diploma.programs },
     { label: TREE.graduate.label, color: P.gold, programs: TREE.graduate.programs },
   ];
+  // Which programme is open, if any — held by the caller, not here. Opening a
+  // course from a plan swaps this whole tab out; keeping the state local meant
+  // «رجوع» from that course landed on the college list instead of the plan the
+  // student was reading a second earlier.
+  //
+  // Picking a programme used to jump straight to the file drawer written
+  // *about* it — admission terms beside a fee schedule — when what the tap
+  // asks for is "show me this plan".
+  const [openLevel, setOpenLevel] = useState(null);
+
+  const pick = (name, color, college) => {
+    const plan = planOf(name);
+    setOpen({ name, color, college });
+    setOpenLevel(plan && plan.length ? plan[0].label : null);
+  };
+
+  if (open) {
+    const plan = planOf(open.name);
+    // Which level is expanded. Falling back to the first one rather than to
+    // "none" matters on the way back from a course: the tab remounts with no
+    // local state, and a page of closed rows reads as having lost the plan.
+    const shownLevel = openLevel ?? (plan && plan.length ? plan[0].label : null);
+    const levels = plan ? plan.length : 0;
+    const courses = plan ? plan.reduce((a, l) => a + (l.courses || []).length, 0) : 0;
+    return (
+      <div style={{ animation: "fadeUp .3s ease" }}>
+        <button onClick={() => { setOpen(null); setOpenLevel(null); }} style={{
+          background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20, padding: "6px 12px",
+          cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
+          display: "flex", alignItems: "center", gap: 5, marginBottom: 14,
+        }}>
+          <ArrowLeft size={12} /> كل البرامج
+        </button>
+
+        <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 3 }}>{open.name}</h2>
+        <div style={{ fontSize: 12, color: t.mu, marginBottom: 14 }}>
+          {open.college}
+          {plan && <span style={{ color: t.dim }}> · {levels} مستويات · {courses} مقرراً</span>}
+        </div>
+
+        {!plan ? (
+          <div style={{
+            background: t.s1, border: `1px dashed ${t.bd}`, borderRadius: 14,
+            padding: "22px 16px", textAlign: "center", fontSize: 12.5, color: t.mu, lineHeight: 1.8,
+          }}>
+            خطة هذا البرنامج لم تُضف بعد.
+            <div style={{ fontSize: 11.5, color: t.dim, marginTop: 4 }}>
+              نضيفها فور توفّر خطتها المعتمدة من الجامعة.
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {plan.map(({ label: lvl, courses: codes }) => {
+              const on = shownLevel === lvl;
+              const withFiles = (codes || []).filter(c => (fileCounts[c] || 0) > 0).length;
+              return (
+                <div key={lvl} style={{
+                  background: t.s1, border: `1px solid ${on ? open.color + "55" : t.bd}`,
+                  borderRadius: 14, overflow: "hidden", transition: "border-color .2s",
+                }}>
+                  <button onClick={() => setOpenLevel(on ? null : lvl)} style={{
+                    width: "100%", background: "none", border: "none", cursor: "pointer",
+                    padding: "12px 14px", fontFamily: "inherit", textAlign: "right",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>{lvl}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: t.dim, fontWeight: 700 }}>
+                        {(codes || []).length} مقرر{withFiles > 0 ? ` · ${withFiles} فيها ملفات` : ""}
+                      </span>
+                      <ChevronDown size={14} color={t.dim} style={{
+                        transform: on ? "rotate(180deg)" : "none", transition: "transform .2s",
+                      }} />
+                    </span>
+                  </button>
+                  {on && <PlanLevelTable codes={codes || []} fileCounts={fileCounts}
+                    color={open.color} t={t} onCourse={onCourse} />}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* What is written *about* the programme — the printed plan, admission
+            terms — kept one tap away instead of on top of the plan itself. */}
+        {/* marginBottom clears the floating assistant button, which sits over
+            the last row of any page that ends flush with the tab bar. */}
+        <button onClick={() => onProgram(open.name)} style={{
+          width: "100%", marginTop: 14, marginBottom: 76,
+          background: "none", border: `1px solid ${t.bd}`,
+          borderRadius: 12, padding: "11px 13px", cursor: "pointer", fontFamily: "inherit",
+          textAlign: "right", display: "flex", alignItems: "center", gap: 9,
+        }}>
+          <FileText size={14} color={t.dim} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: t.mu }}>
+            ملفات البرنامج — الخطة المطبوعة وشروط القبول
+          </span>
+          <ChevronLeft size={13} color={t.dim} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ animation: "fadeUp .3s ease" }}>
       <button onClick={onClose} style={{
@@ -5198,7 +5301,7 @@ function ProgramsDirectory({ t, planOf, onProgram, onClose }) {
         cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
         display: "flex", alignItems: "center", gap: 5, marginBottom: 14,
       }}>
-        <ArrowLeft size={12} /> رجوع
+        <ArrowLeft size={12} /> الرئيسية
       </button>
       <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 4 }}>البرامج والتخصصات</h2>
       <div style={{ fontSize: 12.5, color: t.mu, marginBottom: 16, lineHeight: 1.7 }}>
@@ -5223,7 +5326,7 @@ function ProgramsDirectory({ t, planOf, onProgram, onClose }) {
               const levels = plan ? plan.length : 0;
               const courses = plan ? plan.reduce((a, l) => a + (l.courses || []).length, 0) : 0;
               return (
-                <button key={pr} onClick={() => onProgram(pr)} style={{
+                <button key={pr} onClick={() => pick(pr, col.color, col.label)} style={{
                   width: "100%", display: "flex", alignItems: "center", gap: 10,
                   padding: "12px 13px", cursor: "pointer", fontFamily: "inherit",
                   textAlign: "right", background: "none", border: "none",
@@ -5331,9 +5434,6 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
   // the student has told us they're in, so the courses they sit this term are
   // on screen without a tap — the plan is eight levels and only one is theirs.
   const [openLevel, setOpenLevel] = useState(profile?.level || null);
-  // The whole catalogue as a directory, opened from the card below. A view,
-  // not a tab: it is a reference you consult, not somewhere you live.
-  const [showPrograms, setShowPrograms] = useState(false);
   // The profile is read from storage after mount, so on a fresh load the state
   // above is initialised before the level exists. Adopt it when it arrives —
   // but only to fill a blank, never to overrule a level the student has since
@@ -5389,9 +5489,20 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
   // it but not back up to "all tracks". Guests (no profile) browse freely.
   const lockedKey = TRACK_TO_TREE[profile?.track];
 
+  // Their own plan is where «مساري» starts, so there is nothing above it to go
+  // back to. It used to walk them up to «اختر كليتك» — a question they answered
+  // when they made their profile and cannot answer again without a request.
+  // Only someone browsing another college (showAll) has a step to return from.
+  const atOwnPlan = step === "level3" && lockedKey && !showAll;
+  const canGoBack = !atOwnPlan && (step === "level3" || (step === "level2" && !lockedKey));
   const back = () => {
-    if (step === "level3") setStep("level2");
-    else if (step === "level2" && !lockedKey) { setStep("root"); setPath(null); setSub(null); }
+    if (atOwnPlan) return;
+    if (step === "level3") {
+      // Browsing the rest of the college? Backing out returns to the plan, not
+      // to a picker.
+      if (showAll) { setShowAll(false); return; }
+      setStep("level2");
+    } else if (step === "level2" && !lockedKey) { setStep("root"); setPath(null); setSub(null); }
   };
 
   const crumbs = lockedKey ? [] : [{ label: "المسارات", onClick: () => { setStep("root"); setPath(null); setSub(null); } }];
@@ -5403,21 +5514,11 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
     crumbs.push({ label: TREE.preparatory.plans[sub].label });
   }
 
-  if (showPrograms) {
-    return (
-      <ProgramsDirectory
-        t={t} planOf={planOf}
-        onProgram={(pr) => { setShowPrograms(false); onCourse(pr); }}
-        onClose={() => setShowPrograms(false)}
-      />
-    );
-  }
-
   return (
     <div style={{ animation: "fadeUp .35s ease" }}>
       {step !== "root" && (
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
-          {!(lockedKey && step === "level2") && (
+          {canGoBack && (
           <button onClick={back} style={{
             background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20, padding: "6px 12px",
             cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
@@ -5601,51 +5702,37 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
         const shown = scoped ? [profile.plan] : col.programs;
         return (
           <>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: 12 }}>
-              {scoped ? "تخصصي" : col.label}
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: t.tx, marginBottom: scoped ? 2 : 12 }}>
+              {scoped ? profile.plan : col.label}
             </h2>
-            {/* The catalogue, one tap from the student's own programme.
-                «البرامج والتخصصات» used to be a drawer on a course page, next
-                to "شروط القبول" on a maths subject. It is about programmes, and
-                this is the screen about programmes. */}
-            <button onClick={() => setShowPrograms(true)} style={{
-              width: "100%", background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14,
-              padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", textAlign: "right",
-              display: "flex", alignItems: "center", gap: 11, marginBottom: 14,
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 11, background: `${col.color}15`,
-                border: `1px solid ${col.color}28`,
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
-                <Layers size={17} color={col.color} />
+            {scoped && (
+              <div style={{ fontSize: 12, color: t.mu, marginBottom: 14 }}>{col.label}</div>
+            )}
+            {/* A student who already answered «محاسبة» was shown a card saying
+                «محاسبة» above their own plan, and tapping it opened a third
+                page about the programme. Three screens for one answer. Their
+                plan is the page now; the card is only for browsing someone
+                else's college, which «البرامج» does properly. */}
+            {!scoped && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {shown.map((p, i) => {
+                  const PIcon = getIcon(p);
+                  return (
+                    <button key={i} onClick={() => onCourse(p)} style={{
+                      background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "18px 14px",
+                      cursor: "pointer", textAlign: "right", transition: "all .22s", fontFamily: "inherit",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = col.color + "70"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
+                      <div style={{ width: 42, height: 42, borderRadius: 12, background: `${col.color}18`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+                        <PIcon size={20} color={col.color} strokeWidth={1.8} />
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{p}</div>
+                    </button>
+                  );
+                })}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: t.tx }}>البرامج والتخصصات</div>
-                <div style={{ fontSize: 11.5, color: t.mu, marginTop: 2 }}>
-                  كل الكليات والبرامج، وخطة كل تخصص
-                </div>
-              </div>
-              <ChevronLeft size={15} color={t.dim} />
-            </button>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {shown.map((p, i) => {
-                const PIcon = getIcon(p);
-                return (
-                  <button key={i} onClick={() => onCourse(p)} style={{
-                    background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "18px 14px",
-                    cursor: "pointer", textAlign: "right", transition: "all .22s", fontFamily: "inherit",
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = col.color + "70"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.transform = "none"; }}>
-                    <div style={{ width: 42, height: 42, borderRadius: 12, background: `${col.color}18`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
-                      <PIcon size={20} color={col.color} strokeWidth={1.8} />
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{p}</div>
-                  </button>
-                );
-              })}
-            </div>
+            )}
             {/* The actual study plan, level by level, where we have it. This is
                 the thing a student came for: their own courses by code, not
                 the programme's name repeated back at them. */}
@@ -8443,10 +8530,6 @@ export default function App() {
   };
 
 
-  useEffect(() => {
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [tab]);
-
   // Register the push service worker once so opted-in devices can receive
   // broadcasts while the app is closed. No-ops on unsupported browsers.
   useEffect(() => { registerServiceWorker(); }, []);
@@ -8493,7 +8576,29 @@ export default function App() {
   }, []);
 
 
+  // Where the course was opened from, so «رجوع» returns there instead of
+  // guessing. It used to always go to «مساري», which dropped a student who had
+  // arrived from البرامج or from search onto someone else's screen.
+  const [courseFrom, setCourseFrom] = useState("explore");
+  // The programme open inside the البرامج tab, held here so it survives the
+  // trip into a course page and back. See ProgramsDirectory.
+  const [openProgram, setOpenProgram] = useState(null);
+
+  // Back to the top of the page whenever the section changes. Opening a
+  // programme swaps the whole page without changing the tab, so it needs the
+  // same reset: the directory is 25 rows long, and a tap near the bottom of it
+  // landed on a new page already scrolled past its own title and back button.
+  //
+  // This effect has to sit BELOW the state it reads, not up with the other
+  // effects — a `useState` referenced from a hook declared above it is in its
+  // temporal dead zone, and the whole app dies on load with "cannot access
+  // before initialization". That has bitten this file once before.
+  useEffect(() => {
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [tab, openProgram]);
+
   const openCourse = (s) => {
+    setCourseFrom(tab === "course" ? courseFrom : tab);
     setCourse(s);
     setTab("course");
   };
@@ -8611,7 +8716,14 @@ export default function App() {
     // you rather than about content, and the middle of a seven-tab row is the
     // easiest place to hit with a thumb.
     { id: "profile", Icon: CircleUser, label: "حسابي", raised: true },
-    { id: "calendar", Icon: Calendar, label: "التقويم" },
+    // «البرامج والتخصصات» is a reference the whole platform offers, not a card
+    // buried inside one student's own plan — it gets an icon.
+    //
+    // Something had to leave: nine tabs overflow the phone, and that is how
+    // روابط once got clipped off the edge. التقويم is the one that loses
+    // nothing by going — the home page already carries the academic calendar
+    // with «عرض الكل» opening the same full view, so it stays one tap away.
+    { id: "programs", Icon: Layers, label: "البرامج" },
     // روابط is back in the row. It was moved into حسابي when nine tabs
     // overflowed the phone and this one got clipped off the edge — but the
     // owner went looking for it here, and that is the better evidence of where
@@ -8747,10 +8859,25 @@ export default function App() {
             setAiSubject(subj); setAiGlobalTab("chat"); setShowAI(true);
           }}
           canOpenFiles={allowed} onNeedAccount={() => setNeedAccount("file")}
-          onBack={() => { setCourse(null); setTab("explore"); }} />}
+          onBack={() => { setCourse(null); setTab(courseFrom || "explore"); }} />}
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
 
+        {tab === "programs" && <ProgramsDirectory
+          t={t}
+          planOf={(pr) => {
+            const live = programPlans && programPlans[pr];
+            if (Array.isArray(live) && live.length) return live;
+            const built = levelsOf(pr);
+            return built ? Object.entries(built).map(([label, courses]) => ({ label, courses })) : null;
+          }}
+          onProgram={openCourse}
+          onCourse={openCourse}
+          fileCounts={fileCounts}
+          open={openProgram}
+          setOpen={setOpenProgram}
+          onClose={() => setTab("home")}
+        />}
         {tab === "links" && <SEULinksPage t={t} content={linksContent} onSupport={() => setSupportOpen(true)} />}
 
         {tab === "calendar" && <CalendarPage t={t} profile={profile} />}
@@ -8813,7 +8940,12 @@ export default function App() {
           // so it reads as the anchor of the row rather than another chip.
           const filled = raised || active;
           return (
-            <button key={id} onClick={() => { setTab(id); setCourse(null); }}
+            <button key={id} onClick={() => {
+              // Tapping the tab you are already on is "take me to the top of
+              // this section", so البرامج goes back to the college list.
+              if (id === "programs" && tab === "programs") setOpenProgram(null);
+              setTab(id); setCourse(null);
+            }}
               style={{
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 background: "none", border: "none", cursor: "pointer", padding: "5px 2px",
