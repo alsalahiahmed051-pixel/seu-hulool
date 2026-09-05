@@ -8941,9 +8941,12 @@ export default function App() {
           const filled = raised || active;
           return (
             <button key={id} onClick={() => {
-              // Tapping the tab you are already on is "take me to the top of
-              // this section", so البرامج goes back to the college list.
-              if (id === "programs" && tab === "programs") setOpenProgram(null);
+              // A tab icon means "take me to the top of this section", so
+              // البرامج always lands on the college list — whether you are
+              // already in it or arrived from a course opened out of a plan.
+              // Going up is what the tab is for; «رجوع» is what returns you to
+              // the plan you were reading.
+              if (id === "programs") setOpenProgram(null);
               setTab(id); setCourse(null);
             }}
               style={{
