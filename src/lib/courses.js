@@ -378,12 +378,171 @@ export const COURSE_TITLES = {
 };
 
 /**
- * The course's name, or '' when we don't have one.
+ * The English name of each course, where its plan prints one.
  *
- * Empty rather than the code repeated back: the caller already shows the code,
+ * English is what a course is called on Blackboard, in the exam header and in
+ * every message students send each other, so it leads. What is NOT here is a
+ * translation: a name appears below only when one of the twelve plans printed
+ * it in English next to that code. Four sources are Arabic-only — إدارة أعمال,
+ * محاسبة, إعلام رقمي and لغة إنجليزية وترجمة — so their codes keep the Arabic
+ * name, which is a real name from a real document rather than one I invented
+ * and handed a student as official.
+ */
+export const COURSE_TITLES_EN = {
+  // السنة الأولى المشتركة
+  ENG001: 'English Language Skills', ENG002: 'English Language Skills II',
+  ENG103: 'Technical Writing',
+  CS001: 'Computer Essentials', CI001: 'Academic Skills',
+  COMM001: 'Communication Skills', COM003: 'Communication Skills',
+  MATH001: 'Fundamentals of Mathematics', MATH003: 'Introduction to Mathematics',
+
+  // الثقافة الإسلامية
+  ISLM101: 'Islamic Culture I', ISLM102: 'Professional Conduct & Ethics in Islam',
+  ISLM103: 'Islamic Economic System and Its Issues',
+  ISLM104: 'Social System and Human Rights in Islam',
+
+  // جذع العلوم الإدارية والمالية
+  STAT101: 'Statistics', STAT201: 'Quantitative Methods',
+  LAW101: 'Legal Environment of Business',
+  ECON101: 'Microeconomics', ECON201: 'Macroeconomics',
+  MGT101: 'Principles of Management', ACCT101: 'Principles of Accounting',
+  FIN101: 'Principles of Finance', MGT201: 'Marketing Management',
+  MGT211: 'Human Resource Management', ECOM101: 'E-Commerce',
+  ECOM201: 'Introduction to E-Management', MIS201: 'Management Information Systems',
+  MGT301: 'Organizational Behavior', MGT311: 'Introduction to Operations Management',
+  ACCT301: 'Cost Accounting', MGT321: 'Introduction to International Business',
+  MGT322: 'Supply Chain Management', MGT401: 'Strategic Management',
+
+  // تمويل
+  FIN201: 'Financial Management', FIN301: 'Investment Management',
+  FIN401: 'Financial Markets and Institutions', FIN402: 'Financial Analysis',
+  FIN403: 'International Finance', FIN405: 'Financial Risk Management',
+  FIN406: 'Financial Derivatives', FIN424: 'Portfolio Management',
+  FIN408: 'Financial Planning',
+
+  // تجارة إلكترونية
+  ECOM301: 'E-Marketing', ECOM402: 'E-Supply Chain Management',
+  ECOM421: 'E-Business Strategies and Models', ECOM430: 'Internship',
+  IT401: 'Business Computer Languages', IT402: 'Enterprise Systems',
+  IT403: 'Database Fundamentals', IT404: 'Website Design',
+  LAW402: 'E-Commerce Law',
+
+  // قانون
+  LAW121: 'Introduction to Legal Studies', LAW122: 'Constitutional Law',
+  LAW123: 'Criminology and Penology', LAW211: 'Introduction to Islamic Jurisprudence',
+  LAW212: 'History of Law', LAW213: 'Contract Law', LAW214: 'Administrative Law',
+  LAW221: 'General Criminal Law', LAW222: 'Civil Liability',
+  LAW223: 'Commercial Law', LAW224: 'Judiciary and Evidence',
+  LAW225: 'Public International Law', LAW311: 'Labor Law and Social Insurance',
+  LAW312: 'Administrative Judiciary', LAW313: 'Civil Contracts',
+  LAW314: 'Inheritance, Wills and Endowment', LAW315: 'Litigation Procedures',
+  LAW321: 'Debt Guarantees', LAW322: 'Property and Funds',
+  LAW323: 'Commercial Contracts and Banking Operations',
+  LAW324: 'Special Criminal Law', LAW325: 'Family Law',
+  LAW411: 'Commercial Papers', LAW412: 'Zakat and Taxes',
+  LAW413: 'Administrative Contracts', LAW414: 'Principles of Islamic Jurisprudence',
+  LAW415: 'Intellectual Property Law', LAW421: 'Criminal Procedures',
+  LAW422: 'Private International Law', LAW423: 'Enforcement Law',
+  LAW424: 'Maritime and Air Law', LAW425: 'Principles of Scientific Research',
+
+  // العلوم الصحية
+  BIO101: 'Basic Medical Terminology', BIO102: 'Introduction to Anatomy and Physiology',
+  HCM101: 'Healthcare Management', HCM102: 'Organizational Behavior',
+  HCM113: 'Saudi Health Policies and Healthcare System',
+  HCM213: 'Financial Management in Healthcare',
+  PHC121: 'Introduction to Biostatistics', PHC131: 'Introduction to Epidemiology',
+  PHC212: 'Health Education Concepts and Promotion',
+  PHC215: 'Healthcare Research and Analysis Methods',
+  PHC216: 'Ethics and Regulation in Health Care',
+  PHC231: 'Introduction to Hospital Epidemiology',
+  PHC273: 'Introduction to Mental Health', PHC274: 'Health Planning',
+  PHC311: 'Global Health', PHC312: 'Health Communication',
+  PHC313: 'Road Traffic Injuries and Disability Prevention',
+  PHC314: 'Society and Addiction',
+  PHC331: 'Chronic Disease Epidemiology and Prevention',
+  PHC372: 'Public Health Outbreak and Disaster Management',
+  PHC373: 'Maternal and Child Health', PHC374: 'Oral Health Promotion',
+  HCI111: 'Introduction to Health Informatics', HCI112: 'Electronic Health Records',
+  HCI213: 'Medical Coding and Billing', HCI214: 'Consumer Health Informatics',
+  HCI215: 'Healthcare Research and Analysis Methods',
+  HCI216: 'Ethics and Regulations in Healthcare',
+  HCI312: 'Health Communication', HCI314: 'Public Health Informatics',
+  HCI315: 'Telehealth and Telemedicine', HCI316: 'eHealth',
+
+  // Four codes the Public Health page prints in Arabic only, filled from the
+  // programme that prints the SAME Arabic name in English too: BIOL101/BIO101
+  // and COMM101/COMM001 are one course under two programmes' codes. This is
+  // matching a printed pair, not translating.
+  COMM101: 'Communication Skills', ENG102: 'English Language Skills',
+  BIOL101: 'Basic Medical Terminology',
+  BIOL102: 'Introduction to Anatomy and Physiology',
+
+  // الحوسبة والمعلوماتية — المشترك
+  MATH150: 'Discrete Mathematics', MATH251: 'Linear Algebra',
+  MATH241: 'Calculus for Data Science',
+  SCI101: 'General Physics 1', SCI201: 'General Physics 2',
+  STAT202: 'Introduction to Statistics and Probabilities',
+
+  // تقنية معلومات
+  IT231: 'Introduction to IT and Information Systems',
+  IT232: 'Object-Oriented Programming', IT233: 'Computer Organization',
+  IT241: 'Operating Systems', IT244: 'Introduction to Databases',
+  IT245: 'Data Structures', IT342: 'Software Engineering',
+  IT351: 'Computer Networks', IT352: 'Human Computer Interaction',
+  IT353: 'Systems Analysis and Design', IT354: 'Database Management Systems',
+  IT361: 'Web Technologies', IT362: 'IT Project Management',
+  IT451: 'IT Project Management', IT452: 'Information Security',
+  IT453: 'Cloud Computing', IT454: 'Advanced Web Applications',
+  IT475: 'Decision Support Systems', IT476: 'IT Security and Policies',
+  IT487: 'Mobile Application Development',
+  IT488: 'Senior Project I', IT489: 'Senior Project II',
+
+  // علوم حاسب وعلوم البيانات — خططهما إنجليزية أصلاً
+  CS230: 'Object Oriented Programming', CS231: 'Digital Logic Design',
+  CS240: 'Data Structure', CS241: 'Computer Architecture and Organization',
+  CS242: 'Theory of Computing', CS243: 'Discrete Mathematics for CS',
+  CS350: 'Introduction to Database', CS351: 'Operating Systems',
+  CS352: 'System Analysis and Design', CS353: 'Design and Analysis of Algorithms',
+  CS360: 'Computer Networks', CS361: 'Web Programming',
+  CS362: 'Artificial Intelligence', CS363: 'Principles of Programming Languages',
+  CS364: 'Computing Entrepreneurship & Innovation',
+  CS470: 'Human Computer Interaction', CS471: 'Computer Security',
+  CS479: 'Senior Project 1', CS480: 'Project Management in Computing',
+  CS481: 'Professional Ethics in Computer Science', CS489: 'Senior Project 2',
+  CS499: 'Practical Training',
+  DS230: 'Object Oriented Programming', DS231: 'Introduction to Data Science Programming',
+  DS240: 'Data Structure', DS242: 'Advanced Data Science Programming',
+  DS243: 'Computer Architecture and Organization', DS350: 'Introduction to Database',
+  DS351: 'Operating Systems', DS352: 'Design and Analysis of Algorithms',
+  DS353: 'Project Management in Computing', DS360: 'Computer Networks',
+  DS361: 'System Analysis and Design', DS362: 'Web Programming',
+  DS363: 'Artificial Intelligence', DS364: 'Data Curation, Management & Organization',
+  DS470: 'Data Security and Privacy', DS471: 'Machine Learning',
+  DS472: 'Data Mining', DS479: 'Senior Project 1', DS480: 'Data Visualization',
+  DS481: 'Professional Ethics in Data Science', DS489: 'Senior Project 2',
+  DS499: 'Practical Training',
+};
+
+/**
+ * The name to show for a course: English where its plan printed one, otherwise
+ * the Arabic name, otherwise ''.
+ *
+ * Empty rather than the code repeated back — the caller already shows the code,
  * and a name that is just the code again is noise dressed as information.
  */
-export const titleOf = (code) => COURSE_TITLES[String(code || '').trim()] || '';
+export const titleOf = (code) => {
+  const c = String(code || '').trim();
+  return COURSE_TITLES_EN[c] || COURSE_TITLES[c] || '';
+};
+
+/** The Arabic name, where one exists — shown as a subtitle under the English. */
+export const titleArOf = (code) => {
+  const c = String(code || '').trim();
+  const ar = COURSE_TITLES[c] || '';
+  // Only when it adds something: for the Arabic-only programmes `titleOf`
+  // already returns this exact string, and repeating it under itself is noise.
+  return ar && COURSE_TITLES_EN[c] ? ar : '';
+};
 
 /**
  * Fold a query and a target to the same shape before comparing them.
@@ -444,13 +603,16 @@ export function searchCourses(query, { plans = null, myProgram = '', limit = 30 
       (courses || []).forEach(code => {
         const name = titleOf(code);
         const nCode = normalizeSearch(code);
-        const nName = normalizeSearch(name);
+        // Both names, always: the card shows English, but plenty of students
+        // know the course only as «الإحصاء», and dropping the Arabic from the
+        // index would make it unfindable by the name they actually use.
+        const names = [name, COURSE_TITLES[code] || ''].filter(Boolean).map(normalizeSearch);
         let rank;
         if (nCode === q) rank = 0;
         else if (nCode.startsWith(q)) rank = 1;
-        else if (nName && nName.startsWith(q)) rank = 2;
+        else if (names.some(n => n.startsWith(q))) rank = 2;
         else if (nCode.includes(q)) rank = 3;
-        else if (nName && nName.includes(q)) rank = 4;
+        else if (names.some(n => n.includes(q))) rank = 4;
         else return;
 
         const prev = found.get(code);

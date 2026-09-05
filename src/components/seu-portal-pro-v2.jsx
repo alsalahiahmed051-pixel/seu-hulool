@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { CATALOGUE, levelsOf, titleOf, isCourseCode, searchCourses } from "@/lib/courses";
+import { CATALOGUE, levelsOf, titleOf, titleArOf, isCourseCode, searchCourses } from "@/lib/courses";
 import { useLiveNotifications } from "@/lib/hooks/useLiveNotifications";
 import { useSyncedSetting } from "@/lib/hooks/useSyncedSetting";
 import { useAccount } from "@/lib/hooks/useAccount";
@@ -2658,61 +2658,115 @@ function GPACalc({ t, onCalc, semesters, setSemesters, onToast }) {
 /* ══════════════════════════════════════════════════════════════
    GRADE CALC (per course)
    ══════════════════════════════════════════════════════════════ */
+/**
+ * What the student is actually asking: "how much do I need on the final?"
+ *
+ * This replaces two cards. «تقدم الدراسة» was a row of six fixed checkboxes the
+ * student ticked by hand — a unit count the app invented, tracking nothing the
+ * app knew, telling them nothing they had not just typed. It is gone.
+ *
+ * What stays is the calculator, turned around: the four marks were the loud
+ * part and the answer was a 12px line underneath, when the answer is the whole
+ * reason to open it. Now the verdict leads and the inputs sit under it.
+ *
+ * Weights are SEU's standard split. They are editable nowhere on purpose —
+ * a course that grades differently is a wrong answer delivered confidently, so
+ * the split is stated on the card rather than assumed silently.
+ */
 function GradeCalc({ subject, t }) {
   const key = `grades_${subject}`;
-  const [gradesRaw, setGrades] = useStored(key, { activity: "", homework: "", midterm: "", final: "" });
-  const grades = gradesRaw && typeof gradesRaw === "object" ? gradesRaw : { activity: "", homework: "", midterm: "", final: "" };
+  const EMPTY = { activity: "", homework: "", midterm: "", final: "" };
+  const [gradesRaw, setGrades] = useStored(key, EMPTY);
+  const grades = gradesRaw && typeof gradesRaw === "object" ? gradesRaw : EMPTY;
   const fields = [
-    { id: "activity", label: "نشاط", pct: "15%", w: 0.15 },
-    { id: "homework", label: "واجبات", pct: "15%", w: 0.15 },
-    { id: "midterm", label: "ميدترم", pct: "30%", w: 0.30 },
-    { id: "final", label: "نهائي", pct: "40%", w: 0.40 },
+    { id: "activity", label: "النشاط", pct: 15 },
+    { id: "homework", label: "الواجبات", pct: 15 },
+    { id: "midterm", label: "الميدترم", pct: 30 },
+    { id: "final", label: "النهائي", pct: 40 },
   ];
-  const vals = {};
-  fields.forEach(f => { vals[f.id] = parseFloat(grades[f.id]) || 0; });
-  const filledCount = fields.filter(f => grades[f.id] !== "").length;
-  const withoutFinal = vals.activity * 0.15 + vals.homework * 0.15 + vals.midterm * 0.30;
-  const total = withoutFinal + vals.final * 0.40;
-  const n90 = grades.final === "" ? (90 - withoutFinal) / 0.40 : null;
-  const n60 = grades.final === "" ? (60 - withoutFinal) / 0.40 : null;
-  const totalColor = total >= 90 ? P.green : total >= 60 ? P.orange : P.red;
+
+  const val = (id) => {
+    const n = parseFloat(grades[id]);
+    // Clamp rather than trust: a typo'd 900 would otherwise report a total no
+    // grade sheet can produce.
+    return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+  };
+  const filled = fields.filter(f => String(grades[f.id]).trim() !== "");
+  const earned = fields.reduce((a, f) => a + val(f.id) * (f.pct / 100), 0);
+  const finalOpen = String(grades.final).trim() === "";
+  const beforeFinal = earned - (finalOpen ? 0 : val("final") * 0.4);
+  // What the final has to be for a target — only meaningful while it is unsat.
+  const need = (target) => (target - beforeFinal) / 0.4;
+
+  const colorFor = (v) => (v >= 90 ? P.green : v >= 60 ? P.orange : P.red);
+  const inputStyle = {
+    width: "100%", border: `1px solid ${t.bd}`, borderRadius: 9, padding: "8px 10px",
+    fontSize: 13.5, background: t.s2, color: t.tx, fontFamily: "inherit",
+    outline: "none", boxSizing: "border-box", fontWeight: 700,
+    textAlign: "center", fontFeatureSettings: '"tnum"',
+  };
+
+  // The one line worth reading, in the student's own words.
+  const verdict = (() => {
+    if (!filled.length) return null;
+    if (!finalOpen) {
+      return { tone: colorFor(earned), lead: `مجموعك ${earned.toFixed(1)}`,
+        sub: earned >= 60 ? "ناجح" : "أقل من حدّ النجاح (60)" };
+    }
+    const n60 = need(60), n90 = need(90);
+    if (n60 <= 0) {
+      return { tone: P.green, lead: "النجاح مضمون",
+        sub: n90 <= 0 ? "والامتياز كذلك — حتى بصفر في النهائي"
+          : n90 <= 100 ? `وللامتياز (90) تحتاج ${n90.toFixed(1)} في النهائي`
+          : "لكن الامتياز لم يعد ممكناً" };
+    }
+    if (n60 > 100) {
+      return { tone: P.red, lead: "النجاح غير ممكن بهذه الدرجات",
+        sub: `تحتاج ${n60.toFixed(1)} في النهائي، والنهائي من 100` };
+    }
+    return { tone: colorFor(100 - n60), lead: `تحتاج ${n60.toFixed(1)} في النهائي للنجاح`,
+      sub: n90 <= 100 ? `و${n90.toFixed(1)} للامتياز (90)` : "والامتياز لم يعد ممكناً" };
+  })();
+
   return (
     <div style={{ background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`, marginBottom: 10 }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-        <Calculator size={13} color={P.gold} /> حاسبة الدرجات
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
+          <Calculator size={13} color={P.gold} /> درجاتي في المقرر
+        </div>
+        {filled.length > 0 && (
+          <button onClick={() => setGrades(EMPTY)} style={{
+            background: "none", border: "none", cursor: "pointer", fontFamily: "inherit",
+            fontSize: 11.5, fontWeight: 700, color: t.dim, padding: 0,
+          }}>مسح</button>
+        )}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: filledCount > 0 ? 10 : 0 }}>
+
+      {verdict && (
+        <div style={{
+          background: `${verdict.tone}12`, border: `1px solid ${verdict.tone}30`,
+          borderRadius: 12, padding: "12px 14px", marginBottom: 12,
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 900, color: verdict.tone, lineHeight: 1.45 }}>{verdict.lead}</div>
+          {verdict.sub && <div style={{ fontSize: 12, color: t.mu, marginTop: 3, lineHeight: 1.6 }}>{verdict.sub}</div>}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {fields.map(f => (
           <div key={f.id}>
-            <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 3 }}>{f.label} ({f.pct})</div>
-            <input type="number" min="0" max="100" step="0.5" placeholder="—"
+            <div style={{ fontSize: 11.5, color: t.mu, marginBottom: 4 }}>{f.label} — {f.pct}%</div>
+            <input type="number" inputMode="decimal" min="0" max="100" step="0.5" placeholder="—"
               value={grades[f.id]}
-              onChange={e => setGrades(g => ({ ...g, [f.id]: e.target.value }))}
-              style={{ width: "100%", border: `1px solid ${t.bd}`, borderRadius: 8, padding: "7px 10px", fontSize: 13, background: t.s2, color: t.tx, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+              onChange={e => setGrades(g => ({ ...(g && typeof g === "object" ? g : EMPTY), [f.id]: e.target.value }))}
+              style={inputStyle} />
           </div>
         ))}
       </div>
-      {filledCount > 0 && (
-        <div style={{ background: `${totalColor}12`, borderRadius: 10, padding: "10px 12px", border: `1px solid ${totalColor}30` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 13, color: t.mu }}>المجموع الحالي</span>
-            <span style={{ fontSize: 18, fontWeight: 900, color: totalColor }}>{total.toFixed(1)}</span>
-          </div>
-          {n90 !== null && (
-            <div style={{ fontSize: 12, marginTop: 6, lineHeight: 1.6 }}>
-              {n90 <= 100 && n90 >= 0
-                ? <span style={{ color: P.blue2 }}>تحتاج <strong>{n90.toFixed(1)}</strong> في النهائي للممتاز (90+)</span>
-                : n90 < 0 ? <span style={{ color: P.green }}>ممتاز مضمون حتى بدون النهائي!</span>
-                : <span style={{ color: P.red }}>لا يمكن الممتاز حتى بنهائي كامل</span>}
-            </div>
-          )}
-          {n60 !== null && n60 > 0 && n60 <= 100 && (
-            <div style={{ fontSize: 12, color: P.orange, marginTop: 3 }}>
-              تحتاج على الأقل <strong>{n60.toFixed(1)}</strong> في النهائي للنجاح
-            </div>
-          )}
-        </div>
-      )}
+
+      <div style={{ fontSize: 11, color: t.dim, marginTop: 9, lineHeight: 1.6 }}>
+        على توزيع الجامعة المعتاد (١٥ · ١٥ · ٣٠ · ٤٠). إن كان مقررك يوزّع غير ذلك فالنتيجة لا تنطبق عليه.
+      </div>
     </div>
   );
 }
@@ -4233,54 +4287,6 @@ function FlashCards({ subject, t }) {
   );
 }
 
-function CourseProgress({ subject, t }) {
-  const UNITS = 6;
-  const key = `progress_${subject}`;
-  const [done, setDone] = useStored(key, []);
-  const pct = Math.round((done.length / UNITS) * 100);
-  const toggle = (u) => setDone(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]);
-  return (
-    <div style={{
-      background: t.s1, borderRadius: 16, padding: "14px 16px", border: `1px solid ${t.bd}`,
-      marginBottom: 10,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, display: "flex", alignItems: "center", gap: 6 }}>
-          <Activity size={13} color={P.blue2} /> تقدم الدراسة
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 900, color: pct === 100 ? P.green : P.blue2 }}>
-          {pct}%
-        </div>
-      </div>
-      <div style={{ height: 5, background: t.s3, borderRadius: 3, overflow: "hidden", marginBottom: 10 }}>
-        <div style={{
-          height: "100%", width: `${pct}%`, borderRadius: 3, transition: "width .4s ease",
-          background: pct === 100 ? `linear-gradient(90deg,${P.green},#34d399)` : `linear-gradient(90deg,${P.blue},${P.blue2})`,
-        }} />
-      </div>
-      <div style={{ display: "flex", gap: 6 }}>
-        {Array.from({ length: UNITS }, (_, i) => {
-          const u = i + 1;
-          const checked = done.includes(u);
-          return (
-            <button key={u} onClick={() => toggle(u)} style={{
-              flex: 1, height: 30, borderRadius: 8,
-              background: checked ? `${P.blue2}22` : t.s2,
-              border: `1.5px solid ${checked ? P.blue2 : t.bd}`,
-              cursor: "pointer", transition: "all .2s",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              {checked
-                ? <CheckCircle size={13} color={P.blue2} />
-                : <span style={{ fontSize: 11.5, fontWeight: 700, color: t.dim }}>{u}</span>}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function AISection({ subject, t, onChat, files, onToast }) {
   const [aiTab, setAiTab] = useState("chat");
   return (
@@ -4353,8 +4359,9 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
   const [cardCount, setCardCount] = useState(null);
   useEffect(() => { setCardCount((storage.get(`fc_${subject}`, []) || []).length); }, [subject, open]);
 
-  // The course's real name, where the plans give one.
+  // The course's real name, where the plans give one — English first.
   const courseName = titleOf(subject);
+  const courseNameAr = titleArOf(subject);
 
   return (
     <div style={{ animation: "fadeUp .35s ease" }}>
@@ -4383,15 +4390,21 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
             {/* The name is the heading and the code the subtitle. Landing on a
                 page titled «STAT101» told a student nothing they did not
                 already type to get here. */}
-            <h2 style={{ color: "#fff", margin: 0, fontSize: courseName ? 19 : 22, fontWeight: 900, lineHeight: 1.35 }}>
-              {courseName || subject}
-            </h2>
+            <h2 style={{
+              color: "#fff", margin: 0, fontSize: courseName ? 19 : 22, fontWeight: 900,
+              lineHeight: 1.35,
+              direction: /[؀-ۿ]/.test(courseName || subject) ? "rtl" : "ltr",
+              textAlign: "right",
+            }}>{courseName || subject}</h2>
             <div style={{ color: P.gold, fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               {courseName
-                ? <span style={{
-                    fontWeight: 800, fontFeatureSettings: '"tnum"',
-                    direction: /[؀-ۿ]/.test(subject) ? "rtl" : "ltr",
-                  }}>{subject}</span>
+                ? <>
+                    <span style={{
+                      fontWeight: 800, fontFeatureSettings: '"tnum"',
+                      direction: /[؀-ۿ]/.test(subject) ? "rtl" : "ltr",
+                    }}>{subject}</span>
+                    {courseNameAr && <span style={{ color: "rgba(255,255,255,.65)" }}>· {courseNameAr}</span>}
+                  </>
                 : <><Award size={12} /> الجامعة السعودية الإلكترونية</>}
             </div>
           </div>
@@ -4421,7 +4434,6 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
         </button>
       )}
 
-      <CourseProgress subject={subject} t={t} />
       <GradeCalc subject={subject} t={t} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -4967,14 +4979,19 @@ function CourseSearchGroup({ query, plans, myProgram, onCourse, onClose, t, colo
               <BookOpen size={15} color={color} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.4 }}>
-                {h.name || h.code}
-              </div>
+              <div style={{
+                fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.4,
+                direction: /[؀-ۿ]/.test(h.name || h.code) ? "rtl" : "ltr", textAlign: "right",
+              }}>{h.name || h.code}</div>
               <div style={{ fontSize: 11, color: t.dim, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <span style={{
                   fontWeight: 800, fontFeatureSettings: '"tnum"',
                   direction: /[؀-ۿ]/.test(h.code) ? "rtl" : "ltr",
                 }}>{h.code}</span>
+                {/* The Arabic name too, exactly as the plan tiles carry it —
+                    someone who searched in Arabic should see the words they
+                    typed on the result they get back. */}
+                {titleArOf(h.code) && <span>· {titleArOf(h.code)}</span>}
                 {/* Where it sits — their own plan when it is in it, and how many
                     other programmes share it, since a course like ISLM101 is
                     the same course in all twelve. */}
@@ -4994,8 +5011,99 @@ function CourseSearchGroup({ query, plans, myProgram, onCourse, onClose, t, colo
 const TRACK_TO_TREE = { "تحضيري": "preparatory", "تخصص": "bachelor", "دبلوم": "diploma", "دراسات عليا": "graduate" };
 const PLAN_TO_SUB = { "خطة أ": "a", "خطة ب": "b" };
 
+/**
+ * Confirm the course before the assistant or the quiz starts.
+ *
+ * Both used to begin the moment the panel opened, on whatever course happened
+ * to be selected — usually «عام». A student then asked about their midterm and
+ * got a general answer, or worse, started a quiz on the wrong course and only
+ * found out at the first question. The quiz especially cannot be steered once
+ * running, so the one moment to get the course right is before it.
+ *
+ * It also puts the way out of your own plan here, where the choice is being
+ * made, instead of as a grey line in the header nobody reads.
+ */
+function AIStartGate({ t, mode, subject, canWiden, onWiden, onStart }) {
+  const quiz = mode === "quiz";
+  const name = titleOf(subject);
+  const general = subject === "عام";
+  return (
+    <div style={{ height: "100%", overflowY: "auto", padding: "22px 18px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <div style={{ maxWidth: 460, margin: "0 auto", width: "100%" }}>
+        <div style={{
+          width: 54, height: 54, borderRadius: 17, margin: "0 auto 14px",
+          background: quiz ? `${P.gold}18` : `${P.blue2}18`,
+          border: `1px solid ${quiz ? P.gold : P.blue2}35`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          {quiz ? <FileQuestion size={25} color={P.gold} /> : <Sparkles size={25} color={P.blue2} />}
+        </div>
+        <div style={{ fontSize: 17, fontWeight: 900, color: t.tx, textAlign: "center", marginBottom: 6 }}>
+          {quiz ? "قبل أن يبدأ الاختبار" : "قبل أن تبدأ"}
+        </div>
+        <div style={{ fontSize: 13, color: t.mu, textAlign: "center", lineHeight: 1.8, marginBottom: 16 }}>
+          {quiz
+            ? "الأسئلة تُبنى على المادة المحددة أدناه، ولا يمكن تغييرها بعد أن يبدأ الاختبار."
+            : "المساعد سيجيبك في نطاق المادة المحددة أدناه."}
+        </div>
+
+        <div style={{
+          background: t.s1, border: `1.5px solid ${general ? t.bd : (quiz ? P.gold : P.blue2) + "45"}`,
+          borderRadius: 16, padding: "14px 16px", marginBottom: 12,
+        }}>
+          <div style={{ fontSize: 11.5, color: t.dim, fontWeight: 700, marginBottom: 5 }}>
+            {quiz ? "ستختبر في" : "ستسأل عن"}
+          </div>
+          <div style={{
+            fontSize: 15, fontWeight: 900, color: t.tx, lineHeight: 1.45,
+            direction: /[؀-ۿ]/.test(name || subject) ? "rtl" : "ltr", textAlign: "right",
+          }}>{name || subject}</div>
+          {name && name !== subject && (
+            <div style={{
+              fontSize: 12, color: t.mu, marginTop: 3, fontFeatureSettings: '"tnum"',
+              direction: /[؀-ۿ]/.test(subject) ? "rtl" : "ltr", textAlign: "right",
+            }}>{subject}</div>
+          )}
+          {general && (
+            <div style={{ fontSize: 12, color: t.mu, marginTop: 6, lineHeight: 1.7 }}>
+              {quiz
+                ? "اختبار عام عن الجامعة — اختر مادة من الأعلى إن أردت اختباراً فيها."
+                : "أسئلة عامة عن الجامعة — اختر مادة من الأعلى إن أردت سؤالاً فيها."}
+            </div>
+          )}
+        </div>
+
+        {canWiden && (
+          <button onClick={onWiden} style={{
+            width: "100%", background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 13,
+            padding: "11px 14px", cursor: "pointer", fontFamily: "inherit",
+            fontSize: 12.5, fontWeight: 700, color: t.mu, marginBottom: 10,
+          }}>
+            تسأل عن مادة خارج خطتك؟ اعرض كل المواد
+          </button>
+        )}
+
+        <button onClick={onStart} style={{
+          width: "100%", border: "none", borderRadius: 14, padding: "14px 16px",
+          cursor: "pointer", fontFamily: "inherit", fontSize: 14.5, fontWeight: 900, color: "#fff",
+          background: quiz
+            ? `linear-gradient(135deg,${P.gold},#e0bf5e)`
+            : `linear-gradient(135deg,${P.navy},${P.blue2})`,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+        }}>
+          {quiz ? <><FileQuestion size={16} /> أكّد وابدأ الاختبار</> : <><Sparkles size={16} /> أكّد وابدأ</>}
+        </button>
+        <div style={{ fontSize: 11.5, color: t.dim, textAlign: "center", marginTop: 9, lineHeight: 1.7 }}>
+          تغيير المادة من الأعلى في أي وقت يعيدك إلى هذه الشاشة.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CourseTile({ code, count = 0, color, t, onClick }) {
   const name = titleOf(code);
+  const nameAr = titleArOf(code);
   // Two programmes carry Arabic codes (علم٤٠٢). Forcing LTR on those puts the
   // digits on the wrong side of the letters.
   const ltr = !/[؀-ۿ]/.test(code);
@@ -5008,16 +5116,20 @@ function CourseTile({ code, count = 0, color, t, onClick }) {
       onMouseEnter={e => e.currentTarget.style.borderColor = color + "70"}
       onMouseLeave={e => e.currentTarget.style.borderColor = t.bd}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.4 }}>
-          {name || code}
+        {/* English leads — it is what Blackboard, the exam header and every
+            message between students calls the course. The Arabic name sits
+            under it where a plan printed both, so nobody who knows the course
+            only in Arabic loses it. */}
+        <div style={{
+          fontSize: 13, fontWeight: 800, color: t.tx, lineHeight: 1.4,
+          direction: /[؀-ۿ]/.test(name || code) ? "rtl" : "ltr", textAlign: "right",
+        }}>{name || code}</div>
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: t.dim, marginTop: 2,
+          fontFeatureSettings: '"tnum"', direction: ltr ? "ltr" : "rtl", textAlign: "right",
+        }}>
+          {code}{nameAr ? ` · ${nameAr}` : ""}
         </div>
-        {name && (
-          <div style={{
-            fontSize: 11, fontWeight: 700, color: t.dim, marginTop: 2,
-            fontFeatureSettings: '"tnum"', direction: ltr ? "ltr" : "rtl",
-            textAlign: "right",
-          }}>{code}</div>
-        )}
       </div>
       {count > 0 && (
         <span style={{
@@ -6372,13 +6484,6 @@ function ProfilePage({ t, favorites, profile, setProfile, setActiveTab, onToast,
               <Edit3 size={16} color={P.green} /> تعديل ملفي
             </button>
           )}
-          <button onClick={openSettings} style={{
-            flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-            background: t.s1, border: `1.5px solid ${t.bd}`, borderRadius: 14, padding: "13px 10px",
-            cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: t.tx,
-          }}>
-            <Settings size={16} color={P.blue2} /> الإعدادات
-          </button>
           <button onClick={() => onMessages?.()} style={{
             flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
             background: t.s1, border: `1.5px solid ${msgUnread > 0 ? `${P.gold}55` : t.bd}`,
@@ -7313,8 +7418,8 @@ function detectPlatform(url) {
 // Default Links-page content. Admin edits override this via site_content.
 const DEFAULT_LINKS = {
   header: {
-    title: "روابط الجامعة السعودية الإلكترونية",
-    subtitle: "Saudi Electronic University — SEU",
+    title: "التواصل والدعم",
+    subtitle: "الجامعة · القروبات · الدعم الفني",
     note: "جميع الروابط تفتح الموقع الرسمي — تأكد من تسجيل دخولك بالحساب الجامعي",
   },
   quick: { phone: "011-2613500", hours: "8 ص – 8 م", days: "الأحد – الخميس" },
@@ -7335,6 +7440,12 @@ const DEFAULT_LINKS = {
       { label: "الرسوم الدراسية والدفع", desc: "سداد الرسوم وعرض الكشوف", url: "https://erpgate.seu.edu.sa", icon: "CreditCard", color: "#059669" },
       { label: "خدمات وحدة التسجيل", desc: "إضافة/حذف/اعتراض على المقررات", url: "https://www.seu.edu.sa/aasa/ar/registeration/", icon: "FileText", color: "#c8a84b" },
       { label: "الكلية التطبيقية", desc: "بوابة طلاب الكلية التطبيقية", url: "https://ac.seu.edu.sa/ar/login", icon: "Award", color: "#92400e" },
+    ]},
+    // Somewhere for the owner to put the student groups. Seeded with the one
+    // that exists today; the rest are added from the panel's links editor,
+    // because only the owner knows which groups are real.
+    { group: "قروبات وروابط الطلاب", color: P.gold, items: [
+      { label: "بوت مقررات الجامعة", desc: "التجميعات والملخصات على تلجرام", url: "https://t.me/SEU_coursesbot", icon: "MessageCircle", color: "#0891b2" },
     ]},
     { group: "الدعم والتواصل", color: "#be123c", items: [
       { label: "مركز الدعم الفني", desc: "هاتف: 011-2613500", url: "tel:0112613500", icon: "Phone", color: "#be123c" },
@@ -7362,7 +7473,7 @@ function safeText(v, fallback = "") {
   return fallback;
 }
 
-function SEULinksPage({ t, content }) {
+function SEULinksPage({ t, content, onSupport = null }) {
   const C = (content && typeof content === "object") ? content : DEFAULT_LINKS;
   const rawHeader = (C.header && typeof C.header === "object") ? C.header : DEFAULT_LINKS.header;
   const rawQuick = (C.quick && typeof C.quick === "object") ? C.quick : DEFAULT_LINKS.quick;
@@ -7430,13 +7541,41 @@ function SEULinksPage({ t, content }) {
         </div>
       </div>
 
-      {/* Quick access numbers */}
+      {/* Our own support, first and unmissable.
+          The phone number below is the UNIVERSITY's support line — it always
+          was, and labelling it «الدعم الفني» made the platform's own support
+          look like it did not exist. This is the one that reaches us, and the
+          reply lands in «رسائلي». */}
+      {onSupport && (
+        <button onClick={onSupport} style={{
+          width: "100%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`,
+          border: "none", borderRadius: 16, padding: "14px 16px", cursor: "pointer",
+          fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12,
+          marginBottom: 16, textAlign: "right",
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, background: "rgba(255,255,255,.15)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            <MessageCircle size={19} color={P.gold} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: "#fff" }}>الدعم الفني — راسلنا</div>
+            <div style={{ fontSize: 11.5, color: "rgba(255,255,255,.72)", marginTop: 2, lineHeight: 1.5 }}>
+              مشكلة في الموقع أو سؤال عن خدمة؟ اكتب لنا ويصلك الرد في «رسائلي»
+            </div>
+          </div>
+          <ChevronLeft size={17} color="rgba(255,255,255,.6)" />
+        </button>
+      )}
+
+      {/* The university's own contact numbers */}
       <div style={{
         background: t.s1, borderRadius: 16, padding: 14, marginBottom: 16,
         border: `1px solid ${t.bd}`, display: "flex", gap: 10,
       }}>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>الدعم الفني</div>
+          <div style={{ fontSize: 12, color: t.mu, marginBottom: 2 }}>دعم الجامعة</div>
           <div style={{ fontSize: 16, fontWeight: 900, color: P.blue2, direction: "ltr" }}>{quick.phone}</div>
         </div>
         <div style={{ width: 1, background: t.bd }} />
@@ -7926,6 +8065,10 @@ export default function App() {
     return { mine, rest: ALL_COURSES.filter(c => !mine.includes(c)) };
   }, [profile]);
   const [aiGlobalTab, setAiGlobalTab] = useState("chat");
+  // Has the student confirmed WHAT they are about to do? Reset whenever the
+  // course or the mode changes, because the confirmation was about that pair —
+  // and above all before a quiz, which cannot be steered once it starts.
+  const [aiConfirmed, setAiConfirmed] = useState(false);
   const [aiClearKey, setAiClearKey] = useState(0);
   const clearGlobalAI = () => {
     const histKey = `aiHistory_${aiSubject.replace(/\s+/g, "_").slice(0, 40)}`;
@@ -7953,6 +8096,12 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAI, setShowAI] = useState(false);
+  // Re-arm the confirmation whenever what is being confirmed changes, and each
+  // time the panel is opened. Declared here, below `showAI`: as a dependency it
+  // is read when the effect is created, and sitting above the `useState` that
+  // defines it put it in the temporal dead zone — which took the whole app down
+  // on load, not just the assistant.
+  useEffect(() => { setAiConfirmed(false); }, [aiSubject, aiGlobalTab, showAI]);
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark, brandPreset);
   const toasts = useToasts();
@@ -8223,7 +8372,11 @@ export default function App() {
     // it belongs. The row is tightened below so eight fit without clipping
     // instead. المفضلة stays in حسابي: it is also on the profile's own
     // مفضلتي tile, so it was never one tap away from nothing.
-    { id: "links", Icon: Link2, label: "روابط" },
+    // Was «روابط». A list of URLs is what the tab held, not what a student
+    // came for: they open it to reach someone — the university, the group, or
+    // us. Naming it for the errand rather than the file type, and putting the
+    // support channel at the top of it.
+    { id: "links", Icon: MessageCircle, label: "تواصل" },
   ];
 
   return (
@@ -8348,7 +8501,7 @@ export default function App() {
 
         {tab === "fav" && <FavoritesPage favorites={favorites} onCourse={openCourse} toggleFav={toggleFav} t={t} />}
 
-        {tab === "links" && <SEULinksPage t={t} content={linksContent} />}
+        {tab === "links" && <SEULinksPage t={t} content={linksContent} onSupport={() => setSupportOpen(true)} />}
 
         {tab === "calendar" && <CalendarPage t={t} profile={profile} />}
 
@@ -8512,7 +8665,7 @@ export default function App() {
               <div style={{ flex: 1, position: "relative" }}>
                 <select
                   value={aiSubject}
-                  onChange={e => { setAiSubject(e.target.value); setAiGlobalTab("chat"); }}
+                  onChange={e => setAiSubject(e.target.value)}
                   style={{
                     width: "100%", appearance: "none", WebkitAppearance: "none",
                     background: "rgba(255,255,255,.14)", color: "#fff",
@@ -8577,7 +8730,14 @@ export default function App() {
           </div>
           {/* Content fills remaining space */}
           <div style={{ flex: 1, overflow: "hidden" }}>
-            {aiGlobalTab === "chat"
+            {!aiConfirmed ? (
+              <AIStartGate
+                t={t} mode={aiGlobalTab} subject={aiSubject}
+                canWiden={aiSubjectGroups.mine.length > 0 && !aiAllSubjects}
+                onWiden={() => setAiAllSubjects(true)}
+                onStart={() => setAiConfirmed(true)}
+              />
+            ) : aiGlobalTab === "chat"
               ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} onToast={toasts.push}
                   profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
                   email={aiEmail} onSaveEmail={setAiEmail} />
