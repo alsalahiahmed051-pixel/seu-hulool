@@ -72,7 +72,11 @@ const FILE_COURSES = COURSE_GROUPS
 // Mirrors the server's cap and its accepted types, so the picker offers
 // exactly what /api/upload will issue a token for.
 const MAX_UPLOAD = 200 * 1024 * 1024
-const ACCEPT_EXT = '.pdf,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.zip'
+// Everything the indexer can read, plus the images and archives that are
+// upload-only. The picker used to stop at Office and images, so a lecturer's
+// .txt or a page saved from Blackboard could not be uploaded at all — even
+// though those are the easiest of the lot for the assistant to read.
+const ACCEPT_EXT = '.pdf,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.rtf,.html,.htm,.png,.jpg,.jpeg,.webp,.zip'
 
 // Retired ids resolve through shelfOf, so a file stored as «تجميعات الميد»
 // still reads as the shelf it is shown on today rather than as a bare id.
@@ -376,6 +380,10 @@ function OverviewTab({ flash }) {
 function IndexPanel({ flash }) {
   const [state, setState] = useState(null)
   const [running, setRunning] = useState(false)
+  // Live count while a long run is in flight. A library of two hundred files
+  // takes many rounds, and a button that only says «جارٍ الفهرسة…» for four
+  // minutes is indistinguishable from one that has hung.
+  const [progress, setProgress] = useState(null)
 
   const load = useCallback(async () => {
     const { ok, data } = await apiJSON('/api/admin/index-files')
@@ -383,23 +391,68 @@ function IndexPanel({ flash }) {
   }, [])
   useEffect(() => { load() }, [load])
 
+  /**
+   * Drive the library to fully indexed, one batch at a time.
+   *
+   * The server deliberately returns before the platform's time limit rather
+   * than being killed by it, so a large library takes many rounds — this is
+   * what makes them. Two things it must survive: a round that fails
+   * transiently (a cold start, a blob read that timed out), which is retried
+   * once rather than abandoning everything already done; and a round that
+   * makes no progress, which is stopped instead of looped on forever.
+   */
   const run = async (redo = false) => {
     setRunning(true)
+    setProgress(null)
+    let done = 0
+    let failedTotal = 0
+    let lastRemaining = Infinity
+    let stalls = 0
     let guard = 0
-    // Bounded: a bug that never drains `remaining` must not loop forever.
-    while (guard++ < 60) {
-      const { ok, data } = await apiJSON('/api/admin/index-files', {
+
+    while (guard++ < 300) {
+      const { ok, status, data } = await apiJSON('/api/admin/index-files', {
         method: 'POST', body: JSON.stringify({ batch: 4, redo }),
       })
-      if (!ok) { flash(data.error || 'تعذّرت الفهرسة', 'error'); break }
+
+      if (!ok) {
+        // One retry, then say what actually happened. «تعذّرت الفهرسة» on its
+        // own left the owner with nothing to act on; the status says whether
+        // this is a session that expired, a limit, or the server giving up.
+        const again = await apiJSON('/api/admin/index-files', {
+          method: 'POST', body: JSON.stringify({ batch: 1, redo }),
+        })
+        if (!again.ok) {
+          const why = again.data.error || data.error
+            || (status === 401 || status === 403 ? 'انتهت جلسة الدخول — سجّل الدخول مرة أخرى'
+              : status === 504 || status === 408 ? 'الملف استغرق وقتاً أطول من المسموح — أعد المحاولة وسيُكمل من حيث توقّف'
+                : `تعذّرت الفهرسة (رمز ${again.status || status})`)
+          flash(done ? `فُهرس ${done} ملفاً ثم توقّف: ${why}` : why, 'error')
+          break
+        }
+        Object.assign(data, again.data)
+      }
+
+      done += data.ok || 0
+      failedTotal += (data.failed || []).length
+      setProgress({ done, failed: failedTotal, remaining: data.remaining || 0 })
       await load()
+
       if (!data.remaining) {
-        flash(`تمّت فهرسة ${data.ok} ملفاً${data.failed.length ? ` · تعذّر ${data.failed.length}` : ''}`,
-          data.failed.length ? 'error' : 'success')
+        flash(`تمّت فهرسة ${done} ملفاً${failedTotal ? ` · تعذّر ${failedTotal}` : ''}`,
+          failedTotal ? 'error' : 'success')
         break
       }
+      // No movement two rounds running means the queue is stuck on something
+      // the server keeps handing back; stop and show it rather than spin.
+      if (data.remaining >= lastRemaining) {
+        if (++stalls >= 2) { flash(`توقّف التقدّم عند ${data.remaining} ملفاً — راجع قائمة المتعذّر أدناه`, 'error'); break }
+      } else stalls = 0
+      lastRemaining = data.remaining
     }
+
     setRunning(false)
+    setProgress(null)
     load()
   }
 
@@ -411,18 +464,24 @@ function IndexPanel({ flash }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--tx)' }}>ما يستطيع المساعد قراءته</div>
         <div style={{ fontSize: 11.5, color: 'var(--mu)', flex: 1 }}>
-          {indexed} من {total} ملفاً مفهرس{pending ? ` · ${pending} بانتظار الفهرسة` : ''}
+          {progress
+            ? `فُهرس ${progress.done}${progress.failed ? ` · تعذّر ${progress.failed}` : ''} · بقي ${progress.remaining}`
+            : `${indexed} من ${total} ملفاً مفهرس${pending ? ` · ${pending} بانتظار الفهرسة` : ''}`}
         </div>
         {(pending > 0 || failed.length > 0) && (
           <button onClick={() => run(pending === 0)} disabled={running} style={{
             background: running ? 'var(--bg)' : P.blue2, color: running ? 'var(--mu)' : '#fff',
             border: 'none', borderRadius: 9, padding: '7px 13px',
             cursor: running ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
-          }}>{running ? 'جارٍ الفهرسة…' : pending > 0 ? `افهرس ${pending}` : 'أعد محاولة المتعذّر'}</button>
+          }}>{running ? 'جارٍ الفهرسة…' : pending > 0 ? `افهرس ${pending}` : `أعد محاولة ${failed.length} متعذّراً`}</button>
         )}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginBottom: failed.length ? 8 : 0 }}>
         المساعد يجيب من نصّ الملفات المفهرسة. الملف غير المفهرس يبقى متاحاً للتحميل، لكن المساعد لا يراه.
+        <div style={{ color: 'var(--dim)', marginTop: 3 }}>
+          يُفهرس: PDF · Word · PowerPoint · Excel · صفحات وملفات نصّية — بصيغها الحديثة والقديمة.
+          الصور والملفات الممسوحة ضوئياً لا نصّ فيها تُقرأ منه.
+        </div>
       </div>
       {failed.length > 0 && (
         <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px' }}>
