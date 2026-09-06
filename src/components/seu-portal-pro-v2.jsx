@@ -454,10 +454,13 @@ const SECTIONS = [
   { id: "programs", Icon: Award, label: "البرامج والتخصصات", color: "#b45309", desc: "نظرة عامة وشروط القبول والرسوم" },
   { id: "flashcards", Icon: Hash, label: "بطاقات تعليمية", color: "#0891b2", desc: "أنشئ بطاقات سؤال وجواب للمراجعة" },
   { id: "notes", Icon: PenLine, label: "ملاحظاتي الشخصية", color: "#6d28d9", desc: "اكتب ملاحظاتك الخاصة عن هذه المادة" },
-  { id: "support", Icon: Phone, label: "الدعم الفني", color: "#be123c", desc: "تواصل معنا وروابط الدعم الرسمية" },
+  // «الدعم الفني» used to sit here, at the bottom of every course and every
+  // programme. It is not about the course, it holds no files, and it already
+  // has its own place in «تواصل» — a drawer repeated on three hundred pages
+  // is not easier to find, it is just three hundred drawers.
 ];
 // Which sections hold uploaded files (the rest are tools or contact info).
-const FILE_SECTIONS = SECTIONS.filter(s => !["flashcards", "notes", "support"].includes(s.id)).map(s => s.id);
+const FILE_SECTIONS = SECTIONS.filter(s => !["flashcards", "notes"].includes(s.id)).map(s => s.id);
 // A single course gets the study shelf; a programme gets what is written about
 // the programme. Showing both to both would put "شروط القبول" on STAT101 and
 // "تجميعات" on a programme that does not sit an exam.
@@ -4468,7 +4471,19 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
     ? COURSE_SECTION_IDS
     : PROGRAM_SECTION_IDS.filter(id => id !== "programs" || isProgramme(subject));
   const sections = SECTIONS
-    .filter(sec => shelf.includes(sec.id) || !FILE_SECTIONS.includes(sec.id));
+    .filter(sec => shelf.includes(sec.id) || !FILE_SECTIONS.includes(sec.id))
+    // On a PROGRAMME page, show only the document shelves that hold something.
+    //
+    // A course's empty shelf is informative — «السلايدات · فارغ» tells the
+    // student what belongs there and that it is coming. A programme's three
+    // administrative drawers are not a promise of anything, and opening
+    // إدارة أعمال onto «الخطط الدراسية» and «البرامج والتخصصات», both empty,
+    // is a page about nothing. The plan is where that tap goes now; this page
+    // is for the documents, so it shows the documents there are.
+    .filter(sec => isCourseCode(subject) || !FILE_SECTIONS.includes(sec.id)
+      || realLoading || (realFiles[sec.id] || []).length > 0);
+  const programHasNoFiles = !isCourseCode(subject) && !realLoading &&
+    shelf.every(id => (realFiles[id] || []).length === 0);
 
   // Your own cards for this subject, counted for the header badge. Read after
   // mount, never during render — reading storage while rendering is what made
@@ -4553,6 +4568,19 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
 
       <GradeCalc subject={subject} t={t} />
 
+      {programHasNoFiles && (
+        <div style={{
+          background: t.s1, border: `1px dashed ${t.bd}`, borderRadius: 16,
+          padding: "22px 16px", marginBottom: 10, textAlign: "center",
+          fontSize: 12.5, color: t.mu, lineHeight: 1.8,
+        }}>
+          لم تُرفع مستندات هذا البرنامج بعد.
+          <div style={{ fontSize: 11.5, color: t.dim, marginTop: 4 }}>
+            الخطة الدراسية معروضة كاملة في صفحة البرنامج.
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {sections.map((sec) => {
           const isOpen = open === sec.id;
@@ -4607,29 +4635,6 @@ function CoursePage({ subject, onBack, favorites, toggleFav, notes, setNotes, t,
                   {sec.id === "ai" && <AISection subject={subject} t={t} onChat={onChat} files={realFiles} onToast={onToast} />}
                   {sec.id === "notes" && <NotesEditor subject={subject} notes={notes} setNotes={setNotes} t={t} onToast={onToast} />}
                   {sec.id === "flashcards" && <FlashCards subject={subject} t={t} />}
-                  {sec.id === "support" && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {[
-                        { Icon: Phone, label: "الهاتف الموحد", val: "011-2613500", color: "#059669", href: "tel:0112613500" },
-                        { Icon: MessageCircle, label: "Blackboard", val: "lms.seu.edu.sa", color: P.blue2, href: "https://lms.seu.edu.sa" },
-                        { Icon: Globe, label: "البوابة الأكاديمية", val: "erpgate.seu.edu.sa", color: P.purple, href: "https://erpgate.seu.edu.sa" },
-                      ].map((item, i) => (
-                        <a key={i} href={item.href} target="_blank" rel="noopener noreferrer" style={{
-                          display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-                          background: t.s2, borderRadius: 12, border: `1px solid ${t.bd}`, cursor: "pointer",
-                          textDecoration: "none",
-                        }}>
-                          <div style={{ width: 36, height: 36, borderRadius: 10, background: `${item.color}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <item.Icon size={16} color={item.color} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: t.tx }}>{item.label}</div>
-                            <div style={{ fontSize: 13, color: item.color }}>{item.val}</div>
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  )}
                   {FILE_SECTIONS.includes(sec.id) && (() => {
                     const all = realFiles[sec.id] || [];
                     const fq = (fileFilter[sec.id] || "").toLowerCase();
@@ -5679,7 +5684,7 @@ function LevelChips({ plan, value, onPick, color, t }) {
   );
 }
 
-function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setProfile = null }) {
+function ExplorePage({ onCourse, onProgram = null, t, profile, plans = null, fileCounts = {}, setProfile = null }) {
   /**
    * The plan the admin has published wins over the one compiled into the app.
    * The constant is the seed and the offline fallback — the database is the
@@ -5848,7 +5853,7 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
             const Icon = TREE[path].icon;
             const colors = ["#1d4ed8", "#6d28d9", "#065f46", "#be123c", "#b45309", "#0369a1", "#92400e", "#047857", "#7c3aed"];
             return (
-              <button key={i} onClick={() => onCourse(p)} style={{
+              <button key={i} onClick={() => onProgram?.(p, colors[i % colors.length], TREE[path].label)} style={{
                 background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14, padding: "14px 16px",
                 cursor: "pointer", textAlign: "right", display: "flex", alignItems: "center", gap: 12,
                 fontFamily: "inherit", transition: "all .2s",
@@ -5984,7 +5989,12 @@ function ExplorePage({ onCourse, t, profile, plans = null, fileCounts = {}, setP
                 {shown.map((p, i) => {
                   const PIcon = getIcon(p);
                   return (
-                    <button key={i} onClick={() => onCourse(p)} style={{
+                    // Opens the programme's PLAN, the same screen «البرامج»
+                    // shows. It used to open a course page for the programme
+                    // name — three drawers about the programme, all of them
+                    // empty on a site with no programme documents uploaded, so
+                    // browsing a college ended on a page of nothing.
+                    <button key={i} onClick={() => onProgram?.(p, col.color, col.label)} style={{
                       background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 16, padding: "18px 14px",
                       cursor: "pointer", textAlign: "right", transition: "all .22s", fontFamily: "inherit",
                     }}
@@ -9193,7 +9203,9 @@ export default function App() {
           schedule={schedule} tasks={tasks} setTasks={setTasks} onToast={toasts.push}
           exams={exams} setExams={setExams} profile={profile} />}
 
-        {tab === "explore" && !course && <ExplorePage onCourse={openCourse} t={t} profile={profile} plans={programPlans} fileCounts={fileCounts} setProfile={setProfile} />}
+        {tab === "explore" && !course && <ExplorePage onCourse={openCourse}
+          onProgram={(name, color, college) => { setOpenProgram({ name, color, college }); setTab("programs"); }}
+          t={t} profile={profile} plans={programPlans} fileCounts={fileCounts} setProfile={setProfile} />}
         {tab === "services" && !course && <ServicesPage t={t} dark={dark} />}
         {tab === "tasks" && !course && <TasksHub
           t={t} tasks={tasks} setTasks={setTasks} exams={exams} setExams={setExams}

@@ -5,6 +5,7 @@ import { QUIZ_SOURCES, resolveSource, clampQuestions } from '@/lib/quiz-options'
 import { isSubscribed } from '@/lib/ai-usage'
 import { ownerKey } from '@/lib/ai-points'
 import { modelScore } from '@/lib/model-rank'
+import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -26,11 +27,27 @@ function quizTokens(count) {
   return Math.min(8192, Math.max(1024, 400 + (Number(count) || 5) * 140))
 }
 
-function buildQuizSystem(subject) {
-  return `أنت مساعد اختبارات لطلاب الجامعة السعودية الإلكترونية (SEU).
+function buildQuizSystem(subject, grounding) {
+  let sys = `أنت مساعد اختبارات لطلاب الجامعة السعودية الإلكترونية (SEU).
 ${quizScope(subject)}
 
 أعد JSON فقط بهذا الشكل: [{"q":"السؤال","options":["أ","ب","ج","د"],"answer":0}]. لا تكتب أي نص خارج JSON.`
+
+  // «التجميعات المرفقة» used to be a SENTENCE in the prompt — «اعتمد على
+  // التجميعات والملخصات المرفقة» — with nothing attached. The model was told
+  // to build questions from material it had never been given, so it invented
+  // material and then questions about it. These are the actual files.
+  if (grounding && grounding.context) {
+    sys += `
+
+── مقاطع من ملفات هذه المادة ──
+${grounding.context}
+── نهاية المقاطع ──
+
+ابنِ الأسئلة من هذه المقاطع. المقاطع مستخرجة آلياً وقد تحتوي تشويهاً — تجاهل المشوّه ولا تبنِ عليه سؤالاً.
+لا تسأل عمّا ليس في المقاطع إن طُلب منك الاعتماد عليها.`
+  }
+  return sys
 }
 
 /** What we ask for — the general assistant must not produce trivia. */
@@ -49,13 +66,13 @@ function parseQuiz(text) {
   return null
 }
 
-async function callAnthropic(subject, count, source) {
+async function callAnthropic(subject, count, source, grounding) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: quizTokens(count),
-    system: buildQuizSystem(subject),
+    system: buildQuizSystem(subject, grounding),
     messages: [{ role: 'user', content: quizAsk(subject, count, source) }],
   })
   return parseQuiz(res.content[0]?.text || '')
@@ -78,10 +95,10 @@ async function getFreeModels() {
   } catch { return [] }
 }
 
-async function callOpenRouter(subject, count, source) {
+async function callOpenRouter(subject, count, source, grounding) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models')
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of freeModels.slice(0, 5)) {
     try {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -98,9 +115,9 @@ async function callOpenRouter(subject, count, source) {
   throw new Error('OpenRouter all failed')
 }
 
-async function callGroq(subject, count, source) {
+async function callGroq(subject, count, source, grounding) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of models) {
     try {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -117,10 +134,10 @@ async function callGroq(subject, count, source) {
   throw new Error('all Groq models failed')
 }
 
-async function callGemini(subject, count, source) {
+async function callGemini(subject, count, source, grounding) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
   const body = {
-    system_instruction: { parts: [{ text: buildQuizSystem(subject) }] },
+    system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
     generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
   }
@@ -213,17 +230,39 @@ export async function POST(request) {
     }
   }
 
+  /**
+   * The course's own files, for the sources that promise them.
+   *
+   * «التجميعات المرفقة» and «التلخيص» name uploaded material by definition, so
+   * when the course has none the honest answer is to say so — not to generate
+   * questions out of nothing and label them as coming from the collections.
+   */
+  const wantsFiles = source === 'collections' || source === 'summary'
+  let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
+  try {
+    grounding = await contextFor(subject, QUIZ_SOURCES[source]?.ask || subject, { maxChars: 8000 })
+  } catch { /* fall through ungrounded */ }
+
+  if (wantsFiles && !grounding.context) {
+    return replyWith({
+      error: grounding.hasFiles
+        ? 'ملفات هذه المادة مرفوعة لكن لم يُستخرج منها نصّ قابل للقراءة بعد — جرّب «المقرر الدراسي» أو «عشوائي من كل شيء».'
+        : 'لا توجد ملفات مرفوعة لهذه المادة بعد، فلا يمكن بناء اختبار منها — جرّب «المقرر الدراسي» أو «عشوائي من كل شيء».',
+      need: 'files',
+    }, 409)
+  }
+
   // Providers FREE FIRST — paid Anthropic only when this visitor still has
   // paid allowance left today, and only a successful paid reply spends it.
   const providers = []
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source) })
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
-    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source) })
+    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding) })
 
   const reply = (bodyObj, status = 200) => {
     const res = Response.json(bodyObj, { status })

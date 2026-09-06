@@ -332,14 +332,13 @@ function OverviewTab({ flash }) {
 
   if (loading) return <Loader />
 
+  // «المواد» and «الكليات» used to be here, counted from two legacy tables the
+  // site stopped reading long ago — numbers about something that is not this
+  // platform. The catalogue's real coverage is the panel above instead.
   const cards = [
     { label: 'المستخدمون', value: stats?.users, Icon: Users, color: P.blue2 },
     { label: 'مسجّلون هذا الأسبوع', value: stats?.newUsers, Icon: TrendingUp, color: P.green },
     { label: 'المسؤولون', value: stats?.admins, Icon: Shield, color: P.gold },
-    { label: 'المواد', value: stats?.courses, Icon: BookOpen, color: P.purple },
-    { label: 'المواد الفعّالة', value: stats?.activeCourses, Icon: CheckCircle, color: P.green },
-    { label: 'الكليات', value: stats?.colleges, Icon: Building2, color: P.blue2 },
-    { label: 'جلسات المذاكرة', value: stats?.sessions, Icon: Activity, color: P.orange },
     { label: 'رسائل المساعد', value: stats?.chatMessages, Icon: Bell, color: P.blue },
     { label: 'المفضلات', value: stats?.favorites, Icon: TrendingUp, color: P.red },
   ]
@@ -347,6 +346,8 @@ function OverviewTab({ flash }) {
   return (
     <div>
       <SectionHeader title="نظرة عامة على المنصة" onRefresh={load} />
+      <CoveragePanel flash={flash} />
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--tx)', margin: '22px 0 10px' }}>الاستخدام</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12 }}>
         {cards.map(({ label, value, Icon, color }) => (
           <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--bd)', borderRadius: 14, padding: '16px 14px', textAlign: 'center' }}>
@@ -356,6 +357,225 @@ function OverviewTab({ flash }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Making the uploaded files readable by the assistant.
+ *
+ * Extraction happens on upload, so this exists for two cases: files uploaded
+ * before the feature existed, and files whose first attempt failed. It runs in
+ * batches because parsing a PDF takes seconds and a whole library will not fit
+ * in one request — the button keeps going until nothing is pending.
+ *
+ * The failures are listed with their reason, not hidden. A scanned PDF has no
+ * text layer and never will; the owner needs to know that about a specific
+ * file rather than wonder why the assistant ignores it.
+ */
+function IndexPanel({ flash }) {
+  const [state, setState] = useState(null)
+  const [running, setRunning] = useState(false)
+
+  const load = useCallback(async () => {
+    const { ok, data } = await apiJSON('/api/admin/index-files')
+    if (ok) setState(data)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const run = async (redo = false) => {
+    setRunning(true)
+    let guard = 0
+    // Bounded: a bug that never drains `remaining` must not loop forever.
+    while (guard++ < 60) {
+      const { ok, data } = await apiJSON('/api/admin/index-files', {
+        method: 'POST', body: JSON.stringify({ batch: 4, redo }),
+      })
+      if (!ok) { flash(data.error || 'تعذّرت الفهرسة', 'error'); break }
+      await load()
+      if (!data.remaining) {
+        flash(`تمّت فهرسة ${data.ok} ملفاً${data.failed.length ? ` · تعذّر ${data.failed.length}` : ''}`,
+          data.failed.length ? 'error' : 'success')
+        break
+      }
+    }
+    setRunning(false)
+    load()
+  }
+
+  if (!state || !state.blobEnabled) return null
+  const { total, indexed, pending, failed } = state
+
+  return (
+    <div style={{ marginTop: 16, borderTop: '1px solid var(--bd)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--tx)' }}>ما يستطيع المساعد قراءته</div>
+        <div style={{ fontSize: 11.5, color: 'var(--mu)', flex: 1 }}>
+          {indexed} من {total} ملفاً مفهرس{pending ? ` · ${pending} بانتظار الفهرسة` : ''}
+        </div>
+        {(pending > 0 || failed.length > 0) && (
+          <button onClick={() => run(pending === 0)} disabled={running} style={{
+            background: running ? 'var(--bg)' : P.blue2, color: running ? 'var(--mu)' : '#fff',
+            border: 'none', borderRadius: 9, padding: '7px 13px',
+            cursor: running ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+          }}>{running ? 'جارٍ الفهرسة…' : pending > 0 ? `افهرس ${pending}` : 'أعد محاولة المتعذّر'}</button>
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginBottom: failed.length ? 8 : 0 }}>
+        المساعد يجيب من نصّ الملفات المفهرسة. الملف غير المفهرس يبقى متاحاً للتحميل، لكن المساعد لا يراه.
+      </div>
+      {failed.length > 0 && (
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: P.orange, marginBottom: 6 }}>
+            تعذّرت فهرستها ({failed.length})
+          </div>
+          {failed.map((f, i) => (
+            <div key={i} style={{ fontSize: 11, color: 'var(--mu)', lineHeight: 1.8 }}>
+              <span style={{ color: 'var(--tx)', fontWeight: 700 }}>{f.name}</span>
+              {f.course ? ` · ${f.course}` : ''} — {f.reason}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * How much of the library exists, and where the holes are.
+ *
+ * The panel could tell the owner how many people had signed up but not whether
+ * a single course had a file on it — so the one question that decides whether
+ * the platform is usable ("what do I upload next?") had no answer anywhere in
+ * it. This is that answer: the real total, the real coverage, and the
+ * programmes furthest behind, worst first, with the actual course codes to
+ * start from.
+ */
+function CoveragePanel({ flash }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [openProgram, setOpenProgram] = useState(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { ok, data } = await apiJSON('/api/admin/coverage')
+    if (ok) setData(data)
+    else flash(data.error || 'تعذّر حساب التغطية', 'error')
+    setLoading(false)
+  }, [flash])
+  useEffect(() => { load() }, [load])
+
+  if (loading) return <Loader />
+  if (!data) return null
+
+  // Defaulted field by field. A response that is missing a key — a partial
+  // body, an older deploy, a proxy that rewrote it — used to throw on
+  // `totals.courses` and take the whole overview down with it, so one bad
+  // reply hid the users, the messages and everything else too.
+  const totals = data.totals || {}
+  const programs = Array.isArray(data.programs) ? data.programs : []
+  const perShelf = Array.isArray(data.perShelf) ? data.perShelf : []
+  const offCatalogue = Array.isArray(data.offCatalogue) ? data.offCatalogue : []
+  const pct = totals.courses ? Math.round(((totals.covered || 0) / totals.courses) * 100) : 0
+  const bar = (v, max, color) => (
+    <div style={{ height: 6, borderRadius: 4, background: 'var(--bd)', overflow: 'hidden' }}>
+      <div style={{ width: `${max ? Math.round((v / max) * 100) : 0}%`, height: '100%', background: color, transition: 'width .3s' }} />
+    </div>
+  )
+
+  return (
+    <div style={{ background: 'var(--card)', border: '1px solid var(--bd)', borderRadius: 16, padding: 18, marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
+        <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--tx)' }}>تغطية المكتبة</div>
+        <div style={{ fontSize: 12, color: 'var(--mu)' }}>
+          {totals.covered} من {totals.courses} مقرراً فيها ملفات · {totals.files} ملفاً
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <div style={{ flex: 1 }}>{bar(totals.covered, totals.courses, pct === 0 ? P.red : pct < 50 ? P.orange : P.green)}</div>
+        <div style={{ fontSize: 16, fontWeight: 900, color: pct === 0 ? P.red : pct < 50 ? P.orange : P.green, minWidth: 44, textAlign: 'left' }}>{pct}%</div>
+      </div>
+
+      {!data.blobEnabled && (
+        <div style={{ background: `${P.red}12`, border: `1px solid ${P.red}40`, borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--mu)', marginBottom: 12 }}>
+          التخزين غير مُعدّ (<code>BLOB_READ_WRITE_TOKEN</code>) — لا يمكن رفع ملفات ولا قراءة المرفوع.
+        </div>
+      )}
+      {data.blobEnabled && !data.indexReadable && (
+        <div style={{ background: `${P.red}12`, border: `1px solid ${P.red}40`, borderRadius: 10, padding: '10px 12px', fontSize: 12, color: 'var(--mu)', marginBottom: 12 }}>
+          تعذّرت قراءة فهرس الملفات — الأرقام أدناه قد تكون ناقصة.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        {perShelf.map(sh => (
+          <span key={sh.id} style={{
+            fontSize: 11.5, fontWeight: 700, borderRadius: 8, padding: '4px 10px',
+            background: sh.files ? `${P.green}15` : 'var(--bg)',
+            color: sh.files ? P.green : 'var(--mu)', border: '1px solid var(--bd)',
+          }}>{sh.label} · {sh.files}</span>
+        ))}
+      </div>
+
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--tx)', marginBottom: 8 }}>
+        الأبعد عن الاكتمال أولاً
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {programs.slice(0, openProgram === '__all__' ? programs.length : 6).map(pr => {
+          const p = pr.courses ? Math.round((pr.covered / pr.courses) * 100) : 0
+          const open = openProgram === pr.program
+          return (
+            <div key={pr.program} style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px' }}>
+              <button onClick={() => setOpenProgram(open ? null : pr.program)} style={{
+                width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                fontFamily: 'inherit', textAlign: 'right', display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: 'var(--tx)' }}>{pr.program}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--mu)', fontFeatureSettings: '"tnum"' }}>{pr.covered}/{pr.courses}</span>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: p === 0 ? P.red : p < 50 ? P.orange : P.green, minWidth: 34, textAlign: 'left' }}>{p}%</span>
+              </button>
+              <div style={{ marginTop: 7 }}>{bar(pr.covered, pr.courses, p === 0 ? P.red : p < 50 ? P.orange : P.green)}</div>
+              {open && pr.missing.length > 0 && (
+                <div style={{ marginTop: 9, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: 'var(--mu)', width: '100%' }}>ابدأ بهذه:</span>
+                  {pr.missing.map(c => (
+                    <span key={c} style={{ fontSize: 11, fontWeight: 700, color: 'var(--mu)', background: 'var(--card)', border: '1px solid var(--bd)', borderRadius: 7, padding: '3px 8px', fontFeatureSettings: '"tnum"' }}>{c}</span>
+                  ))}
+                </div>
+              )}
+              {open && pr.missing.length === 0 && (
+                <div style={{ marginTop: 8, fontSize: 11.5, color: P.green }}>كل مقررات هذه الخطة فيها ملفات ✓</div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {programs.length > 6 && (
+        <button onClick={() => setOpenProgram(openProgram === '__all__' ? null : '__all__')} style={{
+          background: 'none', border: 'none', padding: '10px 2px 0', cursor: 'pointer',
+          fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: 'var(--mu)',
+        }}>{openProgram === '__all__' ? 'إخفاء البقية' : `عرض كل البرامج (${programs.length})`}</button>
+      )}
+
+      <IndexPanel flash={flash} />
+
+      {offCatalogue.length > 0 && (
+        <div style={{ marginTop: 16, borderTop: '1px solid var(--bd)', paddingTop: 12 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--tx)', marginBottom: 6 }}>
+            ملفات خارج خطط المقررات
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--mu)', marginBottom: 8, lineHeight: 1.7 }}>
+            مرفوعة تحت اسم ليس رمز مقرر — مستندات برنامج غالباً، وقد تكون اسماً قديماً لم يعد يُطابق شيئاً.
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {offCatalogue.map(o => (
+              <span key={o.name} style={{ fontSize: 11, fontWeight: 700, color: 'var(--mu)', background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 7, padding: '3px 8px' }}>
+                {o.name} · {o.files}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
