@@ -6,8 +6,19 @@ import { claimTrial } from '@/lib/ai-trial'
 import { BROWSE_TRIAL_AI } from '@/lib/auth-config'
 import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
+import { modelScore } from '@/lib/model-rank'
 
 export const runtime = 'nodejs'
+
+/**
+ * Room for a complete answer.
+ *
+ * It was 1024, which an explanation with worked steps runs past — and a reply
+ * that stops mid-sentence reads to a student as the assistant breaking, not as
+ * a limit being reached. Doubling it costs nothing on the free providers and a
+ * fraction of a cent on the paid one.
+ */
+const MAX_ANSWER_TOKENS = 2048
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
@@ -19,7 +30,7 @@ async function callAnthropic(subject, messages, fileContext) {
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
+    max_tokens: MAX_ANSWER_TOKENS,
     system: buildSystem(subject, fileContext),
     messages,
   })
@@ -28,7 +39,7 @@ async function callAnthropic(subject, messages, fileContext) {
   return text
 }
 
-/** Every free model OpenRouter is currently serving, with its metadata. */
+/** Every free model OpenRouter is currently serving, best-first. */
 async function getFreeModelList() {
   try {
     const r = await fetch('https://openrouter.ai/api/v1/models', {
@@ -41,7 +52,7 @@ async function getFreeModelList() {
         const p = m.pricing?.prompt
         return p === '0' || p === 0 || p === '0.0' || Number(p) === 0
       })
-      .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
+      .sort((a, b) => modelScore(b) - modelScore(a))
   } catch {
     return []
   }
@@ -107,7 +118,7 @@ async function callOpenRouterVision(subject, messages, fileContext, image) {
             ...history,
             withImage,
           ],
-          max_tokens: 1024,
+          max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
       const data = await r.json()
@@ -138,7 +149,7 @@ async function callOpenRouter(subject, messages, fileContext) {
           models: freeModels.slice(0, 3),
           route: 'fallback',
           messages: [{ role: 'system', content: buildSystem(subject, fileContext) }, ...messages],
-          max_tokens: 1024,
+          max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
       const data = await r.json()
@@ -162,7 +173,7 @@ async function callOpenRouter(subject, messages, fileContext) {
         body: JSON.stringify({
           model,
           messages: [{ role: 'system', content: buildSystem(subject, fileContext) }, ...messages],
-          max_tokens: 1024,
+          max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
       const data = await r.json()
@@ -191,7 +202,7 @@ async function callGroq(subject, messages, fileContext) {
             { role: 'system', content: buildSystem(subject, fileContext) },
             ...messages,
           ],
-          max_tokens: 1024,
+          max_tokens: MAX_ANSWER_TOKENS,
           temperature: 0.7,
         }),
       })
@@ -256,7 +267,10 @@ function buildSystem(subject, fileContext) {
 قواعد:
 - أجب دائماً باللغة العربية الفصيحة البسيطة
 - كن موجزاً ودقيقاً ومفيداً
-- استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة`
+- استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة
+- إن كان السؤال عن معلومة خاصة بهذا المقرر لا تعرفها — موعد اختبار، رقم فصل في الكتاب، توزيع الدرجات، اسم المحاضر — قل إنك لا تعرفها ووجّه الطالب إلى البلاكبورد أو الدعم، ولا تخمّنها
+- إذا كان السؤال ناقصاً أو يحتمل أكثر من معنى، اسأل سؤالاً توضيحياً واحداً قبل الإجابة
+- أنهِ إجابتك عند نقطة مكتملة؛ لا تبدأ قسماً لا تستطيع إتمامه`
   if (fileContext) {
     sys += `\n\n${fileContext}
 عند الإجابة: استند إلى هذه الملفات عند الإمكان، وأشر إلى اسم الملف المصدر.

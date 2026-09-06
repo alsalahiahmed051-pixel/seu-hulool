@@ -4,6 +4,7 @@ import { quizScope, isGeneral, resolveSubject } from '@/lib/ai-scope'
 import { QUIZ_SOURCES, resolveSource, clampQuestions } from '@/lib/quiz-options'
 import { isSubscribed } from '@/lib/ai-usage'
 import { ownerKey } from '@/lib/ai-points'
+import { modelScore } from '@/lib/model-rank'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -12,6 +13,18 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
+
+/**
+ * Room for `count` questions.
+ *
+ * It was a flat 1024 for every request. A thirty-question quiz in Arabic needs
+ * roughly three times that, so the JSON stopped mid-array, `parseQuiz` could
+ * not read it, and the student got a failed or short quiz — with nothing on
+ * screen saying why. The budget follows the size of what was asked for.
+ */
+function quizTokens(count) {
+  return Math.min(8192, Math.max(1024, 400 + (Number(count) || 5) * 140))
+}
 
 function buildQuizSystem(subject) {
   return `أنت مساعد اختبارات لطلاب الجامعة السعودية الإلكترونية (SEU).
@@ -41,7 +54,7 @@ async function callAnthropic(subject, count, source) {
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
+    max_tokens: quizTokens(count),
     system: buildQuizSystem(subject),
     messages: [{ role: 'user', content: quizAsk(subject, count, source) }],
   })
@@ -57,7 +70,10 @@ async function getFreeModels() {
     const data = await r.json()
     return (data.data || [])
       .filter(m => { const p = m.pricing?.prompt; return p === '0' || p === 0 || p === '0.0' || Number(p) === 0 })
-      .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
+      // Capability, not context length — see modelScore. Writing valid Arabic
+      // quiz JSON is exactly the task a small or specialist model fails at,
+      // and this list was ordered by the one property unrelated to it.
+      .sort((a, b) => modelScore(b) - modelScore(a))
       .map(m => m.id).slice(0, 8)
   } catch { return [] }
 }
@@ -71,7 +87,7 @@ async function callOpenRouter(subject, count, source) {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENROUTER_KEY}`, 'HTTP-Referer': 'https://seu-hulool.vercel.app', 'X-Title': 'SEU Hulool' },
-        body: JSON.stringify({ model, messages: msgs, max_tokens: 1024 }),
+        body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count) }),
       })
       const data = await r.json()
       if (!r.ok) continue
@@ -90,7 +106,7 @@ async function callGroq(subject, count, source) {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model, messages: msgs, max_tokens: 1024, temperature: 0.7 }),
+        body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count), temperature: 0.7 }),
       })
       const data = await r.json()
       if (!r.ok) continue
@@ -106,7 +122,7 @@ async function callGemini(subject, count, source) {
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
-    generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+    generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
   }
   const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const data = await r.json()

@@ -8,7 +8,7 @@
  * scoped here, in one place, rather than drifting apart in two route files.
  */
 
-import { ALL_COURSE_NAMES, canonicalCourse } from '@/lib/courses'
+import { ALL_COURSE_NAMES, canonicalCourse, isCourseCode, titleOf, titleArOf, programsOf } from '@/lib/courses'
 
 export const GENERAL = 'عام'
 
@@ -22,12 +22,41 @@ export const isGeneral = (subject) => String(subject || '').trim() === GENERAL
  * typed became "تخصصك مادة X" and steered the assistant wherever they liked.
  * Anything that is not a real course in the catalogue is treated as the
  * general assistant, which is still university-scoped.
+ *
+ * Course CODES count, not only programme names. When the assistant's picker
+ * started offering a student their own level's courses, every one of them —
+ * ACCT101, STAT101, CS230 — failed this check and was silently downgraded to
+ * "عام": the confirm screen promised an answer about a specific course and the
+ * server answered as the general assistant, which does not know which course
+ * it is talking about. That is the "يخبص في الإجابات" the owner reported.
  */
 export function resolveSubject(subject) {
   const s = String(subject || '').trim()
   if (!s || isGeneral(s)) return GENERAL
   const c = canonicalCourse(s)
+  if (isCourseCode(c)) return c
   return ALL_COURSE_NAMES.includes(c) ? c : GENERAL
+}
+
+/**
+ * How a subject reads to the model.
+ *
+ * "تخصصك مادة ACCT101" tells a model almost nothing — a code is a filing key,
+ * not a subject, and an answer built on it is a guess. The name is what makes
+ * the answer right, so a code is expanded to everything the catalogue knows:
+ * the English name, the Arabic one, and which programmes teach it.
+ */
+export function describeSubject(subject) {
+  const s = String(subject || '').trim()
+  if (!isCourseCode(s)) return s
+  const en = titleOf(s)
+  const ar = titleArOf(s)
+  // titleOf returns English where a plan printed one and Arabic otherwise, so
+  // `ar` is only non-empty when it adds a second name.
+  const names = [en, ar].filter(Boolean).join(' — ')
+  const progs = (programsOf(s) || []).slice(0, 3)
+  const where = progs.length ? `، تُدرَّس ضمن خطة ${progs.join(' و')}` : ''
+  return names ? `${s} (${names})${where}` : s
 }
 
 /** The university this site serves — the fixed frame around every answer. */
@@ -47,7 +76,7 @@ const IN_SCOPE = `- مواد الجامعة ومحتواها الدراسي وش
 export function scopeRules(subject) {
   if (!isGeneral(subject)) {
     return `أنت مساعد أكاديمي لطلاب ${UNIVERSITY}
-تخصصك مادة "${subject}". اجعل كل إجابة متصلة بالمادة أو بالدراسة في الجامعة.
+تخصصك مادة "${describeSubject(subject)}". اجعل كل إجابة متصلة بالمادة أو بالدراسة في الجامعة.
 إذا سُئلت عن شيء خارج الدراسة الجامعية، اعتذر بلطف في سطر واحد واقترح سؤالاً دراسياً بديلاً، ولا تجب عن الموضوع الخارجي.`
   }
   return `أنت المساعد العام لطلاب ${UNIVERSITY}
@@ -61,7 +90,7 @@ ${IN_SCOPE}
 /** How a quiz should be framed — the same boundary, for generated questions. */
 export function quizScope(subject) {
   if (!isGeneral(subject)) {
-    return `أسئلة من محتوى مادة "${subject}" في ${UNIVERSITY}`
+    return `أسئلة من محتوى مادة "${describeSubject(subject)}" في ${UNIVERSITY}`
   }
   return `أسئلة عامة لطلاب ${UNIVERSITY} من داخل نطاق الدراسة الجامعية فقط:
 ${IN_SCOPE}
