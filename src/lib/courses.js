@@ -674,6 +674,21 @@ const ALL_CODES = new Set(
 export const isCourseCode = (name) => ALL_CODES.has(String(name || '').trim());
 
 /**
+ * Which programmes teach this course.
+ *
+ * A shared code (STAT101, ISLM101) sits in several plans, and which ones is
+ * real context: it is what tells the assistant that ACCT101 is an accounting
+ * course rather than guessing from four letters and a number.
+ */
+export const programsOf = (code) => {
+  const c = String(code || '').trim();
+  if (!c) return [];
+  return Object.entries(PROGRAM_LEVELS)
+    .filter(([, levels]) => Object.values(levels).some(list => list.includes(c)))
+    .map(([program]) => program);
+};
+
+/**
  * What a course's library is divided into — four shelves, in the order a
  * student reaches for them through a term.
  *
