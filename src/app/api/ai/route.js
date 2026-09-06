@@ -7,6 +7,7 @@ import { BROWSE_TRIAL_AI } from '@/lib/auth-config'
 import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
+import { contextFor } from '@/lib/retrieval'
 
 export const runtime = 'nodejs'
 
@@ -31,7 +32,7 @@ async function callAnthropic(subject, messages, fileContext) {
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: MAX_ANSWER_TOKENS,
-    system: buildSystem(subject, fileContext),
+    system: buildSystem(subject, grounding),
     messages,
   })
   const text = res.content[0]?.text
@@ -114,7 +115,7 @@ async function callOpenRouterVision(subject, messages, fileContext, image) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject, fileContext) },
+            { role: 'system', content: buildSystem(subject, grounding) },
             ...history,
             withImage,
           ],
@@ -148,7 +149,7 @@ async function callOpenRouter(subject, messages, fileContext) {
         body: JSON.stringify({
           models: freeModels.slice(0, 3),
           route: 'fallback',
-          messages: [{ role: 'system', content: buildSystem(subject, fileContext) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, grounding) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
@@ -172,7 +173,7 @@ async function callOpenRouter(subject, messages, fileContext) {
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'system', content: buildSystem(subject, fileContext) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, grounding) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
@@ -199,7 +200,7 @@ async function callGroq(subject, messages, fileContext) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject, fileContext) },
+            { role: 'system', content: buildSystem(subject, grounding) },
             ...messages,
           ],
           max_tokens: MAX_ANSWER_TOKENS,
@@ -242,7 +243,7 @@ async function callGemini(subject, messages, fileContext, image) {
     ? [{ text: lastMsg }, { inline_data: img }]
     : [{ text: lastMsg }]
   const body = {
-    system_instruction: { parts: [{ text: buildSystem(subject, fileContext) }] },
+    system_instruction: { parts: [{ text: buildSystem(subject, grounding) }] },
     contents: [...history, { role: 'user', parts: lastParts }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
@@ -258,7 +259,7 @@ async function callGemini(subject, messages, fileContext, image) {
   return text
 }
 
-function buildSystem(subject, fileContext) {
+function buildSystem(subject, grounding) {
   // The boundary lives in one place, shared with the quiz route: "عام" is a
   // university-wide assistant, not a general-purpose one.
   let sys = `${scopeRules(subject)}
@@ -271,10 +272,23 @@ function buildSystem(subject, fileContext) {
 - إن كان السؤال عن معلومة خاصة بهذا المقرر لا تعرفها — موعد اختبار، رقم فصل في الكتاب، توزيع الدرجات، اسم المحاضر — قل إنك لا تعرفها ووجّه الطالب إلى البلاكبورد أو الدعم، ولا تخمّنها
 - إذا كان السؤال ناقصاً أو يحتمل أكثر من معنى، اسأل سؤالاً توضيحياً واحداً قبل الإجابة
 - أنهِ إجابتك عند نقطة مكتملة؛ لا تبدأ قسماً لا تستطيع إتمامه`
-  if (fileContext) {
-    sys += `\n\n${fileContext}
-عند الإجابة: استند إلى هذه الملفات عند الإمكان، وأشر إلى اسم الملف المصدر.
-إذا سأل الطالب عن ملف معين، اشرح محتواه أو وجّهه لتحميله.`
+  // The passages themselves, when the course has readable files. Placed after
+  // the rules so the model reads them as evidence to answer FROM, and told
+  // plainly what to do when they do not cover the question — a model that
+  // must not say "the files do not cover this" will always invent something
+  // that sounds like they did.
+  if (grounding && grounding.context) {
+    sys += `
+
+── مقاطع من ملفات هذه المادة المرفوعة في المنصّة ──
+${grounding.context}
+── نهاية المقاطع ──
+
+قواعد استخدام المقاطع:
+- أجب من هذه المقاطع أولاً، وأشر إلى اسم الملف الذي أخذت منه.
+- المقاطع مستخرجة آلياً من ملفات PDF وقد تحتوي أخطاء أو كلمات مشوّهة — افهم المعنى ولا تنقل التشويه.
+- إن لم تكفِ المقاطع للإجابة، قل ذلك صراحةً ثم أجب من معرفتك العامة بالمادة، ووضّح أن هذا الجزء ليس من الملفات.
+- لا تنسب إلى الملفات ما ليس فيها.`
   }
   return sys
 }
@@ -312,6 +326,19 @@ export async function POST(request) {
   if (fileContext && (typeof fileContext !== 'string' || fileContext.length > 8000)) {
     return Response.json({ error: 'سياق الملف غير صحيح' }, { status: 400 })
   }
+
+  /**
+   * What the course's own files say about this question.
+   *
+   * Looked up HERE, on the server, from the real library — not taken from the
+   * client. The old `fileContext` was assembled in the browser out of file
+   * NAMES (plus, for `.txt` files only, 600 characters), and a body field the
+   * caller controls is also a free hand into the system prompt. The client's
+   * copy is ignored now; this is the grounding.
+   */
+  const lastAsk = [...messages].reverse().find(m => m.role === 'user')?.content || ''
+  let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
+  try { grounding = await contextFor(subject, lastAsk) } catch { /* answer ungrounded rather than fail */ }
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)
@@ -506,6 +533,9 @@ export async function POST(request) {
           // The server's own count, so the trial bar shows what was really
           // spent rather than a number the page kept for itself.
           ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
+          // Which of the course's files this answer was grounded in, so the
+          // student can see the answer came from their material and open it.
+          ...(grounding.sources.length ? { sources: grounding.sources } : {}),
         })
       }
     } catch (err) {

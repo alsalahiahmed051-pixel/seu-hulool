@@ -362,6 +362,86 @@ function OverviewTab({ flash }) {
 }
 
 /**
+ * Making the uploaded files readable by the assistant.
+ *
+ * Extraction happens on upload, so this exists for two cases: files uploaded
+ * before the feature existed, and files whose first attempt failed. It runs in
+ * batches because parsing a PDF takes seconds and a whole library will not fit
+ * in one request — the button keeps going until nothing is pending.
+ *
+ * The failures are listed with their reason, not hidden. A scanned PDF has no
+ * text layer and never will; the owner needs to know that about a specific
+ * file rather than wonder why the assistant ignores it.
+ */
+function IndexPanel({ flash }) {
+  const [state, setState] = useState(null)
+  const [running, setRunning] = useState(false)
+
+  const load = useCallback(async () => {
+    const { ok, data } = await apiJSON('/api/admin/index-files')
+    if (ok) setState(data)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const run = async (redo = false) => {
+    setRunning(true)
+    let guard = 0
+    // Bounded: a bug that never drains `remaining` must not loop forever.
+    while (guard++ < 60) {
+      const { ok, data } = await apiJSON('/api/admin/index-files', {
+        method: 'POST', body: JSON.stringify({ batch: 4, redo }),
+      })
+      if (!ok) { flash(data.error || 'تعذّرت الفهرسة', 'error'); break }
+      await load()
+      if (!data.remaining) {
+        flash(`تمّت فهرسة ${data.ok} ملفاً${data.failed.length ? ` · تعذّر ${data.failed.length}` : ''}`,
+          data.failed.length ? 'error' : 'success')
+        break
+      }
+    }
+    setRunning(false)
+    load()
+  }
+
+  if (!state || !state.blobEnabled) return null
+  const { total, indexed, pending, failed } = state
+
+  return (
+    <div style={{ marginTop: 16, borderTop: '1px solid var(--bd)', paddingTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--tx)' }}>ما يستطيع المساعد قراءته</div>
+        <div style={{ fontSize: 11.5, color: 'var(--mu)', flex: 1 }}>
+          {indexed} من {total} ملفاً مفهرس{pending ? ` · ${pending} بانتظار الفهرسة` : ''}
+        </div>
+        {(pending > 0 || failed.length > 0) && (
+          <button onClick={() => run(pending === 0)} disabled={running} style={{
+            background: running ? 'var(--bg)' : P.blue2, color: running ? 'var(--mu)' : '#fff',
+            border: 'none', borderRadius: 9, padding: '7px 13px',
+            cursor: running ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+          }}>{running ? 'جارٍ الفهرسة…' : pending > 0 ? `افهرس ${pending}` : 'أعد محاولة المتعذّر'}</button>
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.7, marginBottom: failed.length ? 8 : 0 }}>
+        المساعد يجيب من نصّ الملفات المفهرسة. الملف غير المفهرس يبقى متاحاً للتحميل، لكن المساعد لا يراه.
+      </div>
+      {failed.length > 0 && (
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 10, padding: '9px 11px' }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: P.orange, marginBottom: 6 }}>
+            تعذّرت فهرستها ({failed.length})
+          </div>
+          {failed.map((f, i) => (
+            <div key={i} style={{ fontSize: 11, color: 'var(--mu)', lineHeight: 1.8 }}>
+              <span style={{ color: 'var(--tx)', fontWeight: 700 }}>{f.name}</span>
+              {f.course ? ` · ${f.course}` : ''} — {f.reason}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
  * How much of the library exists, and where the holes are.
  *
  * The panel could tell the owner how many people had signed up but not whether
@@ -476,6 +556,8 @@ function CoveragePanel({ flash }) {
           fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: 'var(--mu)',
         }}>{openProgram === '__all__' ? 'إخفاء البقية' : `عرض كل البرامج (${programs.length})`}</button>
       )}
+
+      <IndexPanel flash={flash} />
 
       {offCatalogue.length > 0 && (
         <div style={{ marginTop: 16, borderTop: '1px solid var(--bd)', paddingTop: 12 }}>

@@ -1,4 +1,5 @@
 import { del } from '@vercel/blob'
+import { indexFile, removeText } from '@/lib/file-index'
 import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
 import { courseMatches, canonicalCourse, ALL_CATEGORY_IDS } from '@/lib/courses'
@@ -111,6 +112,21 @@ export async function POST(request) {
     return Response.json({ error: 'تعذّر حفظ بيانات الملف: ' + err.message }, { status: 500 })
   }
 
+  // Make it searchable right away. Awaited rather than fired and forgotten:
+  // a serverless function that returns is frozen, so a background promise here
+  // would simply never finish. Its failure must not fail the upload, though —
+  // the file is stored and visible either way, and the panel can retry the
+  // indexing on its own.
+  try {
+    const out = await indexFile(record)
+    const all2 = await readMeta()
+    await writeMeta(all2.map(f => f.id === record.id
+      ? { ...f, indexed: out.ok, indexedChars: out.chars || 0, indexedAt: new Date().toISOString(),
+          ...(out.ok ? {} : { indexError: out.reason || 'تعذّرت الفهرسة' }) }
+      : f))
+    record.indexed = out.ok
+  } catch { /* the upload stands; «فهرسة الملفات» in the panel will pick it up */ }
+
   return Response.json({ ok: true, file: record })
 }
 
@@ -133,5 +149,9 @@ export async function DELETE(request) {
   await writeMeta(all.filter(f => f.id !== id))
 
   try { if (blobUrl) await del(blobUrl) } catch { /* index is already updated */ }
+  // And its extracted text, or the assistant would keep quoting a file that
+  // no longer exists — the worst kind of wrong answer, because the student
+  // cannot open the source to check it.
+  try { await removeText(id) } catch { /* an orphaned text blob is harmless */ }
   return Response.json({ ok: true })
 }
