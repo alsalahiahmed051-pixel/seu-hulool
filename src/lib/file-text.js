@@ -98,7 +98,199 @@ export const MIN_READABLE = 0.35
 /** Below this many characters there is nothing to ground an answer in. */
 export const MIN_CHARS = 200
 
-export const SUPPORTED = /\.(pdf|pptx|txt|md|csv)$/i
+/**
+ * Everything the indexer will attempt.
+ *
+ * The owner's library is not a pile of PDFs — it is whatever a lecturer
+ * happened to send: a Word summary, an Excel plan, a deck, a page saved from
+ * Blackboard. Refusing all of those with «نوع الملف غير مدعوم» made the
+ * assistant blind to most of what was actually uploaded, so every one of them
+ * is read here.
+ *
+ * The legacy binary formats (.doc/.ppt/.xls, pre-2007) are attempted too, on a
+ * best-effort basis — see `legacyOfficeText`. They either come out readable and
+ * pass the quality gate below, or they are refused with a reason. What they
+ * never do any more is get rejected unread.
+ */
+export const SUPPORTED = /\.(pdf|pptx|docx|xlsx|doc|ppt|xls|txt|md|csv|json|html?|rtf)$/i
+
+/** Formats there is no point attempting, each with the reason why. */
+const HOPELESS = [
+  [/\.(png|jpe?g|gif|webp|heic|bmp|tiff?)$/i, 'صورة — لا نصّ فيها تُقرأ منه (تحتاج OCR)'],
+  [/\.(zip|rar|7z|tar|gz)$/i, 'ملف مضغوط — افتحه وارفع ما بداخله'],
+  [/\.(mp4|mp3|wav|mov|avi|m4a)$/i, 'ملف صوت أو فيديو — لا نصّ فيه'],
+]
+
+/** Decode the five XML entities. Enough for text content we never re-emit. */
+const unentity = (s) => s
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&amp;/g, '&')
+
+/** Every `<tag>…</tag>` run's text content, in document order. */
+const tagText = (xml, tag) =>
+  (xml.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'g')) || [])
+    .map(m => unentity(m.replace(/<[^>]+>/g, '')))
+
+/** Unzip an OOXML package once, decoded lazily part by part. */
+async function openOoxml(buffer) {
+  const { unzipSync } = await import('fflate')
+  const zip = unzipSync(new Uint8Array(buffer))
+  const dec = new TextDecoder('utf-8')
+  return {
+    names: Object.keys(zip),
+    part: (name) => (zip[name] ? dec.decode(zip[name]) : ''),
+  }
+}
+
+/**
+ * The text of a Word document.
+ *
+ * `.docx` is the same shape as `.pptx`: a ZIP of XML. The body lives in
+ * `word/document.xml`, and paragraph structure is worth keeping — a plan or a
+ * question list flattened into one line retrieves badly, because a chunk then
+ * spans three unrelated questions.
+ *
+ * Footnotes and endnotes are appended: in university material they routinely
+ * carry the reference the question is actually about.
+ */
+async function docxText(buffer) {
+  const { names, part } = await openOoxml(buffer)
+  const body = part('word/document.xml')
+  if (!body) return ''
+
+  // Paragraph by paragraph, so line structure survives. A table cell ends up
+  // as its own line, which reads correctly in a plan table.
+  const paragraphs = (xml) => xml.split(/<\/w:p>/)
+    .map(p => tagText(
+      // Tabs and manual breaks are structure, not markup, and are the only
+      // thing separating a course code from its name in many of these tables.
+      p.replace(/<w:tab\s*\/>/g, ' \t ').replace(/<w:br\s*\/>/g, '\n'),
+      'w:t',
+    ).join(''))
+    .map(s => s.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+
+  const out = paragraphs(body)
+  for (const n of ['word/footnotes.xml', 'word/endnotes.xml']) {
+    if (!names.includes(n)) continue
+    const extra = paragraphs(part(n)).filter(s => s.length > 1)
+    if (extra.length) out.push('', '[الحواشي]', ...extra)
+  }
+  return out.join('\n')
+}
+
+/**
+ * The text of an Excel workbook, sheet by sheet.
+ *
+ * Study plans and grade sheets arrive as spreadsheets more often than as
+ * prose. Cells are joined with « | » so a row stays one retrievable line: a
+ * row is the unit of meaning in a plan table, and splitting it across chunks
+ * would separate a course code from its credit hours.
+ *
+ * Most cells hold an INDEX into `xl/sharedStrings.xml`, not the words
+ * themselves — reading the sheets alone returns a grid of integers.
+ */
+async function xlsxText(buffer) {
+  const { names, part } = await openOoxml(buffer)
+  // <si> is one shared string; it may be split across several <t> runs when
+  // part of it is styled differently, so the runs of one entry are joined.
+  const shared = (part('xl/sharedStrings.xml').match(/<si>[\s\S]*?<\/si>/g) || [])
+    .map(si => tagText(si, 't').join(''))
+
+  // The sheet's own name is worth carrying: «المستوى الثالث» over a table of
+  // codes tells the model what it is looking at.
+  const sheetNames = [...part('xl/workbook.xml').matchAll(/<sheet[^>]*name="([^"]*)"/g)]
+    .map(m => unentity(m[1]))
+
+  const sheets = names.filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
+    .sort((a, b) => Number(a.match(/(\d+)/)[1]) - Number(b.match(/(\d+)/)[1]))
+
+  const out = []
+  sheets.forEach((name, i) => {
+    const rows = (part(name).match(/<row[\s\S]*?<\/row>/g) || []).map(row => {
+      const cells = (row.match(/<c[\s\S]*?(?:\/>|<\/c>)/g) || []).map(c => {
+        const v = (c.match(/<v>([\s\S]*?)<\/v>/) || [])[1]
+        if (/t="s"/.test(c)) return shared[Number(v)] ?? ''
+        if (/t="inlineStr"/.test(c)) return tagText(c, 't').join('')
+        return v ? unentity(v) : ''
+      })
+      return cells.filter(x => String(x).trim()).join(' | ')
+    }).filter(Boolean)
+    if (!rows.length) return
+    out.push(`— ورقة: ${sheetNames[i] || i + 1} —`, ...rows)
+  })
+  return out.join('\n')
+}
+
+/** A page saved from Blackboard or the web: drop the markup, keep the words. */
+function htmlText(raw) {
+  return unentity(
+    raw
+      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<\/(p|div|tr|li|h[1-6]|br)\s*>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  )
+}
+
+/**
+ * Rich text: strip the control words, keep the characters.
+ *
+ * Arabic in RTF is escaped as `\uNNNN` decimal code points followed by a
+ * fallback character, so the fallback has to be dropped or every letter comes
+ * out doubled.
+ */
+function rtfText(raw) {
+  return raw
+    .replace(/\\'([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\u(-?\d+)\s?\??/g, (_, d) => {
+      const n = Number(d)
+      return String.fromCharCode(n < 0 ? n + 65536 : n)
+    })
+    .replace(/\{\\\*[\s\S]*?\}/g, ' ')      // ignorable destinations
+    .replace(/\\par[d]?\b/g, '\n')
+    .replace(/\\[a-z]+-?\d*\s?/gi, ' ')     // every other control word
+    .replace(/[{}]/g, ' ')
+}
+
+/**
+ * Legacy binary Office (.doc / .ppt / .xls), best effort.
+ *
+ * These pre-2007 formats are OLE compound files: a filesystem-in-a-file with
+ * its own allocation tables, and parsing one properly is a library, not a
+ * function. But the text inside is stored as plain UTF-16LE runs, so the words
+ * can be recovered even when the structure cannot — and recovered words are
+ * exactly what the assistant needs; the formatting is irrelevant to it.
+ *
+ * This is deliberately a salvage, not a parser. It can return interleaved junk,
+ * which is precisely why the readability gate downstream exists: a salvage that
+ * comes out unreadable is REFUSED with a reason, not indexed. The alternative
+ * on the table was refusing the file unread, which helps nobody holding a .doc.
+ */
+function legacyOfficeText(buffer) {
+  const buf = Buffer.from(buffer)
+  const runs = []
+  let run = ''
+  // UTF-16LE: a readable character is a low byte with a zero (or Arabic-range)
+  // high byte. Walking pairs directly is faster and far more predictable than
+  // decoding the whole file and hunting through the result.
+  for (let i = 0; i + 1 < buf.length; i += 2) {
+    const code = buf[i] | (buf[i + 1] << 8)
+    const ch = String.fromCharCode(code)
+    const readable = /[ؠ-ي٠-٩a-zA-Z0-9 ,.:;()\-\/%،؛؟]/.test(ch)
+    if (readable) {
+      run += ch
+    } else {
+      if (run.trim().length >= 6) runs.push(run.trim())
+      run = ''
+    }
+  }
+  if (run.trim().length >= 6) runs.push(run.trim())
+  return runs.join('\n')
+}
 
 /**
  * The text of a PowerPoint deck, slide by slide.
@@ -177,12 +369,8 @@ async function pptxText(buffer) {
 export async function extractText(buffer, name = '') {
   const fail = (reason) => ({ ok: false, text: '', chars: 0, ratio: 0, reason })
 
-  if (!SUPPORTED.test(name)) {
-    // DOCX is the same shape as PPTX — a zip of XML — and would be a small
-    // addition. Until it is added, saying so is better than indexing the
-    // archive's bytes as if they were prose.
-    return fail('نوع الملف غير مدعوم للفهرسة بعد')
-  }
+  for (const [re, why] of HOPELESS) if (re.test(name)) return fail(why)
+  if (!SUPPORTED.test(name)) return fail('نوع الملف غير مدعوم للفهرسة')
 
   let raw = ''
   try {
@@ -198,6 +386,21 @@ export async function extractText(buffer, name = '') {
     } else if (/\.pptx$/i.test(name)) {
       raw = await pptxText(buffer)
       if (!raw.trim()) return fail('لا يوجد نص في الشرائح — الأرجح أنها صور')
+    } else if (/\.docx$/i.test(name)) {
+      raw = await docxText(buffer)
+      if (!raw.trim()) return fail('لا يوجد نص في المستند — الأرجح أنه صور داخل ملف Word')
+    } else if (/\.xlsx$/i.test(name)) {
+      raw = await xlsxText(buffer)
+      if (!raw.trim()) return fail('الجدول فارغ من النصّ')
+    } else if (/\.(doc|ppt|xls)$/i.test(name)) {
+      raw = legacyOfficeText(buffer)
+      if (!raw.trim()) {
+        return fail('صيغة Office القديمة لم يُستخرج منها نص — احفظ الملف بصيغة حديثة (docx/pptx/xlsx)')
+      }
+    } else if (/\.html?$/i.test(name)) {
+      raw = htmlText(Buffer.from(buffer).toString('utf8'))
+    } else if (/\.rtf$/i.test(name)) {
+      raw = rtfText(Buffer.from(buffer).toString('latin1'))
     } else {
       raw = Buffer.from(buffer).toString('utf8')
     }
@@ -229,7 +432,14 @@ export async function extractText(buffer, name = '') {
 
   if (text.length < MIN_CHARS) return { ...fail('النص المستخرج قصير جداً'), chars: text.length, ratio }
   if (ratio < MIN_READABLE) {
-    return { ...fail('النص المستخرج غير مقروء — خطوط الملف لا تحمل ترميزاً'), chars: text.length, ratio }
+    // Say what would actually fix it, and that differs by format: a PDF with no
+    // ToUnicode map is unrecoverable by anyone, while a salvaged .doc just
+    // needs re-saving. «الخطوط لا تحمل ترميزاً» on a .doc sends the owner
+    // hunting for a problem that is not there.
+    const why = /\.(doc|ppt|xls)$/i.test(name)
+      ? 'صيغة Office القديمة لم تُقرأ بوضوح — افتح الملف واحفظه بصيغة حديثة (docx/pptx/xlsx) وأعد رفعه'
+      : 'النص المستخرج غير مقروء — خطوط الملف لا تحمل ترميزاً'
+    return { ...fail(why), chars: text.length, ratio }
   }
 
   return { ok: true, text, chars: text.length, ratio, reason: '' }

@@ -5451,6 +5451,87 @@ const DIR_LABEL = {
   'خطة ب': 'السنة التحضيرية — الخطة (ب)',
 };
 
+/**
+ * The programme's plan as a document — one page, every level, printable.
+ *
+ * The owner asked for the printed plan to be uploaded. This generates it
+ * instead, from the same plan the screen is already showing, and that is the
+ * better answer for a reason worth writing down: an uploaded PDF is a snapshot
+ * that goes stale the day a level changes and nobody remembers to replace it,
+ * while this is never out of date, exists for all twelve programmes at once
+ * with nothing to file, and costs no storage. A phone's print dialog turns it
+ * into a PDF the student can keep or send.
+ *
+ * Rendered on screen exactly as it prints, so what is saved is what was seen.
+ */
+function PlanSheet({ t, name, college, plan, onBack }) {
+  const total = plan.reduce((a, l) => a + (l.courses || []).length, 0)
+  const today = new Date().toLocaleDateString('ar-SA-u-nu-latn', { year: 'numeric', month: 'long', day: 'numeric' })
+  const cell = { fontSize: 11.5, padding: "7px 8px", borderTop: `1px solid ${t.bd}` }
+
+  return (
+    <div style={{ animation: "fadeUp .3s ease" }}>
+      <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <button onClick={onBack} style={{
+          background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 20, padding: "6px 12px",
+          cursor: "pointer", fontSize: 13, color: t.mu, fontFamily: "inherit",
+          display: "flex", alignItems: "center", gap: 5,
+        }}>
+          <ArrowLeft size={12} /> رجوع
+        </button>
+        <button onClick={() => window.print()} style={{
+          flex: 1, background: P.blue2, border: "none", borderRadius: 20, padding: "6px 12px",
+          cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#fff", fontFamily: "inherit",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}>
+          <Download size={13} /> طباعة أو حفظ PDF
+        </button>
+      </div>
+
+      <div className="plan-sheet" style={{
+        background: t.s1, border: `1px solid ${t.bd}`, borderRadius: 14,
+        padding: "18px 16px", marginBottom: 76,
+      }}>
+        <div style={{ borderBottom: `2px solid ${t.bd}`, paddingBottom: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 17, fontWeight: 900, color: t.tx }}>{DIR_LABEL[name] || name}</div>
+          <div style={{ fontSize: 12, color: t.mu, marginTop: 3 }}>{college}</div>
+          <div style={{ fontSize: 11, color: t.dim, marginTop: 6 }}>
+            {plan.length} مستويات · {total} مقرراً · الخطة الدراسية الكاملة
+          </div>
+        </div>
+
+        {plan.map(({ label: lvl, courses: codes }) => (
+          <div key={lvl} className="lvl" style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: t.tx, marginBottom: 4 }}>{lvl}</div>
+            <div>
+              <div style={{ display: "grid", gridTemplateColumns: "82px 1fr", gap: 6 }}>
+                <div style={{ ...cell, borderTop: "none", fontWeight: 800, color: t.dim, fontSize: 10.5 }}>الرمز</div>
+                <div style={{ ...cell, borderTop: "none", fontWeight: 800, color: t.dim, fontSize: 10.5 }}>المقرر</div>
+              </div>
+              {(codes || []).map(code => (
+                <div key={code} style={{ display: "grid", gridTemplateColumns: "82px 1fr", gap: 6 }}>
+                  <div style={{ ...cell, fontWeight: 800, color: t.mu, direction: "ltr", textAlign: "right", fontFeatureSettings: '"tnum"' }}>{code}</div>
+                  <div style={cell}>
+                    <span style={{ color: t.tx, fontWeight: 700 }}>{titleOf(code) || code}</span>
+                    {titleArOf(code) && <span style={{ color: t.dim, fontSize: 10.5 }}> — {titleArOf(code)}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <div style={{ borderTop: `1px solid ${t.bd}`, paddingTop: 8, fontSize: 10, color: t.dim, lineHeight: 1.7 }}>
+          حلول SEU · طُبعت في {today}
+          <div>
+            منصّة طلابية مستقلّة غير تابعة للجامعة. الخطة المعتمدة رسمياً هي المنشورة على البوّابة الأكاديمية.
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, onClose, open, setOpen }) {
   const colleges = [
     // The prep year first, because it is where every bachelor student starts —
@@ -5471,12 +5552,23 @@ function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, on
   // *about* it — admission terms beside a fee schedule — when what the tap
   // asks for is "show me this plan".
   const [openLevel, setOpenLevel] = useState(null);
+  // Whether the printable sheet is showing instead of the browsable plan.
+  const [printing, setPrinting] = useState(false);
 
   const pick = (name, color, college) => {
     const plan = planOf(name);
     setOpen({ name, color, college });
     setOpenLevel(plan && plan.length ? plan[0].label : null);
+    setPrinting(false);
   };
+
+  if (open && printing) {
+    const plan = planOf(open.name);
+    if (plan && plan.length) {
+      return <PlanSheet t={t} name={open.name} college={open.college} plan={plan}
+        onBack={() => setPrinting(false)} />;
+    }
+  }
 
   if (open) {
     const plan = planOf(open.name);
@@ -5502,9 +5594,42 @@ function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, on
           {plan && <span style={{ color: t.dim }}> · {levels} مستويات · {courses} مقرراً</span>}
         </div>
 
+        {/* What is written *about* the programme sits HERE, with the heading —
+            not under the whole plan, where it was six levels of scrolling away
+            and read as a footnote. The two actions are a pair: one opens the
+            programme's documents, the other prints the plan below. */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          <button onClick={() => onProgram(open.name)} style={{
+            flex: "1 1 150px", background: t.s1, border: `1px solid ${t.bd}`,
+            borderRadius: 12, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit",
+            textAlign: "right", display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <FileText size={14} color={open.color} style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: t.tx }}>ملفات البرنامج</span>
+              <span style={{ display: "block", fontSize: 10.5, color: t.dim, marginTop: 1 }}>شروط القبول والرسوم</span>
+            </span>
+            <ChevronLeft size={13} color={t.dim} />
+          </button>
+          {plan && (
+            <button onClick={() => setPrinting(true)} style={{
+              flex: "1 1 150px", background: t.s1, border: `1px solid ${t.bd}`,
+              borderRadius: 12, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit",
+              textAlign: "right", display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <Download size={14} color={open.color} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 12.5, fontWeight: 800, color: t.tx }}>الخطة المطبوعة</span>
+                <span style={{ display: "block", fontSize: 10.5, color: t.dim, marginTop: 1 }}>اطبعها أو احفظها PDF</span>
+              </span>
+              <ChevronLeft size={13} color={t.dim} />
+            </button>
+          )}
+        </div>
+
         {!plan ? (
           <div style={{
-            background: t.s1, border: `1px dashed ${t.bd}`, borderRadius: 14,
+            background: t.s1, border: `1px dashed ${t.bd}`, borderRadius: 14, marginBottom: 76,
             padding: "22px 16px", textAlign: "center", fontSize: 12.5, color: t.mu, lineHeight: 1.8,
           }}>
             خطة هذا البرنامج لم تُضف بعد.
@@ -5513,7 +5638,9 @@ function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, on
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          // marginBottom clears the floating assistant button, which sits over
+          // the last row of any page that ends flush with the tab bar.
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 76 }}>
             {plan.map(({ label: lvl, courses: codes }) => {
               const on = shownLevel === lvl;
               const withFiles = (codes || []).filter(c => (fileCounts[c] || 0) > 0).length;
@@ -5545,22 +5672,6 @@ function ProgramsDirectory({ t, planOf, onProgram, onCourse, fileCounts = {}, on
           </div>
         )}
 
-        {/* What is written *about* the programme — the printed plan, admission
-            terms — kept one tap away instead of on top of the plan itself. */}
-        {/* marginBottom clears the floating assistant button, which sits over
-            the last row of any page that ends flush with the tab bar. */}
-        <button onClick={() => onProgram(open.name)} style={{
-          width: "100%", marginTop: 14, marginBottom: 76,
-          background: "none", border: `1px solid ${t.bd}`,
-          borderRadius: 12, padding: "11px 13px", cursor: "pointer", fontFamily: "inherit",
-          textAlign: "right", display: "flex", alignItems: "center", gap: 9,
-        }}>
-          <FileText size={14} color={t.dim} style={{ flexShrink: 0 }} />
-          <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700, color: t.mu }}>
-            ملفات البرنامج — الخطة المطبوعة وشروط القبول
-          </span>
-          <ChevronLeft size={13} color={t.dim} />
-        </button>
       </div>
     );
   }
@@ -9124,6 +9235,37 @@ export default function App() {
         #bottom-nav::-webkit-scrollbar { display:none }
         input[type=range] { -webkit-appearance:none; height:5px; border-radius:3px; background:${t.bd}; outline:none }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; cursor:pointer; background:${P.blue2}; box-shadow:0 2px 6px rgba(0,0,0,.3) }
+
+        /* ── الطباعة ──────────────────────────────────────────────────────
+           NOTHING IN THIS BLOCK MAY CONTAIN an apostrophe, a quote mark, an
+           ampersand or an angle bracket — comments included. React escapes
+           those five characters when it server-renders the text inside a style
+           element, and the browser does not decode entities there, so the CSS
+           the client builds differs from the CSS in the HTML by a few
+           characters, hydration fails, and React throws the whole server-
+           rendered page away and re-renders from scratch. One apostrophe in a
+           comment cost exactly that, and the only symptom was a slower first
+           paint.
+
+           The plan is the one thing students ask to have on paper, and printing
+           the app as it stands puts a dark header, a tab bar and a floating
+           assistant button across the sheet. So printing shows the plan sheet
+           alone, on white: Save-as-PDF on a phone then produces a document
+           worth keeping, generated from the same plan the screen shows, with
+           nothing to upload and nothing to keep in sync.
+
+           Hidden by visibility rather than display, so the sheet keeps its own
+           layout while its ancestors collapse. Black on white regardless of
+           theme — the dark theme greens come out of most printers unreadable,
+           and this is a document people keep. */
+        @media print {
+          body { background:#fff !important }
+          body * { visibility:hidden !important }
+          .plan-sheet, .plan-sheet * { visibility:visible !important; background:transparent !important; color:#000 !important; border-color:#c9c9c9 !important }
+          .plan-sheet { position:absolute; inset:0 auto auto 0; width:100%; padding:0 !important }
+          .no-print { display:none !important }
+          .plan-sheet .lvl { break-inside:avoid; page-break-inside:avoid }
+        }
       `}</style>
 
       {/* HEADER */}
