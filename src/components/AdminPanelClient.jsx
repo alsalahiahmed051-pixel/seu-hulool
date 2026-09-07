@@ -456,7 +456,7 @@ function StoreAdvice({ from }) {
   )
 }
 
-function RecoveryList({ data, onRebuild, busy }) {
+function RecoveryList({ data, onRebuild, busy, moving }) {
   if (data.error) {
     return (
       <div style={{ marginTop: 8, fontSize: 11.5, color: P.orange }}>{data.error}</div>
@@ -509,8 +509,22 @@ function RecoveryList({ data, onRebuild, busy }) {
         border: filed ? 'none' : '1px solid var(--bd)', borderRadius: 9, padding: '7px 13px',
         cursor: busy || !filed ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
       }}>
-        {busy ? 'جارٍ…' : `أعد ${filed} ملفاً إلى الفهرس`}
+        {busy
+          ? (moving ? `جارٍ النقل… ${moving.added} من ${filed}` : 'جارٍ…')
+          : `انقل ${filed} ملفاً إلى التخزين الجديد`}
       </button>
+      {/* Said before the button is pressed, not after: the copy takes minutes
+          and moves real bytes, and the owner should know that is what it does. */}
+      <div style={{ fontSize: 10.5, color: 'var(--dim)', lineHeight: 1.7, marginTop: 6 }}>
+        تُنسَخ الملفات فعلياً إلى التخزين الجديد المجاني، فلا تبقى معلّقة بالمخزن القديم.
+        العملية على دفعات وقد تستغرق دقائق — لا تُغلق الصفحة.
+      </div>
+      {moving?.failed > 0 && (
+        <div style={{ fontSize: 11, color: P.orange, lineHeight: 1.7, marginTop: 5 }}>
+          تعذّر نقل {moving.failed} ملفاً
+          {moving.reasons?.[0] ? ` — ${moving.reasons[0].reason}` : ''}
+        </div>
+      )}
     </div>
   )
 }
@@ -529,6 +543,8 @@ function IndexPanel({ flash }) {
   // What storage actually holds, once the owner asks to see it.
   const [recover, setRecover] = useState(null)
   const [finding, setFinding] = useState(false)
+  // Live count while files are copied across, round by round.
+  const [moving, setMoving] = useState(null)
 
   const runRecover = async () => {
     setFinding(true)
@@ -538,17 +554,46 @@ function IndexPanel({ flash }) {
     setFinding(false)
   }
 
+  /**
+   * Move the old files across, however many rounds it takes.
+   *
+   * One request cannot copy thirty-three files inside the platform's time
+   * limit, so the route stops itself and says how many are left; this calls
+   * again until nothing is. Without the loop the owner would press a button
+   * that moves four files and reports success, and never learn about the rest.
+   */
   const rebuild = async () => {
     setFinding(true)
-    const { ok, data } = await apiJSON('/api/admin/recover-files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: (recover?.files || []).filter(f => f.course) }),
-    })
-    flash(ok ? `أُعيد ${data.added} ملفاً إلى الفهرس` : (data.error || 'تعذّرت الاستعادة'),
-      ok ? 'success' : 'error')
+    setMoving({ added: 0, failed: 0, reasons: [] })
+    let added = 0, failed = 0, reasons = []
+    for (let round = 0; round < 40; round++) {
+      const { ok, data } = await apiJSON('/api/admin/recover-files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: (recover?.files || []).filter(f => f.course) }),
+      })
+      if (!ok) {
+        flash(data?.error || 'تعذّرت الاستعادة', 'error')
+        setFinding(false); setMoving(null)
+        return
+      }
+      added += data.added || 0
+      failed += data.failed || 0
+      if (data.reasons?.length && reasons.length < 3) reasons = data.reasons
+      setMoving({ added, failed, reasons })
+      // Nothing left, or a round that moved nothing and failed nothing — the
+      // second guard is what stops an endless loop when every file is skipped.
+      if (!data.remaining || (!data.added && !data.failed)) break
+    }
     setFinding(false)
-    if (ok) { setRecover(null); load() }
+    setMoving(null)
+    flash(
+      failed
+        ? `نُقل ${added} ملفاً · تعذّر ${failed}` + (reasons[0] ? ` — ${reasons[0].reason}` : '')
+        : `نُقل ${added} ملفاً إلى التخزين الجديد`,
+      failed && !added ? 'error' : 'success'
+    )
+    setRecover(null); load()
   }
 
   const runSelftest = async () => {
@@ -713,7 +758,7 @@ function IndexPanel({ flash }) {
             fontSize: 12, fontWeight: 800,
           }}>{finding ? 'جارٍ البحث…' : 'ابحث عن ملفاتي في التخزين'}</button>
         </div>
-        {recover && <RecoveryList data={recover} onRebuild={rebuild} busy={finding} />}
+        {recover && <RecoveryList data={recover} onRebuild={rebuild} busy={finding} moving={moving} />}
       </div>
     )
   }

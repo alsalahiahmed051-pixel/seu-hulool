@@ -3,6 +3,9 @@ import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
 import { courseCodeIn, ALL_CATEGORY_IDS } from '@/lib/courses'
 import { cleanName } from '@/lib/file-text'
+import { getPrivate } from '@/lib/blob-read'
+import { pathFor, BUCKET, storageEnabled } from '@/lib/file-storage'
+import { createAdminClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -100,17 +103,41 @@ export async function GET() {
 }
 
 /**
- * Rebuild the index from what is actually in storage.
+ * How long one round may take.
  *
- * Additive: anything the current index still holds is kept as it is, and only
- * files missing from it are added. So this cannot lose correct filing, and
- * running it twice changes nothing the second time.
+ * Copying is bytes over the wire, twice each — down from the old store and up
+ * to the new one — and the platform kills the function at sixty seconds. So a
+ * round stops itself while there is still time to answer, reports what is left,
+ * and the panel calls again. Thirty-three files across several rounds finishes;
+ * one round that dies at second sixty finishes nothing and says nothing.
+ */
+const BUDGET_MS = 45_000
+
+/**
+ * MOVE the old files into the new storage — do not merely point at them again.
+ *
+ * The first version of this rebuilt the index with `provider: 'vercel'`, which
+ * put the library back on screen while leaving every byte in the store that had
+ * just been suspended for a month. That is not recovery, it is a rebuilt
+ * dependency on the thing that failed: the next suspension takes the library
+ * down again, and the owner asked for storage that is free and stays free.
+ *
+ * So each file is read from the old store and written to the new one, and only
+ * then indexed — as `supabase`, with a real path. A file whose bytes cannot be
+ * copied is NOT indexed: a record pointing into an unreachable store is a row
+ * that looks like a file and behaves like a hole.
+ *
+ * Additive and resumable. Anything already in the library is skipped, so
+ * running it twice moves nothing twice, and a round that stops on the clock is
+ * continued by the next one.
  */
 export async function POST(request) {
   const gate = await requireAdmin()
   if (!gate.ok) return Response.json({ error: gate.error }, { status: gate.status })
-  if (!blobEnabled()) return Response.json({ error: 'التخزين غير مُعدّ' }, { status: 503 })
+  if (!blobEnabled()) return Response.json({ error: 'التخزين القديم غير مُعدّ' }, { status: 503 })
+  if (!storageEnabled()) return Response.json({ error: 'التخزين الجديد غير مُعدّ' }, { status: 503 })
 
+  const started = Date.now()
   const body = await request.json().catch(() => ({}))
   // Only what the owner confirmed, so a guess he disagreed with is not written.
   const chosen = Array.isArray(body.files) ? body.files : null
@@ -124,46 +151,90 @@ export async function POST(request) {
 
   let existing = []
   try { existing = await readMeta() } catch { /* rebuilding is the whole point */ }
-  const known = new Set(existing.map(f => f.blobUrl))
+  // Both keys, because a file moved on an earlier round is stored by its new
+  // path while still carrying the old URL that identifies it here.
+  const known = new Set(existing.map(f => f.blobUrl).filter(Boolean))
 
-  const pick = chosen
-    ? new Map(chosen.map(f => [f.pathname, f]))
-    : null
+  const pick = chosen ? new Map(chosen.map(f => [f.pathname, f])) : null
+  const db = createAdminClient()
 
   const added = []
+  const failed = []
+  let skipped = 0, left = 0
+
   for (const f of found) {
-    if (known.has(f.url)) continue
+    if (known.has(f.url)) { skipped++; continue }
     const override = pick ? pick.get(f.pathname) : null
-    if (pick && !override) continue
+    if (pick && !override) { skipped++; continue }
+
+    const course = String(override?.course ?? f.course ?? '').trim()
+    if (!course) { skipped++; continue }   // unfiled would be invisible anywhere
+
+    // Stop while there is still time to reply, and predict the next one rather
+    // than starting a copy that cannot finish — same reasoning as the indexer.
+    const elapsed = Date.now() - started
+    const perFile = added.length + failed.length ? elapsed / (added.length + failed.length) : 4000
+    if (elapsed + perFile * 1.5 > BUDGET_MS) { left++; continue }
+
+    const name = String(override?.name || f.name).slice(0, 200)
     const category = ALL_CATEGORY_IDS.includes(override?.category || f.category)
       ? (override?.category || f.category) : 'slides'
-    const course = String(override?.course ?? f.course ?? '').trim()
-    if (!course) continue   // an unfiled record would be invisible to every page
-    added.push({
-      id: crypto.randomUUID(),
-      name: String(override?.name || f.name).slice(0, 200),
-      courseName: course,
-      category,
-      size: f.size,
-      sizeLabel: f.sizeLabel,
-      provider: 'vercel',
-      blobUrl: f.url,
-      uploadedAt: f.uploadedAt || new Date().toISOString(),
-      downloads: 0,
-      recovered: true,
-    })
+
+    try {
+      const src = await getPrivate(f.url)
+      if (!src) throw new Error('المخزن القديم لم يُعطِ الملف')
+      const bytes = Buffer.from(await new Response(src.stream).arrayBuffer())
+      if (!bytes.length) throw new Error('الملف فارغ')
+
+      const path = pathFor(course, f.pathname)
+      const { error } = await db.storage.from(BUCKET).upload(path, bytes, {
+        // Both shapes: the SDK's result carries it one way and the
+        // token-fetch fallback wraps it as `blob.contentType`.
+        contentType: src.contentType || src.blob?.contentType || 'application/octet-stream',
+        upsert: false,
+      })
+      if (error) throw new Error(String(error.message || error))
+
+      added.push({
+        id: crypto.randomUUID(),
+        name,
+        courseName: course,
+        category,
+        size: bytes.length,
+        sizeLabel: formatSize(bytes.length),
+        // Moved for good: the new store owns the bytes now.
+        provider: 'supabase',
+        storagePath: path,
+        // Kept so a second run recognises this file and skips it.
+        blobUrl: f.url,
+        uploadedAt: f.uploadedAt || new Date().toISOString(),
+        downloads: 0,
+        recovered: true,
+      })
+    } catch (e) {
+      failed.push({ name, reason: clean(e) })
+    }
   }
 
-  if (!added.length) {
-    return Response.json({ added: 0, total: existing.length, note: 'لا جديد يُضاف' })
+  if (added.length) {
+    try {
+      await writeMeta([...added, ...existing])
+    } catch (e) {
+      return Response.json({ error: 'نُقلت الملفات لكن تعذّر حفظ الفهرس: ' + clean(e) }, { status: 500 })
+    }
   }
 
-  try {
-    await writeMeta([...added, ...existing])
-  } catch (e) {
-    return Response.json({ error: 'تعذّر حفظ الفهرس: ' + clean(e) }, { status: 500 })
-  }
-  return Response.json({ added: added.length, total: existing.length + added.length })
+  return Response.json({
+    added: added.length,
+    failed: failed.length,
+    // The first few reasons, because thirty identical failures have one cause
+    // and the owner needs to read it once, not thirty times.
+    reasons: failed.slice(0, 3),
+    remaining: left,
+    skipped,
+    total: existing.length + added.length,
+    note: added.length ? '' : (failed.length ? 'لم يُنقل شيء' : 'لا جديد يُضاف'),
+  })
 }
 
 function clean(e) {
