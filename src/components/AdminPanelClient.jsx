@@ -384,6 +384,17 @@ function IndexPanel({ flash }) {
   // takes many rounds, and a button that only says «جارٍ الفهرسة…» for four
   // minutes is indistinguishable from one that has hung.
   const [progress, setProgress] = useState(null)
+  // The storage self-test's result, once the owner asks for it.
+  const [selftest, setSelftest] = useState(null)
+  const [testing, setTesting] = useState(false)
+
+  const runSelftest = async () => {
+    setTesting(true)
+    setSelftest(null)
+    const { data } = await apiJSON('/api/admin/blob-selftest')
+    setSelftest(data && (data.verdict || data.error || data.steps) ? data : { error: 'تعذّر الفحص' })
+    setTesting(false)
+  }
 
   const load = useCallback(async () => {
     const { ok, data } = await apiJSON('/api/admin/index-files')
@@ -501,10 +512,34 @@ function IndexPanel({ flash }) {
             <div style={{ color: 'var(--dim)', marginTop: 3 }}>انسخ هذا السطر كما هو.</div>
           </div>
         )}
-        <button onClick={load} style={{
-          marginTop: 9, background: P.blue2, color: '#fff', border: 'none', borderRadius: 9,
-          padding: '7px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
-        }}>أعد المحاولة</button>
+        {/* The self-test answers the one question the trace cannot: is the
+            store refusing THIS deployment, or only that one old object? The
+            two need opposite actions, and guessing between them has already
+            cost several rounds. */}
+        {selftest && (
+          <div style={{
+            marginTop: 8, background: 'var(--bg)', border: `1px solid ${selftest.ok ? P.green : P.orange}55`,
+            borderRadius: 9, padding: '8px 10px', fontSize: 11, color: 'var(--mu)', lineHeight: 1.8,
+          }}>
+            <div style={{ fontWeight: 800, color: selftest.ok ? P.green : P.orange }}>
+              {selftest.verdict || selftest.error || 'تعذّر الفحص'}
+            </div>
+            {(selftest.steps || []).map((s, i) => (
+              <div key={i} style={{ direction: 'ltr', textAlign: 'right' }}>{s}</div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
+          <button onClick={load} style={{
+            background: P.blue2, color: '#fff', border: 'none', borderRadius: 9,
+            padding: '7px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+          }}>أعد المحاولة</button>
+          <button onClick={runSelftest} disabled={testing} style={{
+            background: 'var(--card)', color: 'var(--tx)', border: '1px solid var(--bd)', borderRadius: 9,
+            padding: '7px 13px', cursor: testing ? 'default' : 'pointer', fontFamily: 'inherit',
+            fontSize: 12, fontWeight: 800,
+          }}>{testing ? 'جارٍ الفحص…' : 'افحص التخزين'}</button>
+        </div>
       </div>
     )
   }
