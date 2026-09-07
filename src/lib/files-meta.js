@@ -19,29 +19,68 @@ export function blobEnabled() {
 }
 
 /**
+ * How many generations of the index to keep.
+ *
+ * This used to be one: every write deleted every earlier copy the moment the
+ * new one landed. That makes the whole library a single object with no history
+ * — if the newest copy is unreadable for any reason, thirty-three uploads are
+ * simply gone, with nothing to fall back to.
+ *
+ * And "for any reason" is not hypothetical. Blob listing is eventually
+ * consistent, so a write can list the index, not yet see the copy the previous
+ * write made a second earlier, and delete out from under a reader that is
+ * mid-request. That window was narrow while the index was written once or twice
+ * per action — and stopped being narrow when the indexer began driving nine
+ * write cycles back to back to work through a library.
+ *
+ * Three generations cost a few kilobytes and turn that from "the library is
+ * gone" into "one round was lost".
+ */
+const KEEP = 3
+
+/** The index blobs, newest first. */
+async function generations() {
+  const { blobs } = await list({ prefix: META_PREFIX })
+  return blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
+}
+
+/** One generation's contents, or null if it cannot be read. */
+async function readOne(blob) {
+  try {
+    // The index is stored privately, so it must be read through the SDK — a
+    // plain fetch of the URL is not authorised and used to fail silently.
+    const res = await get(blob.url, { access: 'private' })
+    if (!res) return null
+    const parsed = JSON.parse(await new Response(res.stream).text())
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Reads the index. Returns [] only when there genuinely is no index yet;
- * throws when one exists but could not be read.
+ * throws when copies exist but none of them could be read.
+ *
+ * Falls back through the older generations rather than giving up on the first
+ * failure — losing the last write is recoverable, losing the library is not.
  */
 export async function readMeta() {
   if (!blobEnabled()) return []
-  const { blobs } = await list({ prefix: META_PREFIX })
+  const blobs = await generations()
   if (!blobs.length) return []
-  const latest = blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))[0]
 
-  // The index is stored privately, so it must be read through the SDK — a
-  // plain fetch of the URL is not authorised and used to fail silently.
-  const res = await get(latest.url, { access: 'private' })
-  if (!res) throw new Error('files index not readable')
-  const text = await new Response(res.stream).text()
-  const parsed = JSON.parse(text)
-  if (!Array.isArray(parsed)) throw new Error('files index is malformed')
-  return parsed
+  for (const blob of blobs) {
+    const records = await readOne(blob)
+    if (records) return records
+  }
+  throw new Error('files index not readable')
 }
 
-/** Replaces the index, then prunes the superseded copies. */
+/** Replaces the index, then prunes all but the last few copies. */
 export async function writeMeta(records) {
   if (!Array.isArray(records)) throw new Error('records must be an array')
-  const previous = await list({ prefix: META_PREFIX }).catch(() => ({ blobs: [] }))
+  const previous = await generations().catch(() => [])
 
   await put(`${META_PREFIX}-${Date.now()}.json`, JSON.stringify(records), {
     access: 'private',
@@ -49,10 +88,13 @@ export async function writeMeta(records) {
     addRandomSuffix: false,
   })
 
-  // Only after the new index is safely written — deleting first would leave
-  // no index at all if the write then failed.
+  // Only after the new index is safely written — deleting first would leave no
+  // index at all if the write then failed. And the copies pruned are counted
+  // from the PRE-WRITE list, so the immediate predecessor always survives even
+  // if listing has not caught up with what was just written.
   try {
-    if (previous.blobs?.length) await del(previous.blobs.map(b => b.url))
+    const stale = previous.slice(KEEP - 1)
+    if (stale.length) await del(stale.map(b => b.url))
   } catch { /* stale copies are harmless; the newest one wins */ }
 }
 
