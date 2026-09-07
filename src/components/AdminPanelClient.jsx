@@ -377,6 +377,73 @@ function OverviewTab({ flash }) {
  * text layer and never will; the owner needs to know that about a specific
  * file rather than wonder why the assistant ignores it.
  */
+/**
+ * What storage actually holds, listed back to the owner.
+ *
+ * Declared at module scope, not inside IndexPanel: a component redefined on
+ * every render gets a new identity each time, and React throws the subtree away
+ * and rebuilds it — the bug that once made the services page jump to the top on
+ * every click.
+ */
+function RecoveryList({ data, onRebuild, busy }) {
+  if (data.error) {
+    return (
+      <div style={{ marginTop: 8, fontSize: 11.5, color: P.orange }}>{data.error}</div>
+    )
+  }
+  const { files = [], total = 0, filed = 0, indexReadable } = data
+  if (!total) {
+    return (
+      <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
+        لا يوجد في التخزين ملفات مرفوعة — لم يُعثر على شيء لاستعادته.
+      </div>
+    )
+  }
+  return (
+    <div style={{
+      marginTop: 9, background: 'var(--bg)', border: '1px solid var(--bd)',
+      borderRadius: 10, padding: '9px 11px',
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: P.green, marginBottom: 4 }}>
+        ملفاتك موجودة في التخزين — {total} ملفاً
+      </div>
+      <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8, marginBottom: 8 }}>
+        {filed} منها يحمل اسمه رمزَ مقرّره فيُعاد إلى مكانه تلقائياً
+        {total > filed ? ` · و${total - filed} لا يُعرف مقرّره من اسمه، تُرفع من جديد أو تُسمّى بالرمز` : ''}.
+        {!indexReadable && ' والفهرس ما زال غير مقروء، فالاستعادة تكتب فهرساً جديداً مكانه.'}
+      </div>
+      <div style={{ maxHeight: 190, overflowY: 'auto', marginBottom: 8 }}>
+        {files.slice(0, 60).map(f => (
+          <div key={f.pathname} style={{
+            display: 'flex', alignItems: 'center', gap: 7, padding: '4px 0',
+            borderTop: '1px solid var(--bd)', fontSize: 11,
+          }}>
+            <span style={{ flex: 1, minWidth: 0, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {f.name}
+            </span>
+            <span style={{ color: f.course ? P.blue2 : P.orange, fontWeight: 800, whiteSpace: 'nowrap' }}>
+              {f.course || 'بلا مقرر'}
+            </span>
+            <span style={{ color: 'var(--dim)', whiteSpace: 'nowrap' }}>{f.sizeLabel}</span>
+          </div>
+        ))}
+        {files.length > 60 && (
+          <div style={{ fontSize: 10.5, color: 'var(--dim)', paddingTop: 5 }}>
+            …و{files.length - 60} غيرها
+          </div>
+        )}
+      </div>
+      <button onClick={onRebuild} disabled={busy || !filed} style={{
+        background: filed ? P.green : 'var(--bg)', color: filed ? '#fff' : 'var(--mu)',
+        border: filed ? 'none' : '1px solid var(--bd)', borderRadius: 9, padding: '7px 13px',
+        cursor: busy || !filed ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+      }}>
+        {busy ? 'جارٍ…' : `أعد ${filed} ملفاً إلى الفهرس`}
+      </button>
+    </div>
+  )
+}
+
 function IndexPanel({ flash }) {
   const [state, setState] = useState(null)
   const [running, setRunning] = useState(false)
@@ -387,6 +454,31 @@ function IndexPanel({ flash }) {
   // The storage self-test's result, once the owner asks for it.
   const [selftest, setSelftest] = useState(null)
   const [testing, setTesting] = useState(false)
+
+  // What storage actually holds, once the owner asks to see it.
+  const [recover, setRecover] = useState(null)
+  const [finding, setFinding] = useState(false)
+
+  const runRecover = async () => {
+    setFinding(true)
+    setRecover(null)
+    const { data } = await apiJSON('/api/admin/recover-files')
+    setRecover(data && (data.files || data.error) ? data : { error: 'تعذّر البحث' })
+    setFinding(false)
+  }
+
+  const rebuild = async () => {
+    setFinding(true)
+    const { ok, data } = await apiJSON('/api/admin/recover-files', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: (recover?.files || []).filter(f => f.course) }),
+    })
+    flash(ok ? `أُعيد ${data.added} ملفاً إلى الفهرس` : (data.error || 'تعذّرت الاستعادة'),
+      ok ? 'success' : 'error')
+    setFinding(false)
+    if (ok) { setRecover(null); load() }
+  }
 
   const runSelftest = async () => {
     setTesting(true)
@@ -539,7 +631,16 @@ function IndexPanel({ flash }) {
             padding: '7px 13px', cursor: testing ? 'default' : 'pointer', fontFamily: 'inherit',
             fontSize: 12, fontWeight: 800,
           }}>{testing ? 'جارٍ الفحص…' : 'افحص التخزين'}</button>
+          {/* The owner's first question was "where did my files go". The
+              listing still works even while reads fail, so this answers it with
+              the store's own contents instead of reassurance. */}
+          <button onClick={runRecover} disabled={finding} style={{
+            background: 'var(--card)', color: 'var(--tx)', border: '1px solid var(--bd)', borderRadius: 9,
+            padding: '7px 13px', cursor: finding ? 'default' : 'pointer', fontFamily: 'inherit',
+            fontSize: 12, fontWeight: 800,
+          }}>{finding ? 'جارٍ البحث…' : 'ابحث عن ملفاتي في التخزين'}</button>
         </div>
+        {recover && <RecoveryList data={recover} onRebuild={rebuild} busy={finding} />}
       </div>
     )
   }

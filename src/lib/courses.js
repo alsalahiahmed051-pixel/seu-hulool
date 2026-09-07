@@ -673,6 +673,29 @@ const ALL_CODES = new Set(
  */
 export const isCourseCode = (name) => ALL_CODES.has(String(name || '').trim());
 
+/** Every course code the catalogue knows, for matching against free text. */
+export const allCourseCodes = () => [...ALL_CODES];
+
+/**
+ * The course code buried in a filename, if there is one.
+ *
+ * «Acct101-Final-1st-2024-25», «LAW101 all slides», «MGT101-MID 2nd» — the
+ * owner's own uploads name their course, just not in a field. That is what
+ * makes rebuilding a lost index from the storage listing worth doing at all:
+ * without it every recovered file would land unfiled.
+ *
+ * Longest match first, so CS230 is not claimed by a CS23 that happens to exist,
+ * and the code may be separated from its number by a space or a dash.
+ */
+export function courseCodeIn(text) {
+  const flat = String(text || '').toUpperCase().replace(/[\s_\-.]+/g, '');
+  const codes = [...ALL_CODES].sort((a, b) => b.length - a.length);
+  for (const code of codes) {
+    if (flat.includes(String(code).toUpperCase().replace(/[\s_\-.]+/g, ''))) return code;
+  }
+  return '';
+}
+
 /**
  * Which programmes teach this course.
  *
