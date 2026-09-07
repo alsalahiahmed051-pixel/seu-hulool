@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
+import { askScript, docScript, LANG_NAME } from '@/lib/lang'
 
 export const runtime = 'nodejs'
 
@@ -26,13 +27,13 @@ const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
-async function callAnthropic(subject, messages, grounding) {
+async function callAnthropic(subject, messages, grounding, askLang) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: MAX_ANSWER_TOKENS,
-    system: buildSystem(subject, grounding),
+    system: buildSystem(subject, grounding, askLang),
     messages,
   })
   const text = res.content[0]?.text
@@ -86,7 +87,7 @@ async function getFreeVisionModels() {
 }
 
 /** Ask a free OpenRouter vision model about the attached picture. */
-async function callOpenRouterVision(subject, messages, grounding, image) {
+async function callOpenRouterVision(subject, messages, grounding, askLang, image) {
   const models = await getFreeVisionModels()
   if (models.length === 0) throw new Error('no free vision models on OpenRouter')
 
@@ -115,7 +116,7 @@ async function callOpenRouterVision(subject, messages, grounding, image) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject, grounding) },
+            { role: 'system', content: buildSystem(subject, grounding, askLang) },
             ...history,
             withImage,
           ],
@@ -131,7 +132,7 @@ async function callOpenRouterVision(subject, messages, grounding, image) {
   throw new Error(errors.join(' | ') || 'vision models returned nothing')
 }
 
-async function callOpenRouter(subject, messages, grounding) {
+async function callOpenRouter(subject, messages, grounding, askLang) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
 
@@ -149,7 +150,7 @@ async function callOpenRouter(subject, messages, grounding) {
         body: JSON.stringify({
           models: freeModels.slice(0, 3),
           route: 'fallback',
-          messages: [{ role: 'system', content: buildSystem(subject, grounding) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
@@ -173,7 +174,7 @@ async function callOpenRouter(subject, messages, grounding) {
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'system', content: buildSystem(subject, grounding) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
       })
@@ -186,7 +187,7 @@ async function callOpenRouter(subject, messages, grounding) {
   throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 3).join('; ')}`)
 }
 
-async function callGroq(subject, messages, grounding) {
+async function callGroq(subject, messages, grounding, askLang) {
   // try multiple models in sequence
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
   for (const model of models) {
@@ -200,7 +201,7 @@ async function callGroq(subject, messages, grounding) {
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject, grounding) },
+            { role: 'system', content: buildSystem(subject, grounding, askLang) },
             ...messages,
           ],
           max_tokens: MAX_ANSWER_TOKENS,
@@ -229,7 +230,7 @@ function inlineImage(dataUrl) {
   return { mime_type: m[1], data: m[2] }
 }
 
-async function callGemini(subject, messages, grounding, image) {
+async function callGemini(subject, messages, grounding, askLang, image) {
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
@@ -243,7 +244,7 @@ async function callGemini(subject, messages, grounding, image) {
     ? [{ text: lastMsg }, { inline_data: img }]
     : [{ text: lastMsg }]
   const body = {
-    system_instruction: { parts: [{ text: buildSystem(subject, grounding) }] },
+    system_instruction: { parts: [{ text: buildSystem(subject, grounding, askLang) }] },
     contents: [...history, { role: 'user', parts: lastParts }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
@@ -259,14 +260,26 @@ async function callGemini(subject, messages, grounding, image) {
   return text
 }
 
-function buildSystem(subject, grounding) {
+function buildSystem(subject, grounding, askLang = 'ar') {
   // The boundary lives in one place, shared with the quiz route: "عام" is a
   // university-wide assistant, not a general-purpose one.
+  //
+  // The language rule below replaced «أجب دائماً باللغة العربية». That rule was
+  // wrong in both directions: it answered an English question in Arabic, and it
+  // made an Arabic answer about English material translate away the very terms
+  // the student is examined on. Many SEU courses are taught in English while
+  // their students think and ask in Arabic, so the two languages are not a
+  // choice between each other — the explanation follows the student, the
+  // terminology follows the exam.
+  const langRule = askLang === 'en'
+    ? `- Answer in English, since the question was asked in English`
+    : `- أجب بالعربية الفصيحة البسيطة، لأن السؤال طُرح بالعربية`
+
   let sys = `${scopeRules(subject)}
 
 مهمتك مساعدة الطلاب في: شرح المفاهيم، تلخيص الوحدات، حل الأسئلة، وتقديم نصائح دراسية.
 قواعد:
-- أجب دائماً باللغة العربية الفصيحة البسيطة
+${langRule}
 - كن موجزاً ودقيقاً ومفيداً
 - استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة
 - إن كان السؤال عن معلومة خاصة بهذا المقرر لا تعرفها — موعد اختبار، رقم فصل في الكتاب، توزيع الدرجات، اسم المحاضر — قل إنك لا تعرفها ووجّه الطالب إلى البلاكبورد أو الدعم، ولا تخمّنها
@@ -289,6 +302,18 @@ ${grounding.context}
 - المقاطع مستخرجة آلياً من ملفات PDF وقد تحتوي أخطاء أو كلمات مشوّهة — افهم المعنى ولا تنقل التشويه.
 - إن لم تكفِ المقاطع للإجابة، قل ذلك صراحةً ثم أجب من معرفتك العامة بالمادة، ووضّح أن هذا الجزء ليس من الملفات.
 - لا تنسب إلى الملفات ما ليس فيها.`
+
+    // The bilingual rule, and only when the material is really in another
+    // language than the question. A student asking in Arabic about an English
+    // course must not be handed «الإهلاك» alone: the exam paper will say
+    // "depreciation", and an answer that translated the term away has taught
+    // them something they cannot recognise when it counts.
+    const docLang = docScript(grounding.context)
+    if (docLang && docLang !== 'mixed' && docLang !== askLang) {
+      sys += `
+- ملفات هذه المادة مكتوبة بـ${LANG_NAME[docLang]}، والسؤال بـ${LANG_NAME[askLang] || LANG_NAME.ar}. اشرح بلغة السؤال، وأبقِ المصطلحات والتعاريف وأسماء المقررات ورموزها والصيغ كما وردت في الملف، مع معناها بلغة السؤال بين قوسين عند أول ذكر — فورقة الاختبار ستستعمل مصطلح الملف لا ترجمته.
+- وما تنقله حرفياً من المقاطع انقله بلغته الأصلية ولا تترجمه.`
+    }
   }
   return sys
 }
@@ -339,6 +364,12 @@ export async function POST(request) {
   const lastAsk = [...messages].reverse().find(m => m.role === 'user')?.content || ''
   let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
   try { grounding = await contextFor(subject, lastAsk) } catch { /* answer ungrounded rather than fail */ }
+
+  // The language to answer in, measured from what the student actually wrote
+  // rather than fixed to Arabic. See lib/lang: an Arabic sentence carrying
+  // English terms is an Arabic question, which is the ordinary shape of a
+  // question about an English-taught course.
+  const askLang = askScript(lastAsk) || 'ar'
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)
@@ -471,33 +502,33 @@ export async function POST(request) {
   const geminiUsable = GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20
   if (hasImage) {
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, image) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang, image) })
     // OpenRouter serves free vision models too. Without this, a site holding
     // only the OpenRouter key — the key its own setup text asks for — refused
     // every picture.
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, image) })
+      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, askLang, image) })
     if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
       // Only if there is no free reader at all: this one costs money.
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang) })
     }
     if (providers.length === 0) {
       return reply({ error: 'قراءة الصور غير مفعّلة على هذا الموقع بعد — أرسل سؤالك نصاً.' }, 503)
     }
   } else {
     if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding) })
+      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding, askLang) })
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang) })
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding) })
+      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding, askLang) })
   }
 
   let paidAllowed = false
   if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
     paidAllowed = !(await paidQuotaExhausted(request, deviceId))
     if (paidAllowed) {
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang) })
     }
   }
 
