@@ -58,10 +58,49 @@ export async function getPrivate(ref, trace) {
     try {
       const res = await get(target, options)
       if (res) { trace?.push(`${how}: ok`); return res }
-      trace?.push(`${how}: not found`)
+      trace?.push(`${how}: empty`)
     } catch (e) {
-      trace?.push(`${how}: ${e?.name || 'Error'}`)
+      trace?.push(`${how}: ${describe(e)}`)
+    }
+  }
+
+  // A fourth route that does not go through the SDK at all: the store's own
+  // HTTP API with the token in the header. The download endpoint has used
+  // exactly this as its fallback all along, so it is a path known to work here
+  // — and when the SDK's own reads are all failing, an independent one is worth
+  // more than a fourth variation on the same call.
+  if (url && process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` },
+      })
+      if (r.ok && r.body) {
+        trace?.push('token-fetch: ok')
+        return { stream: r.body, blob: { contentType: r.headers.get('content-type') } }
+      }
+      trace?.push(`token-fetch: HTTP ${r.status}`)
+    } catch (e) {
+      trace?.push(`token-fetch: ${describe(e)}`)
     }
   }
   return null
+}
+
+/**
+ * An error as a line a person can read, carrying nothing secret.
+ *
+ * `e.name` is useless here: the store library's own error class extends Error
+ * WITHOUT setting `name`, so every one of its errors — access denied, store
+ * suspended, blob not found, rate limited — reports itself as plain "Error".
+ * Recording the name and dropping the message threw away the entire diagnosis
+ * and cost a round trip through a deploy to discover nothing. The message is
+ * the diagnosis; it is the message that gets recorded, with any URL or token
+ * stripped out of it.
+ */
+function describe(e) {
+  const raw = String(e?.message || e || 'error')
+  return raw
+    .replace(/https?:\/\/\S+/g, '[url]')
+    .replace(/vercel_blob_[A-Za-z0-9_-]+/g, '[token]')
+    .slice(0, 120)
 }
