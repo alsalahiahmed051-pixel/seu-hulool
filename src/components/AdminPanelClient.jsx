@@ -463,6 +463,31 @@ function IndexPanel({ flash }) {
   if (!state || !state.blobEnabled) return null
   const { total, indexed, pending, failed } = state
 
+  // A library that cannot be read is not an empty one. Showing «0 من 0» for it
+  // tells the owner his uploads are gone when they are not.
+  if (state.unreadable) {
+    return (
+      <div style={{ marginTop: 16, borderTop: '1px solid var(--bd)', paddingTop: 12 }}>
+        {/* The section keeps its heading: the owner needs to know WHICH part of
+            the panel is failing, not just that something is. */}
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--tx)', marginBottom: 6 }}>
+          ما يستطيع المساعد قراءته
+        </div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: P.orange, marginBottom: 6 }}>
+          تعذّرت قراءة فهرس الملفات
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
+          الملفات المرفوعة لم تُحذف — الفهرس نفسه هو ما لم يُقرأ في هذه اللحظة.
+          أعد تحميل الصفحة بعد قليل. إن تكرّر، أخبرني بالوقت الذي حدث فيه.
+        </div>
+        <button onClick={load} style={{
+          marginTop: 9, background: P.blue2, color: '#fff', border: 'none', borderRadius: 9,
+          padding: '7px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+        }}>أعد المحاولة</button>
+      </div>
+    )
+  }
+
   return (
     <div style={{ marginTop: 16, borderTop: '1px solid var(--bd)', paddingTop: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>

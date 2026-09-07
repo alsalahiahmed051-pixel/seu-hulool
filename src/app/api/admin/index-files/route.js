@@ -118,10 +118,15 @@ export async function GET() {
   if (!blobEnabled()) return Response.json({ total: 0, indexed: 0, failed: [], pending: 0, blobEnabled: false })
 
   let all = []
-  try { all = await readMeta() } catch { /* report zeros rather than fail the panel */ }
+  // An index that cannot be READ is not an empty library, and reporting it as
+  // «0 من 0 ملفاً مفهرس» is the worst possible answer: it looks like nothing was
+  // ever uploaded. Say which of the two it is.
+  let unreadable = false
+  try { all = await readMeta() } catch { unreadable = true }
 
   return Response.json({
     blobEnabled: true,
+    unreadable,
     total: all.length,
     indexed: all.filter(f => f.indexed === true).length,
     pending: all.filter(f => f.indexed === undefined).length,
