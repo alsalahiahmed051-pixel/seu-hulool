@@ -456,6 +456,13 @@ export async function extractText(buffer, name = '') {
       const { installPdfGlobals } = await import('@/lib/pdf-globals')
       installPdfGlobals()
       const { PDFParse } = await import('pdf-parse')
+
+      // Point the reader at its own worker file, found on disk rather than
+      // wherever bundling left the path thinking it was. See pdf-worker: this
+      // is the difference between every PDF reading and every PDF failing on
+      // the deployed site, and no local test can tell the two apart.
+      const { usePdfWorker } = await import('@/lib/pdf-worker')
+      usePdfWorker(PDFParse)
       const parser = new PDFParse({ data: new Uint8Array(buffer) })
       try {
         const res = await parser.getText()

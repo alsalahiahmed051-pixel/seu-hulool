@@ -11,6 +11,32 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
 
+  // Left OUT of the server bundle on purpose.
+  //
+  // pdf-parse wraps pdf.js, which loads its parsing engine from a separate
+  // worker file at runtime. Bundling the package rewrites it into
+  // `.next/server/chunks/`, and the worker — a plain asset nothing imports
+  // statically — does not come with it. Every PDF then fails on the deployed
+  // site with «Cannot find module .../pdf.worker.mjs» while working perfectly
+  // in local tests, because locally it is read straight from node_modules.
+  //
+  // Marking it external keeps it a real package on disk with its own files
+  // beside it, which is the arrangement it was built for.
+  experimental: {
+    serverComponentsExternalPackages: ['pdf-parse'],
+
+    // And the worker itself is named here, because tracing follows IMPORTS and
+    // nothing imports this file — pdf.js loads it by path at runtime. Keeping
+    // the package external is not enough on its own: an untraced asset is left
+    // out of the deployed function even when its package ships. Both routes
+    // that read a PDF are listed; src/lib/pdf-worker checks the file is really
+    // there before using it, so this staying true is verifiable, not assumed.
+    outputFileTracingIncludes: {
+      '/api/admin/index-files': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+      '/api/files': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+    },
+  },
+
   // Allow Supabase storage images
   images: {
     remotePatterns: [
