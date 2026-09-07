@@ -385,6 +385,74 @@ function OverviewTab({ flash }) {
  * and rebuilds it — the bug that once made the services page jump to the top on
  * every click.
  */
+/**
+ * The store's own English error, turned into what the owner should DO.
+ *
+ * «Vercel Blob: This store has been suspended.» is the sentence that ended a
+ * five-round hunt, and it was reached only because the self-test made the store
+ * say it. Left as an English line in a diagnostic trace it still asks the owner
+ * to interpret an infrastructure message; these are the five conditions that
+ * actually occur, and each needs a different action — three of them are not in
+ * this codebase at all.
+ */
+function storeAdvice(text) {
+  const t = String(text || '')
+  if (/suspended/i.test(t)) {
+    return {
+      title: 'مخزن الملفات موقوف',
+      body: 'ملفاتك لم تُحذف — الإيقاف يمنع القراءة والكتابة ويُبقي المحتوى. '
+        + 'افتح Vercel ← Storage ← المخزن، وسيظهر سبب الإيقاف (تجاوز الحصّة غالباً، أو مسألة فوترة). '
+        + 'ما إن يُرفع الإيقاف تعود المكتبة كما كانت بتصنيفها، بلا إعادة رفع.',
+      fatal: true,
+    }
+  }
+  if (/access denied|valid token/i.test(t)) {
+    return {
+      title: 'المفتاح لا يخوّل القراءة',
+      body: 'المفتاح موجود لكنّه لا يفتح هذا المخزن. أنشئ BLOB_READ_WRITE_TOKEN جديداً من Vercel '
+        + '← Storage ← المخزن، وضعه في متغيّرات المشروع، ثم أعد النشر.',
+      fatal: true,
+    }
+  }
+  if (/store does not exist/i.test(t)) {
+    return {
+      title: 'المخزن غير موجود',
+      body: 'المفتاح يشير إلى مخزنٍ محذوف أو غير مربوط بالمشروع. اربط المخزن من Vercel ← Storage.',
+      fatal: true,
+    }
+  }
+  if (/too many requests|rate/i.test(t)) {
+    return { title: 'إجهاد مؤقّت في التخزين', body: 'كثرة طلبات في وقت قصير. انتظر دقائق ثم أعد المحاولة.' }
+  }
+  if (/blob does not exist|not found/i.test(t)) {
+    return {
+      title: 'الكائن نفسه غير موجود',
+      body: 'الفهرس حُذف من التخزين. الملفات نفسها قد تكون باقية — اضغط «ابحث عن ملفاتي في التخزين».',
+    }
+  }
+  return null
+}
+
+/** The advice box, when the store said something we can act on. */
+function StoreAdvice({ from }) {
+  const advice = storeAdvice(from)
+  if (!advice) return null
+  return (
+    <div style={{
+      marginTop: 9, background: 'var(--errBg)', border: `1px solid ${P.red}55`,
+      borderRadius: 10, padding: '9px 11px', lineHeight: 1.9,
+    }}>
+      <div style={{ fontSize: 12.5, fontWeight: 900, color: P.red, marginBottom: 3 }}>{advice.title}</div>
+      <div style={{ fontSize: 11.5, color: 'var(--tx)' }}>{advice.body}</div>
+      {advice.fatal && (
+        <div style={{ fontSize: 11, color: 'var(--mu)', marginTop: 5 }}>
+          لا شيء في الموقع يُصلح هذا — الإجراء في حساب Vercel وحده.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function RecoveryList({ data, onRebuild, busy }) {
   if (data.error) {
     return (
@@ -604,6 +672,7 @@ function IndexPanel({ flash }) {
             <div style={{ color: 'var(--dim)', marginTop: 3 }}>انسخ هذا السطر كما هو.</div>
           </div>
         )}
+        <StoreAdvice from={[state.detail?.cause, ...(state.detail?.trace || [])].join(' ')} />
         {/* The self-test answers the one question the trace cannot: is the
             store refusing THIS deployment, or only that one old object? The
             two need opposite actions, and guessing between them has already
@@ -619,6 +688,7 @@ function IndexPanel({ flash }) {
             {(selftest.steps || []).map((s, i) => (
               <div key={i} style={{ direction: 'ltr', textAlign: 'right' }}>{s}</div>
             ))}
+            <StoreAdvice from={(selftest.steps || []).join(' ')} />
           </div>
         )}
         <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
