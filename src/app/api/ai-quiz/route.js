@@ -11,6 +11,21 @@ import { docScript } from '@/lib/lang'
 
 export const runtime = 'nodejs'
 
+/**
+ * The platform's own clock, raised off its default.
+ *
+ * Unset, a function on this plan is killed at TEN SECONDS. A free model
+ * answering a real question with a course's passages under it routinely needs
+ * twenty or forty — so the request died mid-generation, and the page showed
+ * either an error or nothing at all, at random, depending only on how fast the
+ * provider happened to be that minute. It read as «sometimes it works».
+ *
+ * The indexer has carried this line since it was written; these two never got
+ * it, and lived on the edge of the default until answers grew long enough to
+ * fall off it.
+ */
+export const maxDuration = 60
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
