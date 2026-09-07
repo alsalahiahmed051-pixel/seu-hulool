@@ -44,12 +44,22 @@ async function generations() {
   return blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
 }
 
-/** One generation's contents, or null if it cannot be read. */
+/**
+ * One generation's contents, or null if it cannot be read.
+ *
+ * `useCache: false` is not an optimisation — it is the difference between the
+ * index being readable and not. Private reads go through the CDN by default,
+ * and a blob is fetched for the first time moments after it is written, when
+ * the edge may not have it yet. A miss answered as 404 is then CACHED, and that
+ * URL keeps returning nothing long after the object is really there. The index
+ * is a single small object read a handful of times a minute; there is nothing
+ * to gain from caching it and a whole library to lose.
+ */
 async function readOne(blob) {
   try {
     // The index is stored privately, so it must be read through the SDK — a
     // plain fetch of the URL is not authorised and used to fail silently.
-    const res = await get(blob.url, { access: 'private' })
+    const res = await get(blob.url, { access: 'private', useCache: false })
     if (!res) return null
     const parsed = JSON.parse(await new Response(res.stream).text())
     return Array.isArray(parsed) ? parsed : null
@@ -67,14 +77,44 @@ async function readOne(blob) {
  */
 export async function readMeta() {
   if (!blobEnabled()) return []
-  const blobs = await generations()
+
+  let blobs
+  try {
+    blobs = await generations()
+  } catch (e) {
+    // Listing failing is a different problem from reading failing — a token or
+    // a store problem, not a missing object — and the two need different
+    // answers. Without saying which, the panel can only report the same dead
+    // end for both.
+    throw indexError('تعذّر سرد نسخ الفهرس في التخزين', { stage: 'list', cause: e })
+  }
   if (!blobs.length) return []
 
   for (const blob of blobs) {
     const records = await readOne(blob)
     if (records) return records
   }
-  throw new Error('files index not readable')
+  // The generation count is the fact that matters most when this happens: it
+  // says whether the records still EXIST and only cannot be read — recoverable
+  // — or whether there is nothing left in the store at all.
+  throw indexError(`وُجدت ${blobs.length} نسخة من الفهرس ولم تُقرأ أيّ منها`, {
+    stage: 'read', generations: blobs.length,
+  })
+}
+
+/** An error the panel can show a person, carrying no URLs or credentials. */
+function indexError(message, detail) {
+  const err = new Error('files index not readable')
+  const cause = detail.cause
+  err.detail = {
+    stage: detail.stage,
+    generations: detail.generations ?? null,
+    // The SDK puts blob URLs in some messages; those name the store, so only
+    // the error's type and a short redacted message go out.
+    cause: cause ? `${cause.name}: ${String(cause.message || '').replace(/https?:\/\/\S+/g, '[url]').slice(0, 160)}` : null,
+    message,
+  }
+  return err
 }
 
 /** Replaces the index, then prunes all but the last few copies. */

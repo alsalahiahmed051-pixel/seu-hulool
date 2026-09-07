@@ -122,11 +122,18 @@ export async function GET() {
   // «0 من 0 ملفاً مفهرس» is the worst possible answer: it looks like nothing was
   // ever uploaded. Say which of the two it is.
   let unreadable = false
-  try { all = await readMeta() } catch { unreadable = true }
+  let detail = null
+  try { all = await readMeta() } catch (e) {
+    unreadable = true
+    // Carries no URL and no token — see indexError. Without it the owner can
+    // only report «it failed», which is where the last two rounds started.
+    detail = e?.detail || null
+  }
 
   return Response.json({
     blobEnabled: true,
     unreadable,
+    detail,
     total: all.length,
     indexed: all.filter(f => f.indexed === true).length,
     pending: all.filter(f => f.indexed === undefined).length,

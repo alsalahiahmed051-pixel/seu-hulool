@@ -477,9 +477,25 @@ function IndexPanel({ flash }) {
           تعذّرت قراءة فهرس الملفات
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--mu)', lineHeight: 1.8 }}>
-          الملفات المرفوعة لم تُحذف — الفهرس نفسه هو ما لم يُقرأ في هذه اللحظة.
-          أعد تحميل الصفحة بعد قليل. إن تكرّر، أخبرني بالوقت الذي حدث فيه.
+          {state.detail?.generations > 0
+            ? 'سجلّات ملفاتك ما زالت في التخزين — القراءة وحدها هي المتعذّرة.'
+            : 'الملفات المرفوعة لم تُحذف — الفهرس نفسه هو ما لم يُقرأ في هذه اللحظة.'}
+          {' '}أعد المحاولة بعد قليل.
         </div>
+        {/* The diagnostic, in plain words. «تعذّرت القراءة» with nothing behind
+            it is what left the last two rounds guessing; the generation count
+            says whether the records still exist, which decides everything. */}
+        {state.detail && (
+          <div style={{
+            marginTop: 8, background: 'var(--bg)', border: '1px solid var(--bd)', borderRadius: 9,
+            padding: '8px 10px', fontSize: 11, color: 'var(--mu)', lineHeight: 1.8,
+          }}>
+            <div><b style={{ color: 'var(--tx)' }}>التفصيل:</b> {state.detail.message}</div>
+            <div>الموضع: {state.detail.stage === 'list' ? 'سرد النسخ' : 'قراءة النسخ'}</div>
+            {state.detail.cause && <div style={{ direction: 'ltr', textAlign: 'right' }}>{state.detail.cause}</div>}
+            <div style={{ color: 'var(--dim)', marginTop: 3 }}>انسخ هذا السطر كما هو.</div>
+          </div>
+        )}
         <button onClick={load} style={{
           marginTop: 9, background: P.blue2, color: '#fff', border: 'none', borderRadius: 9,
           padding: '7px 13px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
