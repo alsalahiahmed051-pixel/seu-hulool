@@ -1,162 +1,141 @@
-import { list, del, put } from '@vercel/blob'
-import { getPrivate } from '@/lib/blob-read'
+import { createAdminClient } from '@/lib/supabase/server'
 
 /**
- * The uploaded-files index, stored as a single JSON blob.
+ * The uploaded-files library.
  *
- * Both /api/upload and /api/files used to carry their own copy of this logic,
- * and both swallowed read errors by returning [] — so a transient failure to
- * read the index made the next write persist that empty list and silently
- * erase every previous record. readMeta() now throws on a real failure and
- * callers refuse to write, so a bad read costs one request instead of the
- * whole library.
+ * ── Why this is a table and no longer a blob ─────────────────────────────
+ *
+ * It used to be a single JSON object in Vercel Blob. Two things followed from
+ * that, and both happened:
+ *
+ * 1. ONE OBJECT, ALL OR NOTHING. When that object could not be read, a library
+ *    of thirty-three files reported itself as zero — the site looked empty to
+ *    its owner and to every student. There was no partial failure available.
+ *
+ * 2. IT SHARED A QUOTA WITH THE FILES. The blob store reached its plan's usage
+ *    limit and was SUSPENDED for a month, taking the library offline with it.
+ *
+ * Rows in Postgres cost nothing on the same free project that already runs the
+ * platform's database, have no separate quota to exhaust, and fail one row at a
+ * time. The old `readMeta`/`writeMeta` shape is kept exactly so the rest of the
+ * app did not have to change with the storage underneath it.
  */
 
-const META_PREFIX = 'hulool-files-db'
-
+/** Storage is configured when the database is — there is no separate token. */
 export function blobEnabled() {
-  const t = process.env.BLOB_READ_WRITE_TOKEN
-  return !!t && !t.includes('placeholder')
+  return !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY
 }
 
-/**
- * How many generations of the index to keep.
- *
- * This used to be one: every write deleted every earlier copy the moment the
- * new one landed. That makes the whole library a single object with no history
- * — if the newest copy is unreadable for any reason, thirty-three uploads are
- * simply gone, with nothing to fall back to.
- *
- * And "for any reason" is not hypothetical. Blob listing is eventually
- * consistent, so a write can list the index, not yet see the copy the previous
- * write made a second earlier, and delete out from under a reader that is
- * mid-request. That window was narrow while the index was written once or twice
- * per action — and stopped being narrow when the indexer began driving nine
- * write cycles back to back to work through a library.
- *
- * Three generations cost a few kilobytes and turn that from "the library is
- * gone" into "one round was lost".
- */
-const KEEP = 3
-
-/** The index blobs, newest first. */
-async function generations() {
-  const { blobs } = await list({ prefix: META_PREFIX })
-  return blobs.sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt))
-}
-
-/**
- * One generation's contents, or null if it cannot be read.
- *
- * BY PATHNAME FIRST, and that is the whole point. The SDK's `get` takes either:
- * given a URL it fetches that URL directly, given a pathname it builds the URL
- * from the store id **and authorises it with the token**. Every file here is
- * stored private, and a direct fetch of a private URL is not authorised — which
- * is why the library's own example for `access: 'private'` passes a pathname.
- *
- * This code passed `blob.url` from `list()`, and it worked for months: an
- * earlier authorised read had populated the CDN, and the cached copy kept being
- * served. It broke the moment a NEWLY written generation had to be read for the
- * first time — nothing cached, direct fetch, unauthorised, null. That is
- * exactly the shape of the failure: the store lists one generation and no read
- * of it succeeds. Three generations did not help because all three were new,
- * and `useCache: false` made it strictly worse by removing the cache that had
- * been carrying it.
- *
- * So: the authorised form first, the old form after it, and the cached form
- * last — because a stale cached copy of the index still beats no index at all.
- * Each attempt's outcome is reported, so this stops being guesswork.
- */
-async function readOne(blob, trace) {
-  const res = await getPrivate(blob, trace)
-  if (!res) return null
-  try {
-    const parsed = JSON.parse(await new Response(res.stream).text())
-    if (Array.isArray(parsed)) return parsed
-    trace?.push('body: not an array')
-  } catch (e) {
-    trace?.push(`body: ${e?.name || 'Error'}`)
+/** A database row as the app's records have always looked. */
+function toRecord(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    courseName: row.course_name,
+    category: row.category,
+    provider: row.provider,
+    storagePath: row.storage_path,
+    blobUrl: row.blob_url,
+    size: Number(row.size) || 0,
+    sizeLabel: formatSize(Number(row.size) || 0),
+    uploadedAt: row.uploaded_at,
+    downloads: row.downloads || 0,
+    // `indexed` is deliberately undefined rather than null when never attempted:
+    // "not tried yet" and "tried and failed" drive different buttons in the
+    // panel, and null would collapse them into one.
+    ...(row.indexed === null ? {} : { indexed: row.indexed }),
+    indexedChars: row.indexed_chars || 0,
+    indexedAt: row.indexed_at || undefined,
+    indexError: row.index_error || undefined,
+    recovered: row.recovered || false,
   }
-  return null
+}
+
+/** A record as a row. */
+function toRow(rec) {
+  return {
+    id: rec.id,
+    name: String(rec.name || 'ملف').slice(0, 200),
+    course_name: String(rec.courseName || '').slice(0, 200),
+    category: String(rec.category || ''),
+    provider: rec.provider || (rec.blobUrl ? 'vercel' : 'supabase'),
+    storage_path: rec.storagePath || null,
+    blob_url: rec.blobUrl || null,
+    size: Number(rec.size) || 0,
+    uploaded_at: rec.uploadedAt || new Date().toISOString(),
+    downloads: Number(rec.downloads) || 0,
+    indexed: rec.indexed === undefined ? null : rec.indexed,
+    indexed_chars: Number(rec.indexedChars) || 0,
+    indexed_at: rec.indexedAt || null,
+    index_error: rec.indexError || null,
+    recovered: !!rec.recovered,
+  }
 }
 
 /**
- * Reads the index. Returns [] only when there genuinely is no index yet;
- * throws when copies exist but none of them could be read.
- *
- * Falls back through the older generations rather than giving up on the first
- * failure — losing the last write is recoverable, losing the library is not.
+ * Reads the library. Returns [] when there is none yet; throws when there is
+ * one that could not be read — callers refuse to write on a failed read, and a
+ * silent [] would have them write emptiness over real records.
  */
 export async function readMeta() {
   if (!blobEnabled()) return []
-
-  let blobs
-  try {
-    blobs = await generations()
-  } catch (e) {
-    // Listing failing is a different problem from reading failing — a token or
-    // a store problem, not a missing object — and the two need different
-    // answers. Without saying which, the panel can only report the same dead
-    // end for both.
-    throw indexError('تعذّر سرد نسخ الفهرس في التخزين', { stage: 'list', cause: e })
+  const db = createAdminClient()
+  const { data, error } = await db
+    .from('library_files')
+    .select('id,name,course_name,category,provider,storage_path,blob_url,size,uploaded_at,downloads,indexed,indexed_chars,indexed_at,index_error,recovered')
+    .order('uploaded_at', { ascending: false })
+  if (error) {
+    const err = new Error('files index not readable')
+    err.detail = { stage: 'read', generations: null, cause: String(error.message || error).slice(0, 160), message: 'تعذّرت قراءة سجلّ الملفات من قاعدة البيانات' }
+    throw err
   }
-  if (!blobs.length) return []
-
-  // Every attempt on every generation, so a failure names itself instead of
-  // costing another round trip through a deploy to find out what it was.
-  const trace = []
-  for (const blob of blobs) {
-    const records = await readOne(blob, trace)
-    if (records) return records
-  }
-  // The generation count is the fact that matters most when this happens: it
-  // says whether the records still EXIST and only cannot be read — recoverable
-  // — or whether there is nothing left in the store at all.
-  throw indexError(`وُجدت ${blobs.length} نسخة من الفهرس ولم تُقرأ أيّ منها`, {
-    stage: 'read', generations: blobs.length, trace: trace.slice(0, 9),
-  })
+  return (data || []).map(toRecord)
 }
 
-/** An error the panel can show a person, carrying no URLs or credentials. */
-function indexError(message, detail) {
-  const err = new Error('files index not readable')
-  const cause = detail.cause
-  err.detail = {
-    stage: detail.stage,
-    generations: detail.generations ?? null,
-    // The SDK puts blob URLs in some messages; those name the store, so only
-    // the error's type and a short redacted message go out.
-    // The message, not the name — the store library leaves `name` as plain
-    // "Error" on every one of its errors, so the name says nothing at all.
-    cause: cause ? String(cause.message || cause)
-      .replace(/https?:\/\/\S+/g, '[url]')
-      .replace(/vercel_blob_[A-Za-z0-9_-]+/g, '[token]')
-      .slice(0, 160) : null,
-    trace: detail.trace || null,
-    message,
-  }
-  return err
-}
-
-/** Replaces the index, then prunes all but the last few copies. */
+/**
+ * Replaces the library with this list.
+ *
+ * Kept as a whole-list write because that is the shape every caller already
+ * had. It is done as an upsert plus a delete of what is no longer present, so a
+ * failure part-way leaves records in place rather than a half-erased library —
+ * the previous implementation's delete-then-write had exactly that hazard.
+ */
 export async function writeMeta(records) {
   if (!Array.isArray(records)) throw new Error('records must be an array')
-  const previous = await generations().catch(() => [])
+  if (!blobEnabled()) throw new Error('قاعدة البيانات غير مُعدّة')
+  const db = createAdminClient()
 
-  await put(`${META_PREFIX}-${Date.now()}.json`, JSON.stringify(records), {
-    access: 'private',
-    contentType: 'application/json',
-    addRandomSuffix: false,
-  })
+  const rows = records.filter(r => r && r.id).map(toRow)
+  if (rows.length) {
+    const { error } = await db.from('library_files').upsert(rows, { onConflict: 'id' })
+    if (error) throw new Error(`تعذّر حفظ سجلّ الملفات: ${String(error.message || error).slice(0, 120)}`)
+  }
 
-  // Only after the new index is safely written — deleting first would leave no
-  // index at all if the write then failed. And the copies pruned are counted
-  // from the PRE-WRITE list, so the immediate predecessor always survives even
-  // if listing has not caught up with what was just written.
-  try {
-    const stale = previous.slice(KEEP - 1)
-    if (stale.length) await del(stale.map(b => b.url))
-  } catch { /* stale copies are harmless; the newest one wins */ }
+  // Anything not in the list is gone — but only ever deleted AFTER the upsert
+  // above succeeded.
+  const keep = rows.map(r => r.id)
+  const del = db.from('library_files').delete()
+  const { error: delErr } = keep.length
+    ? await del.not('id', 'in', `(${keep.map(id => `"${id}"`).join(',')})`)
+    : await del.neq('id', '00000000-0000-0000-0000-000000000000')
+  if (delErr) throw new Error(`تعذّر تنظيف سجلّ الملفات: ${String(delErr.message || delErr).slice(0, 120)}`)
+}
+
+/** One file's extracted text, or '' when it has none. */
+export async function readExtractedText(id) {
+  if (!blobEnabled() || !id) return ''
+  const db = createAdminClient()
+  const { data, error } = await db.from('library_files').select('extracted_text').eq('id', id).maybeSingle()
+  if (error || !data) return ''
+  return data.extracted_text || ''
+}
+
+/** Store one file's extracted text beside its record. */
+export async function writeExtractedText(id, text) {
+  if (!blobEnabled() || !id) return
+  const db = createAdminClient()
+  const { error } = await db.from('library_files').update({ extracted_text: text || null }).eq('id', id)
+  if (error) throw new Error(String(error.message || error).slice(0, 120))
 }
 
 export function formatSize(bytes) {

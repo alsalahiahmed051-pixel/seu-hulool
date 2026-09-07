@@ -1,5 +1,5 @@
-import { del } from '@vercel/blob'
-import { indexFile, removeText } from '@/lib/file-index'
+import { indexFile } from '@/lib/file-index'
+import { removeFileBytes } from '@/lib/file-storage'
 import { cleanName } from '@/lib/file-text'
 import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
@@ -77,23 +77,18 @@ export async function POST(request) {
   if (!blobEnabled()) return Response.json({ error: 'Blob not configured' }, { status: 503 })
 
   const body = await request.json().catch(() => ({}))
-  const { blobUrl, courseName, category, name, size } = body
-  if (!blobUrl || !courseName || !category) {
+  const { storagePath, courseName, category, name, size } = body
+  if (!storagePath || !courseName || !category) {
     return Response.json({ error: 'البيانات ناقصة' }, { status: 400 })
   }
   if (!CATEGORIES.includes(category)) {
     return Response.json({ error: 'تصنيف غير معروف' }, { status: 400 })
   }
-  // Only accept URLs the store actually issued, so this can't be used to add
-  // arbitrary links to the library. Parse rather than pattern-match the whole
-  // string, so a crafted path or fragment can't fake the host.
-  try {
-    const u = new URL(blobUrl)
-    if (u.protocol !== 'https:' || !/(^|\.)blob\.vercel-storage\.com$/.test(u.hostname)) {
-      throw new Error('bad host')
-    }
-  } catch {
-    return Response.json({ error: 'رابط الملف غير صالح' }, { status: 400 })
+  // A path this route issued, not an arbitrary one: the upload handshake builds
+  // «<course>/<uuid><ext>», so anything else did not come from it. Without this
+  // an admin request could point a record at any object in the bucket.
+  if (!/^[^/]{1,80}\/[0-9a-f-]{36}(\.[A-Za-z0-9]{1,8})?$/u.test(storagePath)) {
+    return Response.json({ error: 'مسار الملف غير صالح' }, { status: 400 })
   }
 
   const bytes = Number(size) || 0
@@ -109,7 +104,8 @@ export async function POST(request) {
     category,
     size: bytes,
     sizeLabel: formatSize(bytes),
-    blobUrl,
+    provider: 'supabase',
+    storagePath,
     uploadedAt: new Date().toISOString(),
     downloads: 0,
   }
@@ -119,9 +115,9 @@ export async function POST(request) {
     all.unshift(record)
     await writeMeta(all)
   } catch (err) {
-    // The blob is already stored; drop it so we don't leave an orphan the
+    // The bytes are already stored; drop them so we do not leave an orphan the
     // library will never show.
-    try { await del(blobUrl) } catch { /* best effort */ }
+    try { await removeFileBytes(record) } catch { /* best effort */ }
     return Response.json({ error: 'تعذّر حفظ بيانات الملف: ' + err.message }, { status: 500 })
   }
 
@@ -148,10 +144,10 @@ export async function DELETE(request) {
   if (!gate.ok) return Response.json({ error: gate.error }, { status: gate.status })
   if (!blobEnabled()) return Response.json({ error: 'Blob not configured' }, { status: 503 })
 
-  const { id, blobUrl } = await request.json().catch(() => ({}))
+  const { id } = await request.json().catch(() => ({}))
   if (!id) return Response.json({ error: 'id required' }, { status: 400 })
 
-  // Update the index first: if it can't be read, stop rather than delete the
+  // Read the library first: if it can't be read, stop rather than delete the
   // file and lose track of every other record.
   let all
   try {
@@ -159,12 +155,13 @@ export async function DELETE(request) {
   } catch {
     return Response.json({ error: 'تعذّر قراءة قائمة الملفات — لم يُحذف شيء' }, { status: 500 })
   }
+  const record = all.find(f => f.id === id)
   await writeMeta(all.filter(f => f.id !== id))
 
-  try { if (blobUrl) await del(blobUrl) } catch { /* index is already updated */ }
-  // And its extracted text, or the assistant would keep quoting a file that
-  // no longer exists — the worst kind of wrong answer, because the student
-  // cannot open the source to check it.
-  try { await removeText(id) } catch { /* an orphaned text blob is harmless */ }
+  // The bytes go after the record does — and the extracted text goes with the
+  // row, so the assistant cannot keep quoting a file that no longer exists.
+  // That is the worst kind of wrong answer: the student cannot open the source
+  // to check it.
+  if (record) { try { await removeFileBytes(record) } catch { /* record is already gone */ } }
   return Response.json({ ok: true })
 }

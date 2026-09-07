@@ -28,6 +28,10 @@ export const maxDuration = 60
  * than dropped.
  */
 
+// NOTE: this route reads the OLD Vercel store, on purpose. Files uploaded
+// before storage moved to Supabase still live there, and this is how they are
+// found and put back into the library once that store is reachable again.
+
 /** Objects this platform writes for itself, which are not uploads. */
 const INTERNAL = /^(hulool-files-db|hulool-text\/|hulool-selftest\/)/
 
@@ -142,6 +146,7 @@ export async function POST(request) {
       category,
       size: f.size,
       sizeLabel: f.sizeLabel,
+      provider: 'vercel',
       blobUrl: f.url,
       uploadedAt: f.uploadedAt || new Date().toISOString(),
       downloads: 0,
