@@ -13,6 +13,21 @@ import { askScript, docScript, LANG_NAME } from '@/lib/lang'
 export const runtime = 'nodejs'
 
 /**
+ * The platform's own clock, raised off its default.
+ *
+ * Unset, a function on this plan is killed at TEN SECONDS. A free model
+ * answering a real question with a course's passages under it routinely needs
+ * twenty or forty — so the request died mid-generation, and the page showed
+ * either an error or nothing at all, at random, depending only on how fast the
+ * provider happened to be that minute. It read as «sometimes it works».
+ *
+ * The indexer has carried this line since it was written; these two never got
+ * it, and lived on the edge of the default until answers grew long enough to
+ * fall off it.
+ */
+export const maxDuration = 60
+
+/**
  * Room for a complete answer.
  *
  * It was 1024, which an explanation with worked steps runs past — and a reply
@@ -311,8 +326,8 @@ ${grounding.context}
     const docLang = docScript(grounding.context)
     if (docLang && docLang !== 'mixed' && docLang !== askLang) {
       sys += `
-- ملفات هذه المادة مكتوبة بـ${LANG_NAME[docLang]}، والسؤال بـ${LANG_NAME[askLang] || LANG_NAME.ar}. اشرح بلغة السؤال، وأبقِ المصطلحات والتعاريف وأسماء المقررات ورموزها والصيغ كما وردت في الملف، مع معناها بلغة السؤال بين قوسين عند أول ذكر — فورقة الاختبار ستستعمل مصطلح الملف لا ترجمته.
-- وما تنقله حرفياً من المقاطع انقله بلغته الأصلية ولا تترجمه.`
+- ملفات هذه المادة بـ${LANG_NAME[docLang]} والسؤال بـ${LANG_NAME[askLang] || LANG_NAME.ar}: اشرح بلغة السؤال، واكتب المصطلحات والرموز والصيغ كما وردت في الملف لا مترجمةً — فورقة الاختبار ستستعمل لفظ الملف.
+- وابقَ موجزاً: لا تشرح كل مصطلح، اشرح ما سُئلت عنه.`
     }
   }
   return sys

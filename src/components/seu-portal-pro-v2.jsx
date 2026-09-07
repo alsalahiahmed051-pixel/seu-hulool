@@ -9,6 +9,7 @@ import { useSyncedFavorites } from "@/lib/hooks/useSyncedFavorites";
 import { useSyncedNotes } from "@/lib/hooks/useSyncedNotes";
 import { useSiteContent } from "@/lib/hooks/useSiteContent";
 import { pushSupported, pushState, enablePush, disablePush, linkPushToCode, registerServiceWorker } from "@/lib/push-client";
+import { askScript } from "@/lib/lang";
 // Reminder timing lives in one place so the in-app reminders and the
 // server-side scheduler agree to the minute.
 import { computeReminders, taskDueAt, taskLead, lectureLead } from "@/lib/reminders";
@@ -1805,17 +1806,34 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     if (last < txt.length) nodes.push(stripMarks(txt.slice(last)));
     return nodes;
   };
+  /**
+   * One answer, line by line — each in its OWN reading direction.
+   *
+   * The whole page is right-to-left, and every line used to inherit that. It
+   * was invisible while answers were pure Arabic. The moment they carried
+   * English — a term kept from the file, or a whole answer to an English
+   * question — the bidi algorithm laid those lines out right-to-left too:
+   * sentence-ending full stops jumped to the left edge, brackets around a term
+   * reversed, and a bulleted English line put its bullet on the wrong side.
+   * That is the jumbled look, and it arrived with the language change.
+   *
+   * So the direction is decided per line from the line's own letters — the
+   * same measurement the server uses to pick the answer's language, so the two
+   * cannot disagree — and `start` alignment then follows whichever it is.
+   */
   const renderMsg = (text) => text.split("\n").map((line, i) => {
+    const dir = askScript(line) === "en" ? "ltr" : "rtl";
+    const flow = { direction: dir, textAlign: "start" };
     if (/^#{1,3}\s/.test(line)) {
       const lvl = (line.match(/^(#{1,3})\s/) || [[],[""]])[1].length;
-      return <div key={i} style={{ fontWeight: 800, fontSize: lvl === 1 ? 15 : 14, marginTop: i > 0 ? 8 : 0, color: P.gold, lineHeight: 1.5 }}>{line.replace(/^#{1,3}\s/, "")}</div>;
+      return <div key={i} style={{ ...flow, fontWeight: 800, fontSize: lvl === 1 ? 15 : 14, marginTop: i > 0 ? 8 : 0, color: P.gold, lineHeight: 1.5 }}>{line.replace(/^#{1,3}\s/, "")}</div>;
     }
     const listM = line.match(/^[-•*]\s+(.+)/);
-    if (listM) return <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 2 }}><span style={{ color: P.blue2, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>•</span><span style={{ flex: 1 }}>{renderInline(listM[1])}</span></div>;
+    if (listM) return <div key={i} style={{ ...flow, display: "flex", gap: 8, alignItems: "flex-start", marginTop: 2 }}><span style={{ color: P.blue2, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>•</span><span style={{ flex: 1 }}>{renderInline(listM[1])}</span></div>;
     const numM = line.match(/^([١٢٣٤٥٦٧٨٩\d]+[.،):]\s*)(.+)/);
-    if (numM) return <div key={i} style={{ display: "flex", gap: 8, marginTop: 2 }}><span style={{ color: P.blue2, fontWeight: 700, flexShrink: 0 }}>{numM[1]}</span><span style={{ flex: 1 }}>{renderInline(numM[2])}</span></div>;
+    if (numM) return <div key={i} style={{ ...flow, display: "flex", gap: 8, marginTop: 2 }}><span style={{ color: P.blue2, fontWeight: 700, flexShrink: 0 }}>{numM[1]}</span><span style={{ flex: 1 }}>{renderInline(numM[2])}</span></div>;
     if (line.trim() === "") return <div key={i} style={{ height: 5 }} />;
-    return <div key={i} style={{ lineHeight: 1.8 }}>{renderInline(line)}</div>;
+    return <div key={i} style={{ ...flow, lineHeight: 1.8 }}>{renderInline(line)}</div>;
   });
 
   /**
@@ -1856,6 +1874,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
+        // A spinner with nothing behind it is worse than an error. Without
+        // this the page waited on the network forever whenever a provider
+        // stalled — «it just sits there spinning» — and the student had no way
+        // to tell a slow answer from a dead one. Slightly past the function's
+        // own ceiling, so the server's real message wins whenever there is one.
+        signal: abortAfter(65000),
         // `trial` tells the server this is a browse-trial question. Only the
         // client can see a device-local profile, so only the client can say —
         // see the note in /api/ai for why that is safe in the one direction
@@ -1892,8 +1916,16 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           : d.error
         : null;
       setMsgs(m => [...m, { r: "a", id: mkId(), text: d.text || errText || "عذراً، حدث خطأ. حاول مجدداً.", ts: Date.now() }]);
-    } catch {
-      setMsgs(m => [...m, { r: "a", id: mkId(), text: "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة.", ts: Date.now() }]);
+    } catch (e) {
+      // Two different failures that need two different sentences: a question
+      // the server never answered in time is not a broken connection, and
+      // telling a student to check their network sends them to fix the one
+      // thing that is working.
+      const timedOut = e?.name === "AbortError";
+      setMsgs(m => [...m, { r: "a", id: mkId(), ts: Date.now(),
+        text: timedOut
+          ? "طال انتظار الإجابة أكثر من المعتاد ولم تصل. أعد المحاولة، أو اختصر السؤال قليلاً."
+          : "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة." }]);
     }
     setLoading(false);
   };
@@ -2299,6 +2331,7 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
     try {
       const res = await fetch("/api/ai-quiz", {
         method: "POST", headers: { "Content-Type": "application/json" },
+        signal: abortAfter(65000),
         body: JSON.stringify({ subject, source, count: n }),
       });
       const d = await res.json();
@@ -2307,7 +2340,11 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
         if (d.trialUsed || d.need === "subscription") setTrialSpent(true);
         onToast?.(safeText(d.error, "تعذّر توليد الاختبار"), "error");
       }
-    } catch { onToast?.("خطأ في الاتصال", "error"); }
+    } catch (e) {
+      onToast?.(e?.name === "AbortError"
+        ? "طال توليد الاختبار ولم يصل. أعد المحاولة بعدد أسئلة أقل."
+        : "خطأ في الاتصال", "error");
+    }
     setLoading(false);
   };
 
@@ -8713,6 +8750,19 @@ function useReminderSync(schedule, tasks, profile) {
     }, 2000);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [schedule, tasks, studentCode, track, plan, name]);
+}
+
+/**
+ * An abort signal that fires after `ms`, however old the browser.
+ *
+ * `AbortSignal.timeout` would do this in one line, but it is missing from the
+ * Safari versions a good share of these students are on — and a helper that
+ * throws on the phones we are trying to serve is not a helper.
+ */
+function abortAfter(ms) {
+  const ctl = new AbortController();
+  setTimeout(() => ctl.abort(), ms);
+  return ctl.signal;
 }
 
 export default function App() {
