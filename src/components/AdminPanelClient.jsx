@@ -404,6 +404,10 @@ function IndexPanel({ flash }) {
   const run = async (redo = false) => {
     setRunning(true)
     setProgress(null)
+    // Stamped once, for the whole run: on a retry the server uses it to skip
+    // files this run has already tried, so a file that fails again does not sit
+    // at the head of the queue and get handed back every round.
+    const since = new Date().toISOString()
     let done = 0
     let failedTotal = 0
     let lastRemaining = Infinity
@@ -412,7 +416,7 @@ function IndexPanel({ flash }) {
 
     while (guard++ < 300) {
       const { ok, status, data } = await apiJSON('/api/admin/index-files', {
-        method: 'POST', body: JSON.stringify({ batch: 4, redo }),
+        method: 'POST', body: JSON.stringify({ batch: 4, redo, since }),
       })
 
       if (!ok) {
@@ -420,7 +424,7 @@ function IndexPanel({ flash }) {
         // own left the owner with nothing to act on; the status says whether
         // this is a session that expired, a limit, or the server giving up.
         const again = await apiJSON('/api/admin/index-files', {
-          method: 'POST', body: JSON.stringify({ batch: 1, redo }),
+          method: 'POST', body: JSON.stringify({ batch: 1, redo, since }),
         })
         if (!again.ok) {
           const why = again.data.error || data.error

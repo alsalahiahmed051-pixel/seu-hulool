@@ -37,6 +37,8 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}))
   const size = Math.min(8, Math.max(1, Number(body.batch) || 4))
   const redo = body.redo === true
+  // When the panel started this run. Only meaningful for `redo` — see below.
+  const since = typeof body.since === 'string' ? body.since : ''
 
   let all
   try { all = await readMeta() } catch (e) {
@@ -45,7 +47,17 @@ export async function POST(request) {
 
   // `indexed` is undefined on every record written before this existed, which
   // is exactly the set that still needs doing. `redo` retries the failures too.
-  const pending = all.filter(f => redo ? f.indexed !== true : f.indexed === undefined)
+  //
+  // A retry run must exclude what it has ALREADY retried, or it cannot finish:
+  // a file that fails again is still `indexed !== true`, so it stays at the
+  // head of the queue and every round hands back the same four files forever.
+  // That is exactly what happened on the owner's thirty-three uploads — three
+  // identical rounds, then the stall guard stopped it at «توقّف التقدّم عند 29».
+  // `indexedAt` is stamped on every attempt, so comparing it against the run's
+  // start time is what makes the queue drain.
+  const pending = all.filter(f => redo
+    ? f.indexed !== true && !(since && f.indexedAt && f.indexedAt >= since)
+    : f.indexed === undefined)
   const batch = pending.slice(0, size)
 
   const results = []
