@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "lint:undef": "eslint --no-eslintrc --no-inline-config --ext .js,.jsx --parser-options='{\"ecmaVersion\":2022,\"sourceType\":\"module\",\"ecmaFeatures\":{\"jsx\":true}}' --env es2022 --env node --env browser --rule '{\"no-undef\":\"error\"}' src/",
+    "prebuild": "npm run lint:undef"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

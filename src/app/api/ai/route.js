@@ -26,7 +26,7 @@ const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
-async function callAnthropic(subject, messages, fileContext) {
+async function callAnthropic(subject, messages, grounding) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
@@ -86,7 +86,7 @@ async function getFreeVisionModels() {
 }
 
 /** Ask a free OpenRouter vision model about the attached picture. */
-async function callOpenRouterVision(subject, messages, fileContext, image) {
+async function callOpenRouterVision(subject, messages, grounding, image) {
   const models = await getFreeVisionModels()
   if (models.length === 0) throw new Error('no free vision models on OpenRouter')
 
@@ -131,7 +131,7 @@ async function callOpenRouterVision(subject, messages, fileContext, image) {
   throw new Error(errors.join(' | ') || 'vision models returned nothing')
 }
 
-async function callOpenRouter(subject, messages, fileContext) {
+async function callOpenRouter(subject, messages, grounding) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
 
@@ -186,7 +186,7 @@ async function callOpenRouter(subject, messages, fileContext) {
   throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 3).join('; ')}`)
 }
 
-async function callGroq(subject, messages, fileContext) {
+async function callGroq(subject, messages, grounding) {
   // try multiple models in sequence
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
   for (const model of models) {
@@ -229,7 +229,7 @@ function inlineImage(dataUrl) {
   return { mime_type: m[1], data: m[2] }
 }
 
-async function callGemini(subject, messages, fileContext, image) {
+async function callGemini(subject, messages, grounding, image) {
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
@@ -471,33 +471,33 @@ export async function POST(request) {
   const geminiUsable = GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20
   if (hasImage) {
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext, image) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, image) })
     // OpenRouter serves free vision models too. Without this, a site holding
     // only the OpenRouter key — the key its own setup text asks for — refused
     // every picture.
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, fileContext, image) })
+      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, image) })
     if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
       // Only if there is no free reader at all: this one costs money.
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
     }
     if (providers.length === 0) {
       return reply({ error: 'قراءة الصور غير مفعّلة على هذا الموقع بعد — أرسل سؤالك نصاً.' }, 503)
     }
   } else {
     if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, fileContext) })
+      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding) })
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, fileContext) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding) })
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, fileContext) })
+      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding) })
   }
 
   let paidAllowed = false
   if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
     paidAllowed = !(await paidQuotaExhausted(request, deviceId))
     if (paidAllowed) {
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, fileContext) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
     }
   }
 
@@ -544,8 +544,41 @@ export async function POST(request) {
   }
 
   console.error('[api/ai] all providers failed:', errors.join(' | '))
+  // The apology stays the apology — for a student, a provider's error text is
+  // noise. But it hid a plain scoping bug («grounding is not defined») behind
+  // «جرّب بعد دقيقة» for as long as it took someone to ask, because the reason
+  // went only to a server log nobody reads. So the owner, and only the owner,
+  // gets the reason with the answer: a diagnosis he can act on without me.
   return reply(
-    { error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.` },
+    {
+      error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.`,
+      ...(await adminDetail(errors)),
+    },
     500
   )
+}
+
+/**
+ * Why every provider failed, for an admin caller only.
+ *
+ * Redacted the same way the storage self-test redacts: an error message can
+ * carry the URL a key was appended to, and a reason worth showing is never
+ * worth leaking a key for.
+ */
+async function adminDetail(errors) {
+  try {
+    const { requireAdmin } = await import('@/lib/admin-guard')
+    const gate = await requireAdmin()
+    if (!gate.ok) return {}
+  } catch {
+    return {}
+  }
+  const detail = errors
+    .map(e => String(e)
+      .replace(/https?:\/\/\S+/g, '[url]')
+      .replace(/(key|token|api[_-]?key)=\S+/gi, '$1=[redacted]')
+      .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted]'))
+    .join(' | ')
+    .slice(0, 400)
+  return detail ? { detail } : {}
 }
