@@ -450,6 +450,11 @@ export async function extractText(buffer, name = '') {
   let raw = ''
   try {
     if (kind === 'pdf') {
+      // Before the parser loads: pdf.js reaches for browser globals on some
+      // documents, and a missing one kills the whole file with «DOMMatrix is
+      // not defined» rather than degrading. See pdf-globals.
+      const { installPdfGlobals } = await import('@/lib/pdf-globals')
+      installPdfGlobals()
       const { PDFParse } = await import('pdf-parse')
       const parser = new PDFParse({ data: new Uint8Array(buffer) })
       try {
