@@ -493,6 +493,11 @@ function IndexPanel({ flash }) {
             <div><b style={{ color: 'var(--tx)' }}>التفصيل:</b> {state.detail.message}</div>
             <div>الموضع: {state.detail.stage === 'list' ? 'سرد النسخ' : 'قراءة النسخ'}</div>
             {state.detail.cause && <div style={{ direction: 'ltr', textAlign: 'right' }}>{state.detail.cause}</div>}
+            {Array.isArray(state.detail.trace) && state.detail.trace.length > 0 && (
+              <div style={{ direction: 'ltr', textAlign: 'right', marginTop: 3 }}>
+                {state.detail.trace.join(' · ')}
+              </div>
+            )}
             <div style={{ color: 'var(--dim)', marginTop: 3 }}>انسخ هذا السطر كما هو.</div>
           </div>
         )}

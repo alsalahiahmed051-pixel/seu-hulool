@@ -1,4 +1,4 @@
-import { get } from '@vercel/blob'
+import { getPrivate } from '@/lib/blob-read'
 import { downloadPerMinuteLimit, callerKey } from '@/lib/rate-limit'
 import { safeContentType } from '@/lib/content-type'
 
@@ -43,12 +43,14 @@ export async function GET(request) {
   const url = parsed.toString()
 
   try {
-    // Private blobs must be read through the SDK; a raw authorised fetch is
-    // not sufficient for them. Fall back to fetch for older public objects.
+    // Private blobs must be read through the SDK BY PATHNAME — see getPrivate.
+    // The direct-URL form is not authorised for them, so this used to depend
+    // on whatever the CDN happened to be holding. Fall back to fetch for older
+    // public objects.
     let body = null
     let contentType = null
     try {
-      const got = await get(url, { access: 'private' })
+      const got = await getPrivate(url)
       if (got?.stream) {
         body = got.stream
         contentType = got.blob?.contentType || null
