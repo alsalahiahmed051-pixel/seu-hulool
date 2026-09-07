@@ -126,7 +126,12 @@ function indexError(message, detail) {
     generations: detail.generations ?? null,
     // The SDK puts blob URLs in some messages; those name the store, so only
     // the error's type and a short redacted message go out.
-    cause: cause ? `${cause.name}: ${String(cause.message || '').replace(/https?:\/\/\S+/g, '[url]').slice(0, 160)}` : null,
+    // The message, not the name — the store library leaves `name` as plain
+    // "Error" on every one of its errors, so the name says nothing at all.
+    cause: cause ? String(cause.message || cause)
+      .replace(/https?:\/\/\S+/g, '[url]')
+      .replace(/vercel_blob_[A-Za-z0-9_-]+/g, '[token]')
+      .slice(0, 160) : null,
     trace: detail.trace || null,
     message,
   }
