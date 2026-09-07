@@ -1,4 +1,5 @@
-import { list, del, put, get } from '@vercel/blob'
+import { list, del, put } from '@vercel/blob'
+import { getPrivate } from '@/lib/blob-read'
 
 /**
  * The uploaded-files index, stored as a single JSON blob.
@@ -47,25 +48,36 @@ async function generations() {
 /**
  * One generation's contents, or null if it cannot be read.
  *
- * `useCache: false` is not an optimisation — it is the difference between the
- * index being readable and not. Private reads go through the CDN by default,
- * and a blob is fetched for the first time moments after it is written, when
- * the edge may not have it yet. A miss answered as 404 is then CACHED, and that
- * URL keeps returning nothing long after the object is really there. The index
- * is a single small object read a handful of times a minute; there is nothing
- * to gain from caching it and a whole library to lose.
+ * BY PATHNAME FIRST, and that is the whole point. The SDK's `get` takes either:
+ * given a URL it fetches that URL directly, given a pathname it builds the URL
+ * from the store id **and authorises it with the token**. Every file here is
+ * stored private, and a direct fetch of a private URL is not authorised — which
+ * is why the library's own example for `access: 'private'` passes a pathname.
+ *
+ * This code passed `blob.url` from `list()`, and it worked for months: an
+ * earlier authorised read had populated the CDN, and the cached copy kept being
+ * served. It broke the moment a NEWLY written generation had to be read for the
+ * first time — nothing cached, direct fetch, unauthorised, null. That is
+ * exactly the shape of the failure: the store lists one generation and no read
+ * of it succeeds. Three generations did not help because all three were new,
+ * and `useCache: false` made it strictly worse by removing the cache that had
+ * been carrying it.
+ *
+ * So: the authorised form first, the old form after it, and the cached form
+ * last — because a stale cached copy of the index still beats no index at all.
+ * Each attempt's outcome is reported, so this stops being guesswork.
  */
-async function readOne(blob) {
+async function readOne(blob, trace) {
+  const res = await getPrivate(blob, trace)
+  if (!res) return null
   try {
-    // The index is stored privately, so it must be read through the SDK — a
-    // plain fetch of the URL is not authorised and used to fail silently.
-    const res = await get(blob.url, { access: 'private', useCache: false })
-    if (!res) return null
     const parsed = JSON.parse(await new Response(res.stream).text())
-    return Array.isArray(parsed) ? parsed : null
-  } catch {
-    return null
+    if (Array.isArray(parsed)) return parsed
+    trace?.push('body: not an array')
+  } catch (e) {
+    trace?.push(`body: ${e?.name || 'Error'}`)
   }
+  return null
 }
 
 /**
@@ -90,15 +102,18 @@ export async function readMeta() {
   }
   if (!blobs.length) return []
 
+  // Every attempt on every generation, so a failure names itself instead of
+  // costing another round trip through a deploy to find out what it was.
+  const trace = []
   for (const blob of blobs) {
-    const records = await readOne(blob)
+    const records = await readOne(blob, trace)
     if (records) return records
   }
   // The generation count is the fact that matters most when this happens: it
   // says whether the records still EXIST and only cannot be read — recoverable
   // — or whether there is nothing left in the store at all.
   throw indexError(`وُجدت ${blobs.length} نسخة من الفهرس ولم تُقرأ أيّ منها`, {
-    stage: 'read', generations: blobs.length,
+    stage: 'read', generations: blobs.length, trace: trace.slice(0, 9),
   })
 }
 
@@ -112,6 +127,7 @@ function indexError(message, detail) {
     // The SDK puts blob URLs in some messages; those name the store, so only
     // the error's type and a short redacted message go out.
     cause: cause ? `${cause.name}: ${String(cause.message || '').replace(/https?:\/\/\S+/g, '[url]').slice(0, 160)}` : null,
+    trace: detail.trace || null,
     message,
   }
   return err

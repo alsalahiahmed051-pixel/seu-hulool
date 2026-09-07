@@ -1,4 +1,5 @@
-import { put, list, get, del } from '@vercel/blob'
+import { put, list, del } from '@vercel/blob'
+import { getPrivate } from '@/lib/blob-read'
 import { extractText } from '@/lib/file-text'
 import { blobEnabled } from '@/lib/files-meta'
 
@@ -27,7 +28,10 @@ export async function readText(id) {
   try {
     const { blobs } = await list({ prefix: keyFor(id) })
     if (!blobs.length) return ''
-    const res = await get(blobs[0].url, { access: 'private' })
+    // By pathname — see getPrivate. A private blob fetched by raw URL is not
+    // authorised, and this text is written then read for the first time
+    // minutes later, with nothing cached to cover for it.
+    const res = await getPrivate(blobs[0])
     if (!res) return ''
     return await new Response(res.stream).text()
   } catch {
@@ -69,9 +73,9 @@ export async function indexFile(record) {
 
   let buf
   try {
-    // Through the SDK: the store is private, so a plain fetch of the URL is
-    // not authorised.
-    const res = await get(src, { access: 'private' })
+    // Through the SDK, and by pathname: the store is private, so neither a
+    // plain fetch of the URL nor the SDK's direct-URL form is authorised.
+    const res = await getPrivate(src)
     if (!res) throw new Error('unreachable')
     buf = Buffer.from(await new Response(res.stream).arrayBuffer())
   } catch {
