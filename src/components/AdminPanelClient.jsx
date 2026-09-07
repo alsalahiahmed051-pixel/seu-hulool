@@ -71,7 +71,10 @@ const FILE_COURSES = COURSE_GROUPS
  */
 // Mirrors the server's cap and its accepted types, so the picker offers
 // exactly what /api/upload will issue a token for.
-const MAX_UPLOAD = 200 * 1024 * 1024
+// The free storage plan's per-file ceiling — the server enforces the same
+// figure. Refusing here means a file too large is never sent at all, instead of
+// failing at the end of a long upload and reading as "upload is broken".
+const MAX_UPLOAD = 50 * 1024 * 1024
 // Everything the indexer can read, plus the images and archives that are
 // upload-only. The picker used to stop at Office and images, so a lecturer's
 // .txt or a page saved from Blackboard could not be uploaded at all — even
@@ -551,7 +554,7 @@ function IndexPanel({ flash }) {
   const runSelftest = async () => {
     setTesting(true)
     setSelftest(null)
-    const { data } = await apiJSON('/api/admin/blob-selftest')
+    const { data } = await apiJSON('/api/admin/storage-selftest')
     setSelftest(data && (data.verdict || data.error || data.steps) ? data : { error: 'تعذّر الفحص' })
     setTesting(false)
   }
@@ -1076,7 +1079,6 @@ function FilesTab({ flash }) {
     setUploading(true)
     setProgress(0)
     setBatch({ done: 0, total: selected.length, failed: [] })
-    const { upload: blobUpload } = await import('@vercel/blob/client')
     const failed = []
 
     for (let i = 0; i < selected.length; i++) {
@@ -1084,21 +1086,38 @@ function FilesTab({ flash }) {
       setBatch(b => ({ ...b, done: i, current: file.name }))
       setProgress(0)
       try {
-        const blob = await blobUpload(file.name, file, {
-          // Private, matching how every existing file is stored: served through
-          // /api/download rather than reachable at a raw URL.
-          access: 'private',
-          handleUploadUrl: '/api/upload',
-          // The file's own type. It was pinned to application/pdf, so a PPTX
-          // uploaded as a PDF and then would not open for the student.
-          contentType: file.type || 'application/octet-stream',
-          onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
+        // Two steps, and the bytes never touch a function: ask the server for a
+        // short-lived signed URL, then send the file straight to storage. A
+        // serverless request body is capped at a few megabytes, so anything
+        // else would fail on real course material.
+        const handshake = await apiJSON('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: file.name, size: file.size, courseName: course }),
         })
+        if (!handshake.ok) throw new Error(handshake.data.error || 'تعذّر بدء الرفع')
+
+        const { createClient } = await import('@supabase/supabase-js')
+        const sb = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        )
+        setProgress(30)
+        const { error: upErr } = await sb.storage
+          .from('course-files')
+          .uploadToSignedUrl(handshake.data.path, handshake.data.token, file, {
+            // The file's own type. It was pinned to application/pdf once, so a
+            // PPTX uploaded as a PDF then would not open for the student.
+            contentType: file.type || 'application/octet-stream',
+          })
+        if (upErr) throw new Error(upErr.message || 'تعذّر رفع الملف')
+        setProgress(90)
+
         const { ok, data } = await apiJSON('/api/files', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            blobUrl: blob.url,
+            storagePath: handshake.data.path,
             courseName: course,
             category,
             // The typed name applies only when one file was chosen; naming
@@ -1276,7 +1295,7 @@ function FilesTab({ flash }) {
                 {f.courseName} • {CATEGORY_LABEL[f.category] || f.category} • {f.sizeLabel} • {fmtDate(f.uploadedAt)}
               </div>
             </div>
-            <a href={`/api/download?url=${encodeURIComponent(f.blobUrl)}`} target="_blank" rel="noopener noreferrer" style={{ ...S.iconBtn(P.blue2), textDecoration: 'none' }}><Eye size={14} /></a>
+            <a href={`/api/download?id=${encodeURIComponent(f.id)}`} target="_blank" rel="noopener noreferrer" style={{ ...S.iconBtn(P.blue2), textDecoration: 'none' }}><Eye size={14} /></a>
             <button onClick={() => remove(f)} style={S.iconBtn(P.red)}><Trash2 size={14} /></button>
           </div>
         ))}

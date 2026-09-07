@@ -1682,9 +1682,10 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     const textFiles = allF.filter(f => /\.(txt|md)$/i.test(f.name)).slice(0, 3);
     Promise.all(textFiles.map(async f => {
       try {
-        const src = f.blobUrl || f.url;
-        if (!src) return null;
-        const r = await fetch(`/api/download?url=${encodeURIComponent(src)}`);
+        // By id: a file uploaded since storage moved to Supabase has no URL
+        // to pass, and the download route resolves both the same way.
+        if (!f.id) return null;
+        const r = await fetch(`/api/download?id=${encodeURIComponent(f.id)}`);
         if (!r.ok) return null;
         const text = await r.text();
         return `\nمحتوى "${f.name}":\n${text.slice(0, 600)}`;
@@ -4196,7 +4197,9 @@ function RealFileItem({ file, t, onToast, canOpen = true, onNeedAccount = null }
   const [myRating, setMyRating] = useState(() => (storage.get("ratings", {})[ratingKey] || 0));
   const [hoverRating, setHoverRating] = useState(0);
   const blobSrc = file.blobUrl || file.url || "";
-  const dlUrl = `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
+  const dlUrl = file.id
+    ? `/f/${file.id}?dl=1`
+    : `/api/download?url=${encodeURIComponent(blobSrc)}&dl=1`;
 
   const rateFile = (star) => {
     const ratings = storage.get("ratings", {});

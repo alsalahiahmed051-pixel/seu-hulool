@@ -1,23 +1,16 @@
-import { put, list, del } from '@vercel/blob'
-import { getPrivate } from '@/lib/blob-read'
 import { extractText } from '@/lib/file-text'
-import { blobEnabled } from '@/lib/files-meta'
+import { readExtractedText, writeExtractedText, blobEnabled } from '@/lib/files-meta'
+import { readFileBytes } from '@/lib/file-storage'
 
 /**
  * The searchable text of every uploaded file.
  *
- * Kept as one small blob per file rather than in the library index or a new
- * table. The index is read on every course page, so folding megabytes of
- * extracted prose into it would slow down the whole site to serve a feature
- * only the assistant uses; and a per-file blob needs no migration, is deleted
- * with its file, and costs nothing when unused.
- *
- * Storage is private, like the index itself — this text is the owner's
- * material, not something to leave on a public URL.
+ * It used to be one small blob per file, beside the library's own blob. Both
+ * are now columns and rows in the database instead: the blob store reached its
+ * plan's usage limit and was suspended for a month, and each of those objects
+ * was another thing that could fail on its own while the record it belonged to
+ * was fine.
  */
-
-const PREFIX = 'hulool-text'
-const keyFor = (id) => `${PREFIX}/${id}.txt`
 
 /** Text long enough to matter, short enough not to blow up a prompt. */
 export const MAX_STORED_CHARS = 120_000
@@ -26,14 +19,7 @@ export const MAX_STORED_CHARS = 120_000
 export async function readText(id) {
   if (!blobEnabled() || !id) return ''
   try {
-    const { blobs } = await list({ prefix: keyFor(id) })
-    if (!blobs.length) return ''
-    // By pathname — see getPrivate. A private blob fetched by raw URL is not
-    // authorised, and this text is written then read for the first time
-    // minutes later, with nothing cached to cover for it.
-    const res = await getPrivate(blobs[0])
-    if (!res) return ''
-    return await new Response(res.stream).text()
+    return await readExtractedText(id)
   } catch {
     return ''
   }
@@ -41,21 +27,12 @@ export async function readText(id) {
 
 /** Replace one file's indexed text. */
 export async function writeText(id, text) {
-  await put(keyFor(id), String(text || '').slice(0, MAX_STORED_CHARS), {
-    access: 'private',
-    contentType: 'text/plain; charset=utf-8',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-  })
+  await writeExtractedText(id, String(text || '').slice(0, MAX_STORED_CHARS))
 }
 
-/** Drop a file's text when the file itself is deleted. */
+/** Forget one file's text. The row carries it, so removing the row is enough. */
 export async function removeText(id) {
-  if (!blobEnabled() || !id) return
-  try {
-    const { blobs } = await list({ prefix: keyFor(id) })
-    if (blobs.length) await del(blobs.map(b => b.url))
-  } catch { /* an orphaned text blob is harmless */ }
+  try { await writeExtractedText(id, '') } catch { /* the row may already be gone */ }
 }
 
 /**
@@ -68,18 +45,15 @@ export async function removeText(id) {
  * silently absent from every answer with nothing anywhere saying why.
  */
 export async function indexFile(record, { force = false } = {}) {
-  const src = record?.blobUrl || record?.url
-  if (!src) return { id: record?.id, ok: false, reason: 'لا رابط للملف' }
+  if (!record?.id) return { id: record?.id, ok: false, reason: 'سجلّ الملف ناقص' }
 
   // Already extracted? Then do not download it again.
   //
-  // This is not a micro-optimisation — it is what keeps the store inside its
-  // allowance. Indexing downloads every file in full, and the owner's store hit
-  // the Hobby plan's usage limit and was SUSPENDED for a month, taking the
+  // This is not a micro-optimisation — it is what keeps a storage plan inside
+  // its allowance. Indexing downloads every file in full, and the previous
+  // store hit its plan's usage limit and was SUSPENDED for a month, taking the
   // whole library offline. A re-run used to pay that transfer over from the
   // start, and a retry loop that could not converge paid it several times.
-  // Text already stored is the same text; reading the small extract instead of
-  // the large original makes a second run nearly free.
   if (!force) {
     const already = await readText(record.id)
     if (already && already.length >= 200) {
@@ -89,14 +63,7 @@ export async function indexFile(record, { force = false } = {}) {
 
   let buf
   try {
-    // Through the SDK, and by pathname: the store is private, so neither a
-    // plain fetch of the URL nor the SDK's direct-URL form is authorised.
-    // getPrivate already tries the token-authorised HTTP route as its last
-    // resort, so there is no unauthenticated fetch to fall back to here — one
-    // would only spend another request to be refused.
-    const res = await getPrivate(src)
-    if (!res) throw new Error('تعذّر الوصول إلى الملف في التخزين')
-    buf = Buffer.from(await new Response(res.stream).arrayBuffer())
+    buf = await readFileBytes(record)
   } catch (err) {
     return { id: record.id, ok: false, reason: `تعذّر تنزيل الملف: ${String(err?.message || err).slice(0, 80)}` }
   }

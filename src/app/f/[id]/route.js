@@ -30,11 +30,14 @@ export async function GET(request, { params }) {
   }
 
   const file = all.find(f => f.id === id)
-  if (!file?.blobUrl) return new Response('الملف غير موجود', { status: 404 })
+  if (!file) return new Response('الملف غير موجود', { status: 404 })
 
   const dl = new URL(request.url).searchParams.get('dl') === '1'
   const target = new URL('/api/download', request.url)
-  target.searchParams.set('url', file.blobUrl)
+  // By id, not by storage URL: which store holds the file is the record's
+  // business, and files uploaded since the move to Supabase have no URL to
+  // pass. The download route resolves the id the same way for both.
+  target.searchParams.set('id', file.id)
   if (dl) target.searchParams.set('dl', '1')
   return Response.redirect(target.toString(), 302)
 }

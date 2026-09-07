@@ -1,6 +1,8 @@
 import { getPrivate } from '@/lib/blob-read'
 import { downloadPerMinuteLimit, callerKey } from '@/lib/rate-limit'
 import { safeContentType } from '@/lib/content-type'
+import { readMeta } from '@/lib/files-meta'
+import { signedDownloadUrl } from '@/lib/file-storage'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -19,7 +21,36 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url)
   const rawUrl = searchParams.get('url')
+  const id = searchParams.get('id')
   const forceDownload = searchParams.get('dl') === '1'
+
+  // BY ID is the path for anything uploaded since storage moved to Supabase:
+  // those files have no public URL at all, and which store holds a file is the
+  // record's business rather than the link's. A signed URL is minted for the
+  // moment of the download and expires; the object stays private.
+  if (id) {
+    let file = null
+    try {
+      file = (await readMeta()).find(f => f.id === id) || null
+    } catch {
+      return new Response('تعذّر قراءة قائمة الملفات', { status: 500 })
+    }
+    if (!file) return new Response('الملف غير موجود', { status: 404 })
+
+    if (file.storagePath && file.provider !== 'vercel') {
+      try {
+        const signed = await signedDownloadUrl(file.storagePath, 120)
+        const target = new URL(signed)
+        if (forceDownload) target.searchParams.set('download', file.name || '1')
+        return Response.redirect(target.toString(), 302)
+      } catch (err) {
+        return new Response('تعذّر فتح الملف: ' + String(err?.message || err).slice(0, 120), { status: 502 })
+      }
+    }
+    // Uploaded before the move — served through the old store below.
+    if (!file.blobUrl) return new Response('الملف غير موجود', { status: 404 })
+    return servePrivateBlob(file.blobUrl, forceDownload)
+  }
 
   if (!rawUrl) return new Response('url required', { status: 400 })
 
@@ -40,8 +71,19 @@ export async function GET(request) {
   if (parsed.protocol !== 'https:' || !/(^|\.)blob\.vercel-storage\.com$/.test(parsed.hostname)) {
     return new Response('Invalid file host', { status: 400 })
   }
-  const url = parsed.toString()
+  return servePrivateBlob(parsed.toString(), forceDownload)
+}
 
+/**
+ * Serve one object out of the OLD Vercel Blob store.
+ *
+ * Kept for everything uploaded before storage moved to Supabase, and for the
+ * subscription receipts that still live there. New uploads never reach this —
+ * they are redirected to a short-lived signed URL instead, which costs this
+ * function nothing to stream.
+ */
+async function servePrivateBlob(url, forceDownload) {
+  
   try {
     // Private blobs must be read through the SDK BY PATHNAME — see getPrivate.
     // The direct-URL form is not authorised for them, so this used to depend
