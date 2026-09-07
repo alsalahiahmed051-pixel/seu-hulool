@@ -99,27 +99,102 @@ export const MIN_READABLE = 0.35
 export const MIN_CHARS = 200
 
 /**
- * Everything the indexer will attempt.
+ * Formats there is no point attempting, each with the reason why.
  *
- * The owner's library is not a pile of PDFs — it is whatever a lecturer
- * happened to send: a Word summary, an Excel plan, a deck, a page saved from
- * Blackboard. Refusing all of those with «نوع الملف غير مدعوم» made the
- * assistant blind to most of what was actually uploaded, so every one of them
- * is read here.
- *
- * The legacy binary formats (.doc/.ppt/.xls, pre-2007) are attempted too, on a
- * best-effort basis — see `legacyOfficeText`. They either come out readable and
- * pass the quality gate below, or they are refused with a reason. What they
- * never do any more is get rejected unread.
+ * Everything else is attempted: PDF, the three OOXML formats, the pre-2007
+ * binary ones (best effort — see `legacyOfficeText`), HTML, RTF and plain text.
+ * The owner's library is not a pile of PDFs; it is whatever a lecturer happened
+ * to send, and a file the indexer refuses unread is a file the assistant is
+ * blind to with nothing anywhere saying why.
  */
-export const SUPPORTED = /\.(pdf|pptx|docx|xlsx|doc|ppt|xls|txt|md|csv|json|html?|rtf)$/i
+const HOPELESS = {
+  image: 'صورة — لا نصّ فيها تُقرأ منه (تحتاج OCR)',
+  archive: 'ملف مضغوط — افتحه وارفع ما بداخله',
+  media: 'ملف صوت أو فيديو — لا نصّ فيه',
+}
 
-/** Formats there is no point attempting, each with the reason why. */
-const HOPELESS = [
-  [/\.(png|jpe?g|gif|webp|heic|bmp|tiff?)$/i, 'صورة — لا نصّ فيها تُقرأ منه (تحتاج OCR)'],
-  [/\.(zip|rar|7z|tar|gz)$/i, 'ملف مضغوط — افتحه وارفع ما بداخله'],
-  [/\.(mp4|mp3|wav|mov|avi|m4a)$/i, 'ملف صوت أو فيديو — لا نصّ فيه'],
-]
+/**
+ * Invisible characters a filename picks up on its way here.
+ *
+ * A name mixing Arabic and Latin — «ملخص مهارات الاتصال.pdf» — comes out of the
+ * file picker wrapped in bidi ISOLATES (U+2066‥U+2069), so the string does not
+ * end at «.pdf», it ends at an invisible U+2069. Every extension test anchored
+ * with `$` therefore failed, and thirty real uploads were reported as «نوع
+ * الملف غير مدعوم» — a name the eye reads as a PDF and the regex does not.
+ */
+// Written as escapes on purpose: these characters are invisible, so spelled
+// out literally they would look like an empty character class.
+const BIDI = /[‎‏؜⁦-⁩‪-‮﻿]/g
+
+/** A filename with the invisible marks taken out. */
+export const cleanName = (name) => String(name || '').replace(BIDI, '').trim()
+
+/**
+ * What this file ACTUALLY is, decided by its bytes.
+ *
+ * Never by its name. Of the owner's first thirty-three uploads, most carried no
+ * extension at all — «MATH001», «Acct101-Final-1st-2024-25» — and the rest
+ * carried one hidden behind a bidi isolate. Not one of them was readable by
+ * name, and all of them are ordinary PDFs. A filename is a label a person
+ * typed; the first bytes of a file are what it is.
+ *
+ * The extension is consulted only as a tiebreaker for plain-text formats, which
+ * have no signature to find.
+ */
+export function sniffKind(buffer, name = '') {
+  // Not `Buffer.from(buffer)`: that copies, and these files run to tens of
+  // megabytes inside a function with a fixed memory budget.
+  const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+  const head = buf.toString('latin1', 0, 1024)
+
+  // Some PDFs carry junk before the header; the spec allows it and readers
+  // tolerate it, so look for the marker rather than requiring it at offset 0.
+  if (head.includes('%PDF-')) return 'pdf'
+
+  // OOXML is a ZIP. Its entry NAMES are stored uncompressed in the local file
+  // headers, so which of the three it is can be read straight out of the bytes
+  // — no need to inflate the whole archive twice.
+  if (buf[0] === 0x50 && buf[1] === 0x4B) {
+    // Searched as BYTES, not by decoding the archive into a string first: a
+    // forty-megabyte deck would otherwise allocate a forty-megabyte string
+    // just to answer «is this a pptx».
+    const has = (s) => buf.indexOf(Buffer.from(s, 'latin1')) !== -1
+    if (has('ppt/slides/')) return 'pptx'
+    if (has('word/document.xml')) return 'docx'
+    if (has('xl/workbook.xml')) return 'xlsx'
+    return 'archive'
+  }
+
+  // OLE compound file: every pre-2007 Office document, and nothing else here.
+  if (buf.length > 8 && buf.readUInt32BE(0) === 0xd0cf11e0 && buf.readUInt32BE(4) === 0xa1b11ae1) {
+    return 'legacy'
+  }
+
+  if (head.startsWith('{\\rtf')) return 'rtf'
+
+  const isImage = buf[0] === 0x89 && head.startsWith('\x89PNG')
+    || (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff)     // JPEG
+    || head.startsWith('GIF8')
+    || (head.startsWith('RIFF') && head.slice(8, 12) === 'WEBP')
+    || head.startsWith('BM')                                        // BMP
+    || (head.slice(4, 8) === 'ftyp' && /heic|heif|mif1/.test(head.slice(8, 20)))
+  if (isImage) return 'image'
+
+  const isMedia = head.slice(4, 8) === 'ftyp'                       // mp4/mov
+    || head.startsWith('ID3') || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) // mp3
+    || head.startsWith('OggS') || (head.startsWith('RIFF') && head.slice(8, 12) === 'WAVE')
+    || head.startsWith('\x1aE\xdf\xa3')                             // matroska
+  if (isMedia) return 'media'
+
+  if (/^\s*(<!doctype html|<html)/i.test(head)) return 'html'
+
+  // No signature left to find: it is text of some sort, and only now does the
+  // name get a say — and only over which flavour of text.
+  const clean = cleanName(name)
+  if (/\.html?$/i.test(clean)) return 'html'
+  if (/\.rtf$/i.test(clean)) return 'rtf'
+  return 'text'
+}
 
 /** Decode the five XML entities. Enough for text content we never re-emit. */
 const unentity = (s) => s
@@ -369,12 +444,12 @@ async function pptxText(buffer) {
 export async function extractText(buffer, name = '') {
   const fail = (reason) => ({ ok: false, text: '', chars: 0, ratio: 0, reason })
 
-  for (const [re, why] of HOPELESS) if (re.test(name)) return fail(why)
-  if (!SUPPORTED.test(name)) return fail('نوع الملف غير مدعوم للفهرسة')
+  const kind = sniffKind(buffer, name)
+  if (HOPELESS[kind]) return fail(HOPELESS[kind])
 
   let raw = ''
   try {
-    if (/\.pdf$/i.test(name)) {
+    if (kind === 'pdf') {
       const { PDFParse } = await import('pdf-parse')
       const parser = new PDFParse({ data: new Uint8Array(buffer) })
       try {
@@ -383,23 +458,23 @@ export async function extractText(buffer, name = '') {
       } finally {
         await parser.destroy().catch(() => {})
       }
-    } else if (/\.pptx$/i.test(name)) {
+    } else if (kind === 'pptx') {
       raw = await pptxText(buffer)
       if (!raw.trim()) return fail('لا يوجد نص في الشرائح — الأرجح أنها صور')
-    } else if (/\.docx$/i.test(name)) {
+    } else if (kind === 'docx') {
       raw = await docxText(buffer)
       if (!raw.trim()) return fail('لا يوجد نص في المستند — الأرجح أنه صور داخل ملف Word')
-    } else if (/\.xlsx$/i.test(name)) {
+    } else if (kind === 'xlsx') {
       raw = await xlsxText(buffer)
       if (!raw.trim()) return fail('الجدول فارغ من النصّ')
-    } else if (/\.(doc|ppt|xls)$/i.test(name)) {
+    } else if (kind === 'legacy') {
       raw = legacyOfficeText(buffer)
       if (!raw.trim()) {
         return fail('صيغة Office القديمة لم يُستخرج منها نص — احفظ الملف بصيغة حديثة (docx/pptx/xlsx)')
       }
-    } else if (/\.html?$/i.test(name)) {
+    } else if (kind === 'html') {
       raw = htmlText(Buffer.from(buffer).toString('utf8'))
-    } else if (/\.rtf$/i.test(name)) {
+    } else if (kind === 'rtf') {
       raw = rtfText(Buffer.from(buffer).toString('latin1'))
     } else {
       raw = Buffer.from(buffer).toString('utf8')
@@ -436,7 +511,7 @@ export async function extractText(buffer, name = '') {
     // ToUnicode map is unrecoverable by anyone, while a salvaged .doc just
     // needs re-saving. «الخطوط لا تحمل ترميزاً» on a .doc sends the owner
     // hunting for a problem that is not there.
-    const why = /\.(doc|ppt|xls)$/i.test(name)
+    const why = kind === 'legacy'
       ? 'صيغة Office القديمة لم تُقرأ بوضوح — افتح الملف واحفظه بصيغة حديثة (docx/pptx/xlsx) وأعد رفعه'
       : 'النص المستخرج غير مقروء — خطوط الملف لا تحمل ترميزاً'
     return { ...fail(why), chars: text.length, ratio }

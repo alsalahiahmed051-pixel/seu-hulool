@@ -1,5 +1,6 @@
 import { del } from '@vercel/blob'
 import { indexFile, removeText } from '@/lib/file-index'
+import { cleanName } from '@/lib/file-text'
 import { requireAdmin } from '@/lib/admin-guard'
 import { readMeta, writeMeta, blobEnabled, formatSize } from '@/lib/files-meta'
 import { courseMatches, canonicalCourse, ALL_CATEGORY_IDS } from '@/lib/courses'
@@ -91,7 +92,12 @@ export async function POST(request) {
   const bytes = Number(size) || 0
   const record = {
     id: crypto.randomUUID(),
-    name: String(name || 'ملف').slice(0, 200),
+    // Stripped of the bidi isolates the file picker wraps a mixed Arabic/Latin
+    // name in. They are invisible, so «ملخص.pdf» does not end at «.pdf» but at
+    // a hidden U+2069 — which is how thirty real PDFs came to be reported as an
+    // unsupported file type. The indexer no longer trusts names at all, but a
+    // name stored clean is one that displays and searches correctly too.
+    name: cleanName(String(name || 'ملف')).slice(0, 200) || 'ملف',
     courseName: canonicalCourse(String(courseName).slice(0, 200)),
     category,
     size: bytes,
