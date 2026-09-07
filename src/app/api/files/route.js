@@ -25,8 +25,15 @@ export async function GET(request) {
   try {
     all = await readMeta()
   } catch {
-    // Report the failure rather than pretending the library is empty.
-    return Response.json({ error: 'تعذّر قراءة قائمة الملفات', files: [] }, { status: 500 })
+    // Report the failure rather than pretending the library is empty — and say
+    // that storage IS configured. Omitting the flag made the panel read
+    // `blobEnabled: undefined` as false and print «Vercel Blob غير مضبوط»,
+    // which sends the owner to add a token that is already there AND hides the
+    // upload form, so a read failure silently took uploading away too.
+    return Response.json(
+      { error: 'تعذّر قراءة قائمة الملفات', files: [], blobEnabled: true, indexReadable: false },
+      { status: 500 },
+    )
   }
 
   let files = all
