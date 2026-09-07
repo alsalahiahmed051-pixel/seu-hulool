@@ -7,6 +7,7 @@ import { ownerKey } from '@/lib/ai-points'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { docScript } from '@/lib/lang'
 
 export const runtime = 'nodejs'
 
@@ -46,6 +47,23 @@ ${grounding.context}
 
 ابنِ الأسئلة من هذه المقاطع. المقاطع مستخرجة آلياً وقد تحتوي تشويهاً — تجاهل المشوّه ولا تبنِ عليه سؤالاً.
 لا تسأل عمّا ليس في المقاطع إن طُلب منك الاعتماد عليها.`
+
+    // A quiz follows the MATERIAL's language, where the chat follows the
+    // student's — and the difference is the point of each. A chat answer is
+    // read to understand; a quiz question is answered to rehearse. Rehearsing
+    // an English-taught course in Arabic trains a student for a paper they
+    // will not sit, so here the file decides.
+    const docLang = docScript(grounding.context)
+    if (docLang === 'en') {
+      sys += `
+اكتب الأسئلة وخياراتها بالإنجليزية، لأن ملفات هذه المادة بالإنجليزية وورقة الاختبار ستكون بها.`
+    } else if (docLang === 'ar') {
+      sys += `
+اكتب الأسئلة وخياراتها بالعربية، كما وردت المادة في ملفاتها.`
+    } else if (docLang === 'mixed') {
+      sys += `
+ملفات هذه المادة تخلط العربية والإنجليزية: اكتب كل سؤال بلغة المقطع الذي بُني عليه، وأبقِ المصطلحات كما وردت في الملف ولا تترجمها.`
+    }
   }
   return sys
 }
