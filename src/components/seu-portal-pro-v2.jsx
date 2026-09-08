@@ -9378,7 +9378,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, lineHeight: 1 }}>حلول</div>
-          <div style={{ fontSize: 11.5, color: t.mu }}>SEU • الجامعة السعودية الإلكترونية</div>
+          <div style={{ fontSize: 11.5, color: t.mu, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>SEU • الجامعة السعودية الإلكترونية</div>
         </div>
         {/* Named, not just drawn: an icon-only button is an unlabelled control
             to a screen reader, and this one is the way into the whole
