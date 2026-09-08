@@ -861,6 +861,33 @@ function IndexPanel({ flash }) {
           ))}
         </div>
       )}
+
+      {ai && <AiTestResult data={ai} />}
+      <div style={{ display: 'flex', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
+        <button onClick={runAiTest} disabled={aiTesting} style={{
+          background: 'var(--card)', color: 'var(--tx)', border: '1px solid var(--bd)', borderRadius: 9,
+          padding: '7px 13px', cursor: aiTesting ? 'default' : 'pointer', fontFamily: 'inherit',
+          fontSize: 12, fontWeight: 800,
+        }}>{aiTesting ? 'جارٍ سؤال المزوّدين…' : 'افحص المساعد الذكي'}</button>
+        <button onClick={runSelftest} disabled={testing} style={{
+          background: 'var(--card)', color: 'var(--tx)', border: '1px solid var(--bd)', borderRadius: 9,
+          padding: '7px 13px', cursor: testing ? 'default' : 'pointer', fontFamily: 'inherit',
+          fontSize: 12, fontWeight: 800,
+        }}>{testing ? 'جارٍ الفحص…' : 'افحص التخزين'}</button>
+      </div>
+      {selftest && (
+        <div style={{
+          marginTop: 8, background: 'var(--bg)', border: `1px solid ${selftest.ok ? P.green : P.orange}55`,
+          borderRadius: 9, padding: '8px 10px', fontSize: 11, color: 'var(--mu)', lineHeight: 1.8,
+        }}>
+          <div style={{ fontWeight: 800, color: selftest.ok ? P.green : P.orange }}>
+            {selftest.verdict || selftest.error || 'تعذّر الفحص'}
+          </div>
+          {(selftest.steps || []).map((st, i) => (
+            <div key={i} style={{ direction: 'ltr', textAlign: 'right' }}>{st}</div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
