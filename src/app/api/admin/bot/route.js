@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import {
   botSystemPrompt, parseProposal, validateProposal, describeAction,
 } from '@/lib/admin-bot'
+import { geminiModel } from '@/lib/gemini-model'
 
 export const runtime = 'nodejs'
 
@@ -40,7 +41,7 @@ async function ask(system, user) {
   }
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20) {
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${await geminiModel(GEMINI_KEY)}:generateContent?key=${GEMINI_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
