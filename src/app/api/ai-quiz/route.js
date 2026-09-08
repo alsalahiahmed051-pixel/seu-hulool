@@ -8,7 +8,8 @@ import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { docScript } from '@/lib/lang'
-import { geminiModel } from '@/lib/gemini-model'
+import { geminiGenerate } from '@/lib/gemini-model'
+import { firstAnswer } from '@/lib/hedge'
 
 export const runtime = 'nodejs'
 
@@ -195,17 +196,14 @@ async function callGroq(subject, count, source, grounding) {
 }
 
 async function callGemini(subject, count, source, grounding) {
-  const model = await geminiModel(GEMINI_KEY, (u, i) => timedFetch(u, i, 6000))
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
     generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
   }
-  const r = await timedFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const data = await r.json()
-  if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
-  return parseQuiz(data.candidates?.[0]?.content?.parts?.[0]?.text || '')
+  // One request when the name is right; the catalogue only when Google says
+  // the NAME is what it objects to. See lib/gemini-model.
+  return parseQuiz(await geminiGenerate(GEMINI_KEY, body, timedFetch))
 }
 
 export async function POST(request) {
@@ -336,18 +334,37 @@ export async function POST(request) {
     return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
   }
 
-  for (const { paid, fn } of providers) {
-    // Same reasoning as the chat: a provider that cannot finish inside the
-    // remaining budget spends the student's wait and returns nothing.
-    if (Date.now() - started > DEADLINE_MS) break
-    try {
-      const quiz = await fn()
-      if (quiz && Array.isArray(quiz) && quiz.length > 0) {
-        if (paid) await consumePaidQuota(request, deviceId)
-        return reply({ quiz })
+  // Free providers race with a head start, exactly as the chat does — a quiz
+  // used to wait out each provider's full timeout in turn, which is why
+  // «تعذّر توليد الاختبار» arrived after most of a minute.
+  const errors = []
+  const isQuiz = (q) => Array.isArray(q) && q.length > 0
+  const free = providers.filter(p => !p.paid)
+  const paidProviders = providers.filter(p => p.paid)
+  let won = free.length ? await firstAnswer(free, errors, { isGood: isQuiz }) : null
+
+  // The paid one never races: it is the only provider that costs money.
+  if (!won) {
+    for (const p of paidProviders) {
+      if (Date.now() - started > DEADLINE_MS) { errors.push(`${p.name}: نفد الوقت`); break }
+      try {
+        const quiz = await p.fn()
+        if (isQuiz(quiz)) { won = { provider: p, value: quiz }; break }
+        errors.push(`${p.name}: ردٌّ فارغ`)
+      } catch (err) {
+        errors.push(`${p.name}: ${err.message}`)
       }
-    } catch {}
+    }
   }
 
+  if (won) {
+    if (won.provider.paid) await consumePaidQuota(request, deviceId)
+    return reply({ quiz: won.value })
+  }
+
+  // The reasons used to be swallowed by `catch {}`, so a failing quiz left no
+  // trace anywhere — not in the reply, not in the log. The student still sees
+  // only the apology; the owner now has something to act on.
+  console.error('[api/ai-quiz] all providers failed:', errors.join(' | '))
   return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
 }

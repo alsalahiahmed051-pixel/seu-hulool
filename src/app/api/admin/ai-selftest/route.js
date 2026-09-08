@@ -1,5 +1,5 @@
 import { requireAdmin } from '@/lib/admin-guard'
-import { geminiModel } from '@/lib/gemini-model'
+import { geminiGenerate, preferredModel } from '@/lib/gemini-model'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -85,22 +85,13 @@ async function askGroq() {
 }
 
 async function askGemini() {
-  // The same discovery the site uses, so this reports the model a student's
-  // question would actually reach — not one this file happens to name.
-  const model = await geminiModel(KEYS.Gemini, withTimeout)
-  const r = await withTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEYS.Gemini}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: PROBE }] }],
-        generationConfig: { maxOutputTokens: 16 },
-      }),
-    })
-  const d = await r.json()
-  if (!r.ok) throw new Error(`${model}: HTTP ${r.status} ${d.error?.message || ''}`)
-  return d.candidates?.[0]?.content?.parts?.[0]?.text
+  // The same call path the site uses, so this reports what a student's question
+  // would actually meet — including the model name it settles on.
+  const text = await geminiGenerate(KEYS.Gemini, {
+    contents: [{ role: 'user', parts: [{ text: PROBE }] }],
+    generationConfig: { maxOutputTokens: 16 },
+  }, withTimeout)
+  return text ? `${preferredModel()}: ${text}` : ''
 }
 
 async function askOpenRouter() {
