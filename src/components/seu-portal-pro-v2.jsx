@@ -1886,7 +1886,21 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         // that matters.
         body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial }),
       });
-      const d = await res.json();
+      // A function the platform killed returns an HTML error page, not JSON.
+      // Parsing that throws, and it used to land in the same catch as a real
+      // network failure — so a server that gave up told the student their
+      // connection was broken. They are different failures and must say so.
+      let d;
+      try {
+        d = await res.json();
+      } catch {
+        setMsgs(m => [...m, { r: "a", id: mkId(), ts: Date.now(),
+          text: res.status >= 500 || res.status === 504
+            ? "لم يُكمل الخادم الإجابة في الوقت المتاح. أعد المحاولة، أو اختصر السؤال."
+            : `تعذّرت قراءة ردّ الخادم (${res.status}). أعد المحاولة.` }]);
+        setLoading(false);
+        return;
+      }
       // The server is the authority on what is left; mirror whatever it says.
       if (d.subscribed || d.remaining != null || d.resetAt) {
         setGate({
