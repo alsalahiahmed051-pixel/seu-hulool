@@ -143,19 +143,22 @@ async function getFreeModels() {
       // quiz JSON is exactly the task a small or specialist model fails at,
       // and this list was ordered by the one property unrelated to it.
       .sort((a, b) => modelScore(b) - modelScore(a))
-      // Best-first: when the top three refuse a quiz prompt, the eighth does
-      // too, and each refusal is another ten seconds of the student waiting.
-      .map(m => m.id).slice(0, 3)
+      // Eight candidates, and the loop below stops on the CLOCK rather than a
+      // count: an empty reply costs under a second, so trying more of them is
+      // nearly free — and trying too few is how every provider ends up
+      // «refusing» on a day when the top of the free catalogue is junk.
+      .map(m => m.id).slice(0, 8)
     modelCache = { at: Date.now(), list }
     return list
   } catch { return [] }
 }
 
-async function callOpenRouter(subject, count, source, grounding) {
+async function callOpenRouter(subject, count, source, grounding, deadline = Infinity) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models')
   const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
-  for (const model of freeModels.slice(0, 3)) {
+  for (const model of freeModels) {
+    if (Date.now() > deadline) break
     try {
       const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -317,7 +320,7 @@ export async function POST(request) {
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
     providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding) })
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding, started + DEADLINE_MS) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
     providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding) })
 

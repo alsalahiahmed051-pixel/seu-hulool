@@ -111,8 +111,22 @@ async function getFreeModelList() {
   }
 }
 
+/**
+ * Candidates to try, best-ranked first.
+ *
+ * I cut this to three to save time, and that was the wrong lever: a model that
+ * returns an EMPTY reply fails in under a second, so trying more of them costs
+ * almost nothing — while trying too few is how «كل مزوّدٍ رفض» happens on a day
+ * when the top of the free catalogue is junk. The self-test caught exactly
+ * that: `inclusionai/ling-3.0-flash-sante:free` first in the list, answering
+ * with nothing.
+ *
+ * The count is back to eight and the LOOP is bounded by the clock instead —
+ * which is the honest limit, because what costs the student's time is seconds,
+ * not attempts.
+ */
 async function getFreeModels() {
-  return (await getFreeModelList()).map(m => m.id).slice(0, 3)
+  return (await getFreeModelList()).map(m => m.id).slice(0, 8)
 }
 
 /**
@@ -183,7 +197,7 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
   throw new Error(errors.join(' | ') || 'vision models returned nothing')
 }
 
-async function callOpenRouter(subject, messages, grounding, askLang) {
+async function callOpenRouter(subject, messages, grounding, askLang, deadline = Infinity) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
 
@@ -211,9 +225,14 @@ async function callOpenRouter(subject, messages, grounding, askLang) {
     } catch {}
   }
 
-  // Fallback: try each model individually
+  // Fallback: try each model individually, until one answers or time runs out.
+  //
+  // «ردٌّ فارغ» is a real outcome, not an error — a free model that accepts the
+  // request and returns nothing — and the only cure is the next model. It also
+  // comes back fast, so the clock is what should stop this, never a count.
   const errors = []
   for (const model of freeModels) {
+    if (Date.now() > deadline) { errors.push('نفد الوقت قبل تجربة البقية'); break }
     try {
       const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -233,9 +252,10 @@ async function callOpenRouter(subject, messages, grounding, askLang) {
       if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
       const text = data.choices?.[0]?.message?.content
       if (text) return text
+      errors.push(`${model}: ردٌّ فارغ`)
     } catch (e) { errors.push(`${model}: ${e.message}`) }
   }
-  throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 2).join('; ')}`)
+  throw new Error(`OpenRouter: ${errors.slice(0, 3).join('; ')}`)
 }
 
 async function callGroq(subject, messages, grounding, askLang) {
@@ -573,7 +593,7 @@ export async function POST(request) {
     if (geminiUsable)
       providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang) })
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding, askLang) })
+      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding, askLang, started + DEADLINE_MS) })
   }
 
   let paidAllowed = false
