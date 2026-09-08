@@ -149,6 +149,39 @@ export async function geminiGenerate(key, body, fetcher = fetch) {
   return textOf(d)
 }
 
+/**
+ * The same self-healing name logic, but handing back the raw streaming
+ * response for the caller to read token by token.
+ *
+ * It cannot share `geminiGenerate`'s body because that one consumes the
+ * response as JSON, which is exactly what a stream must not do. What the two
+ * share is the rule that matters: try the name we trust, and re-ask Google
+ * only when the NAME is what it objected to.
+ */
+export async function geminiStreamRequest(key, body, fetcher = fetch) {
+  const post = (model) => fetcher(
+    `${GEN_URL}/${model}:streamGenerateContent?alt=sse&key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  )
+
+  let model = preferredModel()
+  let r = await post(model)
+
+  if (!r.ok && r.status === 404) {
+    const found = await discoverModel(key, fetcher)
+    if (found && found !== model) {
+      model = found
+      r = await post(model)
+    }
+  }
+  if (r.ok && cache.name !== model) cache = { at: Date.now(), name: model }
+  return r
+}
+
 /** For tests: forget what was discovered. */
 export function resetGeminiModelCache() {
   cache = { at: 0, name: '' }

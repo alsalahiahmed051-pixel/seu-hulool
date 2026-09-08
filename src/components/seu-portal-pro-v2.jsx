@@ -32,6 +32,7 @@ import {
   FolderOpen, CheckCircle2,
   Instagram, Youtube, Twitter, Ghost, LogIn,
   List, LayoutGrid, MapPin, Upload,
+  Square,
 } from "lucide-react";
 
 /* ══════════════════════════════════════════════════════════════
@@ -1597,6 +1598,34 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   }, [blocked, gate?.resetAt, gate?.limit]);
 
   const [menuId, setMenuId] = useState(null);
+
+  /**
+   * The request in flight, so it can be stopped.
+   *
+   * A ref rather than state: stopping must reach the CURRENT request from a
+   * button that was rendered before it started, and re-rendering on every
+   * token is already the expensive part of streaming.
+   */
+  const abortRef = useRef(null);
+  /** Set only by the stop button, so a deliberate stop never apologises. */
+  const stoppedRef = useRef(false);
+  /**
+   * Something is in flight — either waiting for the first token, or receiving.
+   *
+   * `loading` alone is not enough once the answer streams: it is cleared at the
+   * FIRST token so the dots give way to text, but the request runs on for the
+   * rest of the answer and must stay stoppable that whole time.
+   */
+  const busy = loading || msgs.some(m => m.streaming);
+  const stop = () => {
+    // A reason, so the reader below can tell «the student pressed stop» from
+    // «the connection died» — the first keeps the partial answer without
+    // complaint, the second is worth reporting.
+    stoppedRef.current = true;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+  };
   const [copied, setCopied] = useState(false);
   const [fileContext, setFileContext] = useState(null);
   const [fileCount, setFileCount] = useState(0);
@@ -1872,6 +1901,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     onChat?.();
     try {
       const history = newMsgs.slice(1).map(m => ({ role: m.r === "u" ? "user" : "assistant", content: m.text }));
+      // One controller for both the timeout and the stop button, so «stop»
+      // and «gave up waiting» end the same request the same way.
+      const ctl = new AbortController();
+      abortRef.current = ctl;
+      stoppedRef.current = false;
+      const timeoutId = setTimeout(() => ctl.abort("timeout"), 65000);
       const res = await fetch("/api/ai", {
         method: "POST", headers: { "Content-Type": "application/json" },
         // A spinner with nothing behind it is worse than an error. Without
@@ -1879,13 +1914,102 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         // stalled — «it just sits there spinning» — and the student had no way
         // to tell a slow answer from a dead one. Slightly past the function's
         // own ceiling, so the server's real message wins whenever there is one.
-        signal: abortAfter(65000),
+        signal: ctl.signal,
         // `trial` tells the server this is a browse-trial question. Only the
         // client can see a device-local profile, so only the client can say —
         // see the note in /api/ai for why that is safe in the one direction
         // that matters.
-        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial }),
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial, stream: true }),
       });
+      clearTimeout(timeoutId);
+
+      // ── The answer, as it is written ──────────────────────────────────
+      //
+      // A streamed reply arrives as newline-delimited JSON: one `meta` frame
+      // carrying the quota and the sources, then a `delta` per token. The page
+      // used to wait for the whole answer and print it at once, which is what
+      // made the assistant feel like a form rather than a conversation.
+      //
+      // The gates (subscription, trial, profile) are all decided by the server
+      // BEFORE it starts streaming, so anything that must refuse still comes
+      // back as ordinary JSON and falls through to the branch below.
+      if (res.ok && res.headers.get("content-type")?.includes("ndjson")) {
+        const id = mkId();
+        let acc = "";
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        const startedAt = Date.now();
+        /**
+         * Show the answer so far, and SAVE it.
+         *
+         * The save is not a copy of the React state — it is written straight to
+         * storage from here, and that is what fixes «لو خرجت من المساعد
+         * يتوقف». Leaving the screen unmounts this component, after which
+         * setMsgs updates nothing; the fetch itself is untouched by React and
+         * keeps running, so writing the accumulated text directly means the
+         * rest of the answer still lands and is waiting when the student comes
+         * back, instead of being thrown away for having navigated.
+         */
+        const flush = (final) => {
+          const bubble = { r: "a", id, text: acc, ts: startedAt, streaming: !final };
+          // Whether this bubble already exists is decided from the list itself,
+          // inside the updater. Tracking it in a variable alongside looks
+          // equivalent and is not: React runs the updater when it re-renders,
+          // by which time the flag has already been flipped — so the very first
+          // token took the «replace» branch, replaced a message that had never
+          // been added, and the whole answer went nowhere. Nothing threw and no
+          // test could see it; the empty screenshot is what caught it.
+          setMsgs(m => m.some(x => x.id === id)
+            ? m.map(x => x.id === id ? bubble : x)
+            : [...m, bubble]);
+          try { storage.set(histKey, [...newMsgs, bubble].slice(-20)); } catch { /* full or blocked */ }
+        };
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            let nl;
+            while ((nl = buf.indexOf("\n")) >= 0) {
+              const raw = buf.slice(0, nl).trim();
+              buf = buf.slice(nl + 1);
+              if (!raw) continue;
+              let ev; try { ev = JSON.parse(raw); } catch { continue; }
+              if (ev.type === "meta") {
+                if (ev.subscribed || ev.remaining != null || ev.resetAt) {
+                  setGate({
+                    subscribed: !!ev.subscribed,
+                    limit: ev.limit ?? 5,
+                    used: ev.used ?? 0,
+                    remaining: ev.subscribed ? Infinity : (ev.remaining ?? 0),
+                    resetAt: ev.resetAt || 0,
+                    blocked: false,
+                  });
+                }
+                if (ev.trial) onTrialSpent?.(ev.trial);
+              } else if (ev.type === "delta") {
+                acc += ev.t;
+                setLoading(false);
+                flush(false);
+              } else if (ev.type === "error") {
+                acc += (acc ? "\n\n" : "") + ev.error;
+                flush(false);
+              }
+            }
+          }
+        } catch (streamErr) {
+          // Stopped on purpose, or the connection dropped. Either way what was
+          // already written stays — deleting a half-answer the student was
+          // reading is worse than leaving it and saying it was cut short.
+          if (!stoppedRef.current && !acc) throw streamErr;
+        }
+        setLoading(false);
+        abortRef.current = null;
+        if (acc) flush(true);
+        else setMsgs(m => [...m, { r: "a", id: mkId(), ts: Date.now(), text: "لم يصل أي ردّ. أعد المحاولة." }]);
+        return;
+      }
       // A function the platform killed returns an HTML error page, not JSON.
       // Parsing that throws, and it used to land in the same catch as a real
       // network failure — so a server that gave up told the student their
@@ -1935,12 +2059,19 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       // the server never answered in time is not a broken connection, and
       // telling a student to check their network sends them to fix the one
       // thing that is working.
+      // Pressing stop is not a failure and must not apologise for itself.
+      if (stoppedRef.current) {
+        setLoading(false);
+        abortRef.current = null;
+        return;
+      }
       const timedOut = e?.name === "AbortError";
       setMsgs(m => [...m, { r: "a", id: mkId(), ts: Date.now(),
         text: timedOut
           ? "طال انتظار الإجابة أكثر من المعتاد ولم تصل. أعد المحاولة، أو اختصر السؤال قليلاً."
           : "تعذّر الاتصال — تحقق من الشبكة وأعد المحاولة." }]);
     }
+    abortRef.current = null;
     setLoading(false);
   };
 
@@ -2145,8 +2276,17 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         <div ref={endRef} />
       </div>
 
-      {/* Suggestions row — always visible, horizontally scrollable */}
-      {!loading && (
+      {/*
+        Suggestions, only while the conversation is empty.
+
+        They were pinned above the composer for the whole conversation, where
+        they are a bar of chrome the student has already declined once per
+        message — and the row clipped its last chip against the edge, which is
+        most of what «متراكب» was pointing at. Their job is to show a blank
+        assistant what it can be asked; once there is a conversation, the
+        conversation is the answer to that.
+      */}
+      {!busy && msgs.length <= 1 && (
         <div style={{
           padding: "7px 12px 6px", display: "flex", gap: 6, overflowX: "auto",
           background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, scrollbarWidth: "none",
@@ -2191,7 +2331,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
 
       {/* Counting down — a bar, so "3 of 5" reads at a glance rather than
           having to be parsed. The server's number, never a local guess. */}
-      {gate && !gate.subscribed && !gate.blocked && !askEmail && (
+      {gate && !gate.subscribed && !gate.blocked && !askEmail && gate.remaining <= LOW_ALLOWANCE && (
         <div style={{ padding: "8px 12px", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
             <Sparkles size={12} color={gate.remaining <= 1 ? P.orange : t.mu} style={{ flexShrink: 0 }} />
@@ -2296,14 +2436,30 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
             ? <RotateCcw size={17} color={P.blue2} style={{ animation: "spin 1s linear infinite" }} />
             : recording ? <MicOff size={17} color="#fff" /> : <Mic size={17} color={t.mu} />}
         </button>
-        <button onClick={() => send()} disabled={loading || (!inp.trim() && !image)} style={{
-          width: 44, height: 44, borderRadius: "50%", border: "none", cursor: loading || (!inp.trim() && !image) ? "not-allowed" : "pointer",
-          background: loading || (!inp.trim() && !image) ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          boxShadow: loading || (!inp.trim() && !image) ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
-        }}>
-          <Send size={17} color={loading || (!inp.trim() && !image) ? t.dim : "#fff"} />
-        </button>
+        {/*
+          While an answer is arriving the SAME button stops it. Every assistant
+          the student already uses works this way, and it is the honest control:
+          a disabled send button says «wait», a stop button says «you are in
+          charge of this». What was already written stays on screen.
+        */}
+        {busy ? (
+          <button onClick={stop} title="إيقاف" aria-label="إيقاف الإجابة" style={{
+            width: 44, height: 44, borderRadius: "50%", border: `1px solid ${t.bd}`, cursor: "pointer",
+            background: t.s2, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            transition: "all .2s",
+          }}>
+            <Square size={15} color={t.tx} fill={t.tx} />
+          </button>
+        ) : (
+          <button onClick={() => send()} disabled={!inp.trim() && !image} aria-label="إرسال" style={{
+            width: 44, height: 44, borderRadius: "50%", border: "none", cursor: (!inp.trim() && !image) ? "not-allowed" : "pointer",
+            background: (!inp.trim() && !image) ? t.s3 : `linear-gradient(135deg,${P.navy},${P.blue2})`,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            boxShadow: (!inp.trim() && !image) ? "none" : `0 4px 14px ${P.blue}50`, transition: "all .2s",
+          }}>
+            <Send size={17} color={(!inp.trim() && !image) ? t.dim : "#fff"} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -8795,6 +8951,14 @@ function useReminderSync(schedule, tasks, profile) {
  * point where a wait is genuinely unusual does it say so — which is a fact, and
  * the one thing a waiting person actually wants to know.
  */
+/**
+ * When the remaining allowance stops being background and becomes news.
+ *
+ * «بقي 20 من 20 أسئلة» is a bar of screen spent telling the student nothing has
+ * happened yet. It earns its place near the end, not at the start.
+ */
+const LOW_ALLOWANCE = 5;
+
 function Thinking({ t }) {
   const [secs, setSecs] = useState(0);
   useEffect(() => {
@@ -8894,10 +9058,18 @@ export default function App() {
   // student's own plan and nothing else until they ask for the rest.
   const [aiAllSubjects, setAiAllSubjects] = useState(false);
   const [aiGlobalTab, setAiGlobalTab] = useState("chat");
-  // Has the student confirmed WHAT they are about to do? Reset whenever the
-  // course or the mode changes, because the confirmation was about that pair —
-  // and above all before a quiz, which cannot be steered once it starts.
-  const [aiConfirmed, setAiConfirmed] = useState(false);
+  // Has the student confirmed WHAT they are about to do?
+  //
+  // A QUIZ still asks, and should: it spends the free trial, it is generated in
+  // one shot, and it cannot be steered once it starts — so «which course, how
+  // many questions» is worth settling first.
+  //
+  // A CHAT no longer asks. There is nothing to confirm: the course is named in
+  // the header and can be changed at any moment, and the first message is
+  // itself the confirmation. What the screen did instead was stand a full page
+  // and a button between opening the assistant and typing — «معقد… مش سلس» was
+  // exactly right, and no other assistant a student uses does this.
+  const [aiConfirmed, setAiConfirmed] = useState(true);
   const [aiClearKey, setAiClearKey] = useState(0);
   const clearGlobalAI = () => {
     const histKey = `aiHistory_${aiSubject.replace(/\s+/g, "_").slice(0, 40)}`;
@@ -8930,7 +9102,7 @@ export default function App() {
   // is read when the effect is created, and sitting above the `useState` that
   // defines it put it in the temporal dead zone — which took the whole app down
   // on load, not just the assistant.
-  useEffect(() => { setAiConfirmed(false); }, [aiSubject, aiGlobalTab, showAI]);
+  useEffect(() => { setAiConfirmed(aiGlobalTab === "chat"); }, [aiSubject, aiGlobalTab, showAI]);
 
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark, brandPreset);
@@ -9650,45 +9822,41 @@ export default function App() {
               <button onClick={() => setShowAI(false)} style={{ background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, padding: "8px 14px", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
                 <ArrowLeft size={15} /> رجوع
               </button>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,.13)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(255,255,255,.22)", flexShrink: 0 }}>
-                <Sparkles size={22} color={P.gold} />
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,.13)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(255,255,255,.22)", flexShrink: 0 }}>
+                <Sparkles size={18} color={P.gold} />
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", letterSpacing: 0.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>المساعد الذكي</div>
-                <div style={{ fontSize: 12, color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 1, minWidth: 0 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80", display: "inline-block", flexShrink: 0 }} />
-                  {/* It used to promise «يجيب بالعربية». That stopped being
-                      true when the answer began following the question's own
-                      language, and a status line that states the wrong thing
-                      is worse than none. */}
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>متصل — يجيب بلغة سؤالك</span>
+              {/*
+                The title used to be «المساعد الذكي» over a green «متصل — يجيب
+                بلغة سؤالك». Both were decoration: the student pressed a button
+                labelled المساعد to arrive here, so the name tells them nothing,
+                and «متصل» is a claim the page cannot actually verify. Meanwhile
+                the ONE fact that matters — which course this assistant is
+                answering for — sat in a bar of its own below.
+                So the course is the title now, and the bar below it is gone.
+              */}
+              <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                  <span style={{ fontSize: 15.5, fontWeight: 900, color: "#fff", letterSpacing: 0.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {aiSubject === "عام" ? "المساعد الذكي" : aiSubject}
+                  </span>
+                  <ChevronDown size={15} color="rgba(255,255,255,.75)" style={{ flexShrink: 0 }} />
                 </div>
-              </div>
-              {/* The global panel keeps its own header, so the standalone
-                  one's rename does not reach here. Same promise, same words:
-                  "مسح" reads as deleting something of yours, which is not what
-                  this does. */}
-              <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" aria-label="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, width: 38, height: 38, fontSize: 12, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-                <Plus size={17} />
-              </button>
-            </div>
-            {/* Subject Selector + Tab Toggle */}
-            <div style={{ padding: "6px 16px 10px", display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.08)", borderRadius: 6, padding: "3px 10px", flexShrink: 0 }}>
-                <Book size={12} color="rgba(255,255,255,.7)" />
-                <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", fontWeight: 600, whiteSpace: "nowrap" }}>المادة</span>
-              </div>
-              <div style={{ flex: 1, position: "relative" }}>
+                {/*
+                  The real <select>, laid invisibly over the title.
+
+                  Native on purpose: it opens the phone's own course wheel,
+                  which is a better picker than anything drawn here — and it
+                  costs no row of its own, which is the point. Tapping the
+                  course name to change the course is where a reader already
+                  expects the control to be.
+                */}
                 <select
+                  aria-label="تغيير المادة"
                   value={aiSubject}
                   onChange={e => setAiSubject(e.target.value)}
                   style={{
-                    width: "100%", appearance: "none", WebkitAppearance: "none",
-                    background: "rgba(255,255,255,.14)", color: "#fff",
-                    border: "1.5px solid rgba(255,255,255,.28)", borderRadius: 22,
-                    padding: "8px 36px 8px 16px", fontSize: 13, fontWeight: 700,
-                    fontFamily: "inherit", outline: "none", cursor: "pointer",
-                    direction: "rtl",
+                    position: "absolute", inset: 0, width: "100%", height: "100%",
+                    opacity: 0, cursor: "pointer", fontFamily: "inherit", direction: "rtl",
                   }}>
                   <option value="عام" style={{ background: "#0a3d29", color: "#fff" }}>🌐 عام — مساعد SEU</option>
                   {/* Bound to the student's plan, not merely sorted by it. A
@@ -9712,21 +9880,25 @@ export default function App() {
                     )
                   )}
                 </select>
-                <ChevronDown size={15} color="rgba(255,255,255,.7)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
               </div>
-              {/* myTrackSubjects returns one programme name for تخصص/دبلوم and
-                  the three term subjects for تحضيري — so without this a
-                  bachelor student's picker would hold two entries and no way
-                  out of it. */}
-              {aiSubjectGroups.mine.length > 0 && !aiAllSubjects && (
+              {/* The global panel keeps its own header, so the standalone
+                  one's rename does not reach here. Same promise, same words:
+                  "مسح" reads as deleting something of yours, which is not what
+                  this does. */}
+              <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" aria-label="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, width: 38, height: 38, fontSize: 12, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                <Plus size={17} />
+              </button>
+            </div>
+            {aiSubjectGroups.mine.length > 0 && !aiAllSubjects && (
+              <div style={{ padding: "0 16px 8px" }}>
                 <button onClick={() => setAiAllSubjects(true)} style={{
-                  background: "none", border: "none", padding: "6px 2px 0", cursor: "pointer",
+                  background: "none", border: "none", padding: 0, cursor: "pointer",
                   fontFamily: "inherit", fontSize: 11.5, fontWeight: 700, color: "rgba(255,255,255,.65)",
                 }}>
                   تسأل عن مادة خارج خطتك؟ اعرض كل المواد
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             {/* Mode tabs */}
             <div style={{ display: "flex", gap: 8, padding: "0 16px 12px" }}>
               {[["chat", "محادثة", Sparkles], ["quiz", "اختبار", FileQuestion]].map(([id, label, Ic]) => (
