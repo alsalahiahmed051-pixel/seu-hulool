@@ -2127,18 +2127,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
             </div>
           );
         })}
-        {loading && (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 14 }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
-              <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Sparkles size={14} color={P.gold} />
-              </div>
-              <div style={{ background: t.s2, border: `1px solid ${t.bd}`, padding: "12px 18px", borderRadius: "18px 18px 18px 4px", display: "flex", gap: 5, alignItems: "center" }}>
-                {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
-              </div>
-            </div>
-          </div>
-        )}
+        {loading && <Thinking t={t} />}
         <div ref={endRef} />
       </div>
 
@@ -8764,6 +8753,51 @@ function useReminderSync(schedule, tasks, profile) {
  * Safari versions a good share of these students are on — and a helper that
  * throws on the phones we are trying to serve is not a helper.
  */
+/**
+ * What the assistant is doing, while it does it.
+ *
+ * The waiting state was three bouncing dots and nothing else. Dots say «busy»
+ * for about four seconds; past that they say nothing at all, and the owner's
+ * words for it were exact: «التأخير حتى ما يخليني أعرف هل يشتغل أو لا». A free
+ * model with a course's passages under the question genuinely needs twenty or
+ * thirty seconds, so the wait is real and cannot be argued away — but a wait
+ * you can see progressing is a different experience from a wait you cannot.
+ *
+ * So: a counting clock, and a line that changes as the seconds pass. The last
+ * one admits the model is slow today rather than pretending otherwise, because
+ * by then the student has earned an explanation.
+ */
+function Thinking({ t }) {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setSecs(s => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const note = secs < 5 ? ""
+    : secs < 14 ? "يقرأ ملفات المقرر…"
+    : secs < 28 ? "يكتب الإجابة…"
+    : "النموذج المجاني بطيء الآن — ما زال يعمل";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
+        <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Sparkles size={14} color={P.gold} />
+        </div>
+        <div style={{ background: t.s2, border: `1px solid ${t.bd}`, padding: "10px 16px", borderRadius: "18px 18px 18px 4px", display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 5 }}>
+            {[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
+          </div>
+          {note && (
+            <span style={{ fontSize: 11.5, color: t.mu, whiteSpace: "nowrap" }}>
+              {note} <span style={{ color: t.dim, fontVariantNumeric: "tabular-nums" }}>{secs}ث</span>
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function abortAfter(ms) {
   const ctl = new AbortController();
   setTimeout(() => ctl.abort(), ms);
