@@ -9378,7 +9378,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 900, color: t.tx, lineHeight: 1 }}>حلول</div>
-          <div style={{ fontSize: 11.5, color: t.mu }}>SEU • الجامعة السعودية الإلكترونية</div>
+          <div style={{ fontSize: 11.5, color: t.mu, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>SEU</div>
         </div>
         {/* Named, not just drawn: an icon-only button is an unlabelled control
             to a screen reader, and this one is the way into the whole
@@ -9530,10 +9530,10 @@ export default function App() {
         background: dark ? "rgba(8,19,13,.96)" : "rgba(255,255,255,.96)",
         backdropFilter: "blur(24px)", borderTop: `1px solid ${t.bd}`,
         overflowX: "auto", overflowY: "visible", WebkitOverflowScrolling: "touch",
-        scrollbarWidth: "none", padding: "6px 8px 14px",
+        scrollbarWidth: "none", padding: "6px 2px 14px",
         boxShadow: dark ? "0 -1px 20px rgba(0,0,0,.5)" : "0 -1px 16px rgba(0,80,45,.08)",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 0, minWidth: "max-content", margin: "0 auto", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "stretch", gap: 0, width: "100%", margin: "0 auto" }}>
         {TABS.map(({ id, Icon, label, raised }) => {
           const active = id === "explore" ? (tab === "explore" || tab === "course") : tab === id;
           const { count: badge, dot } = tabSignal(id);
@@ -9551,9 +9551,10 @@ export default function App() {
               setTab(id); setCourse(null);
             }}
               style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3,
                 background: "none", border: "none", cursor: "pointer", padding: "5px 2px",
-                transition: "all .2s", fontFamily: "inherit", flexShrink: 0,
+                transition: "all .2s", fontFamily: "inherit",
+                flex: "1 1 0", minWidth: 0, minHeight: 52,
                 marginTop: raised ? -14 : 0,
               }}>
               <div style={{
@@ -9585,7 +9586,7 @@ export default function App() {
                   }} />
                 )}
               </div>
-              <span style={{ fontSize: 9.8, fontWeight: active || raised ? 800 : 500, color: active ? P.blue2 : (raised ? t.tx : t.dim), whiteSpace: "nowrap" }}>{label}</span>
+              <span style={{ fontSize: 9.8, fontWeight: active || raised ? 800 : 500, color: active ? P.blue2 : (raised ? t.tx : t.dim), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{label}</span>
             </button>
           );
         })}
