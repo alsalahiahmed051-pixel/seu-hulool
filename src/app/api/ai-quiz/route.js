@@ -8,6 +8,7 @@ import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { docScript } from '@/lib/lang'
+import { geminiModel } from '@/lib/gemini-model'
 
 export const runtime = 'nodejs'
 
@@ -194,7 +195,8 @@ async function callGroq(subject, count, source, grounding) {
 }
 
 async function callGemini(subject, count, source, grounding) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
+  const model = await geminiModel(GEMINI_KEY, (u, i) => timedFetch(u, i, 6000))
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],

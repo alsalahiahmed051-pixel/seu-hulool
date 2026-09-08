@@ -1,4 +1,5 @@
 import { requireAdmin } from '@/lib/admin-guard'
+import { geminiModel } from '@/lib/gemini-model'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -84,8 +85,11 @@ async function askGroq() {
 }
 
 async function askGemini() {
+  // The same discovery the site uses, so this reports the model a student's
+  // question would actually reach — not one this file happens to name.
+  const model = await geminiModel(KEYS.Gemini, withTimeout)
   const r = await withTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${KEYS.Gemini}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEYS.Gemini}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -95,7 +99,7 @@ async function askGemini() {
       }),
     })
   const d = await r.json()
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${d.error?.message || ''}`)
+  if (!r.ok) throw new Error(`${model}: HTTP ${r.status} ${d.error?.message || ''}`)
   return d.candidates?.[0]?.content?.parts?.[0]?.text
 }
 

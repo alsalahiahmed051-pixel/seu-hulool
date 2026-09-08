@@ -9,6 +9,7 @@ import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { askScript, docScript, LANG_NAME } from '@/lib/lang'
+import { geminiModel } from '@/lib/gemini-model'
 
 export const runtime = 'nodejs'
 
@@ -327,9 +328,12 @@ async function callGemini(subject, messages, grounding, askLang, image, deadline
     parts: [{ text: m.content }],
   }))
   const lastMsg = messages[messages.length - 1].content
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`
-  // gemini-1.5-flash reads images on the free tier, which is why the picture
-  // goes here rather than to the paid provider.
+  // Asked, not assumed — a name typed by hand goes stale when Google retires
+  // the model, and a 404 then looks like «the assistant is unavailable».
+  const model = await geminiModel(GEMINI_KEY, (u, i) => timedFetch(u, i, budget(deadline, 6000)))
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
+  // Gemini's flash models read images on the free tier, which is why the
+  // picture goes here rather than to the paid provider.
   const img = image ? inlineImage(image) : null
   const lastParts = img
     ? [{ text: lastMsg }, { inline_data: img }]
@@ -345,7 +349,7 @@ async function callGemini(subject, messages, grounding, askLang, image, deadline
     body: JSON.stringify(body),
   }, budget(deadline))
   const data = await r.json()
-  if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
+  if (!r.ok) throw new Error(`${model}: ${data.error?.message || 'Gemini error'}`)
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) throw new Error('empty response from Gemini')
   return text
