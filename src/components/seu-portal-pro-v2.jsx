@@ -2144,7 +2144,12 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
 
       {/* Suggestions row — always visible, horizontally scrollable */}
       {!loading && (
-        <div style={{ padding: "7px 12px 6px", display: "flex", gap: 6, overflowX: "auto", background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, scrollbarWidth: "none" }}>
+        <div style={{
+          padding: "7px 12px 6px", display: "flex", gap: 6, overflowX: "auto",
+          background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, scrollbarWidth: "none",
+          maskImage: "linear-gradient(to left, #000 calc(100% - 28px), transparent)",
+          WebkitMaskImage: "linear-gradient(to left, #000 calc(100% - 28px), transparent)",
+        }}>
           {allSugs.map((s, i) => (
             <button key={i} onClick={() => send(s)} style={{
               whiteSpace: "nowrap", background: i < fileSugs.length ? `${P.blue}10` : t.s2,
@@ -9588,19 +9593,23 @@ export default function App() {
               <div style={{ width: 44, height: 44, borderRadius: "50%", background: "rgba(255,255,255,.13)", display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid rgba(255,255,255,.22)", flexShrink: 0 }}>
                 <Sparkles size={22} color={P.gold} />
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", letterSpacing: 0.2 }}>المساعد الذكي</div>
-                <div style={{ fontSize: 12, color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80", display: "inline-block" }} />
-                  متصل — يجيب بالعربية
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 900, color: "#fff", letterSpacing: 0.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>المساعد الذكي</div>
+                <div style={{ fontSize: 12, color: "#4ade80", display: "flex", alignItems: "center", gap: 4, marginTop: 1, minWidth: 0 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80", display: "inline-block", flexShrink: 0 }} />
+                  {/* It used to promise «يجيب بالعربية». That stopped being
+                      true when the answer began following the question's own
+                      language, and a status line that states the wrong thing
+                      is worse than none. */}
+                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>متصل — يجيب بلغة سؤالك</span>
                 </div>
               </div>
               {/* The global panel keeps its own header, so the standalone
                   one's rename does not reach here. Same promise, same words:
                   "مسح" reads as deleting something of yours, which is not what
                   this does. */}
-              <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 8, padding: "5px 12px", fontSize: 12, color: "rgba(255,255,255,.8)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
-                <Plus size={13} /> محادثة جديدة
+              <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" aria-label="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, width: 38, height: 38, fontSize: 12, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                <Plus size={17} />
               </button>
             </div>
             {/* Subject Selector + Tab Toggle */}
