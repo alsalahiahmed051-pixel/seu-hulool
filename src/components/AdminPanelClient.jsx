@@ -529,6 +529,46 @@ function RecoveryList({ data, onRebuild, busy, moving }) {
   )
 }
 
+/**
+ * What each AI provider answered, side by side.
+ *
+ * A table, not a sentence: the useful fact is nearly always a COMPARISON —
+ * one provider fast, one refusing on quota, one never configured — and that
+ * is invisible in a single line of prose.
+ */
+function AiTestResult({ data }) {
+  if (data.error) return <div style={{ marginTop: 8, fontSize: 11.5, color: P.orange }}>{data.error}</div>
+  const anyFree = (data.results || []).some(r => r.ok && !r.paid)
+  return (
+    <div style={{
+      marginTop: 8, background: 'var(--bg)', border: `1px solid ${anyFree ? P.green : P.orange}55`,
+      borderRadius: 9, padding: '9px 11px', fontSize: 11.5, lineHeight: 1.9,
+    }}>
+      <div style={{ fontWeight: 800, color: anyFree ? P.green : P.orange, marginBottom: 5 }}>
+        {data.verdict}
+      </div>
+      {(data.results || []).map(r => (
+        <div key={r.name} style={{
+          display: 'flex', alignItems: 'flex-start', gap: 7, padding: '4px 0',
+          borderTop: '1px solid var(--bd)',
+        }}>
+          <span style={{ width: 15, flexShrink: 0 }}>{!r.configured ? '—' : r.ok ? '✅' : '❌'}</span>
+          <span style={{ fontWeight: 800, color: 'var(--tx)', width: 78, flexShrink: 0, direction: 'ltr', textAlign: 'right' }}>
+            {r.name}
+          </span>
+          <span style={{ flex: 1, minWidth: 0, color: 'var(--mu)' }}>
+            {!r.configured
+              ? `غير مضبوط — ${r.note}`
+              : r.ok
+                ? `ردّ في ${(r.ms / 1000).toFixed(1)}ث · ${r.note}`
+                : <span style={{ direction: 'ltr', display: 'inline-block', textAlign: 'right' }}>{r.reason || 'لم يردّ'}</span>}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function IndexPanel({ flash }) {
   const [state, setState] = useState(null)
   const [running, setRunning] = useState(false)
@@ -539,6 +579,10 @@ function IndexPanel({ flash }) {
   // The storage self-test's result, once the owner asks for it.
   const [selftest, setSelftest] = useState(null)
   const [testing, setTesting] = useState(false)
+  // The same idea for the assistant: «عذراً غير متاح» means every provider
+  // refused, and which one refused and why lives only in a server log.
+  const [ai, setAi] = useState(null)
+  const [aiTesting, setAiTesting] = useState(false)
 
   // What storage actually holds, once the owner asks to see it.
   const [recover, setRecover] = useState(null)
@@ -594,6 +638,14 @@ function IndexPanel({ flash }) {
       failed && !added ? 'error' : 'success'
     )
     setRecover(null); load()
+  }
+
+  const runAiTest = async () => {
+    setAiTesting(true)
+    setAi(null)
+    const { data } = await apiJSON('/api/admin/ai-selftest')
+    setAi(data && (data.results || data.error) ? data : { error: 'تعذّر الفحص' })
+    setAiTesting(false)
   }
 
   const runSelftest = async () => {
@@ -739,6 +791,7 @@ function IndexPanel({ flash }) {
             <StoreAdvice from={(selftest.steps || []).join(' ')} />
           </div>
         )}
+        {ai && <AiTestResult data={ai} />}
         <div style={{ display: 'flex', gap: 7, marginTop: 9, flexWrap: 'wrap' }}>
           <button onClick={load} style={{
             background: P.blue2, color: '#fff', border: 'none', borderRadius: 9,
@@ -749,6 +802,14 @@ function IndexPanel({ flash }) {
             padding: '7px 13px', cursor: testing ? 'default' : 'pointer', fontFamily: 'inherit',
             fontSize: 12, fontWeight: 800,
           }}>{testing ? 'جارٍ الفحص…' : 'افحص التخزين'}</button>
+          {/* One click that answers what the site cannot say: which provider
+              refused, and what it said. Without it, every «عذراً غير متاح»
+              costs a round trip of guessing from outside the server. */}
+          <button onClick={runAiTest} disabled={aiTesting} style={{
+            background: 'var(--card)', color: 'var(--tx)', border: '1px solid var(--bd)', borderRadius: 9,
+            padding: '7px 13px', cursor: aiTesting ? 'default' : 'pointer', fontFamily: 'inherit',
+            fontSize: 12, fontWeight: 800,
+          }}>{aiTesting ? 'جارٍ سؤال المزوّدين…' : 'افحص المساعد الذكي'}</button>
           {/* The owner's first question was "where did my files go". The
               listing still works even while reads fail, so this answers it with
               the store's own contents instead of reassurance. */}
