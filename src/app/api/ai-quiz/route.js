@@ -32,6 +32,24 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
 /**
+ * The same two clocks as the chat, for the same reason — and a quiz needs them
+ * more, not less. Thirty questions of valid JSON is the heaviest thing asked of
+ * a free model here, so a stalled attempt is likelier and costs more.
+ */
+const ATTEMPT_MS = 20_000
+const DEADLINE_MS = 45_000
+
+function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), ms)
+  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
+}
+
+/** The free-model catalogue, remembered rather than re-fetched every quiz. */
+let modelCache = { at: 0, list: [] }
+const MODEL_TTL_MS = 60 * 60 * 1000
+
+/**
  * Room for `count` questions.
  *
  * It was a flat 1024 for every request. A thirty-question quiz in Arabic needs
@@ -112,19 +130,24 @@ async function callAnthropic(subject, count, source, grounding) {
 }
 
 async function getFreeModels() {
+  if (modelCache.list.length && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.list
   try {
-    const r = await fetch('https://openrouter.ai/api/v1/models', {
+    const r = await timedFetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-    })
+    }, 6000)
     if (!r.ok) return []
     const data = await r.json()
-    return (data.data || [])
+    const list = (data.data || [])
       .filter(m => { const p = m.pricing?.prompt; return p === '0' || p === 0 || p === '0.0' || Number(p) === 0 })
       // Capability, not context length — see modelScore. Writing valid Arabic
       // quiz JSON is exactly the task a small or specialist model fails at,
       // and this list was ordered by the one property unrelated to it.
       .sort((a, b) => modelScore(b) - modelScore(a))
-      .map(m => m.id).slice(0, 8)
+      // Best-first: when the top three refuse a quiz prompt, the eighth does
+      // too, and each refusal is another ten seconds of the student waiting.
+      .map(m => m.id).slice(0, 3)
+    modelCache = { at: Date.now(), list }
+    return list
   } catch { return [] }
 }
 
@@ -132,9 +155,9 @@ async function callOpenRouter(subject, count, source, grounding) {
   const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models')
   const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
-  for (const model of freeModels.slice(0, 5)) {
+  for (const model of freeModels.slice(0, 3)) {
     try {
-      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENROUTER_KEY}`, 'HTTP-Referer': 'https://seu-hulool.vercel.app', 'X-Title': 'SEU Hulool' },
         body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count) }),
@@ -153,7 +176,7 @@ async function callGroq(subject, count, source, grounding) {
   const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of models) {
     try {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const r = await timedFetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
         body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count), temperature: 0.7 }),
@@ -174,13 +197,14 @@ async function callGemini(subject, count, source, grounding) {
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
     generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
   }
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const r = await timedFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const data = await r.json()
   if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
   return parseQuiz(data.candidates?.[0]?.content?.parts?.[0]?.text || '')
 }
 
 export async function POST(request) {
+  const started = Date.now()
   // 1) Public site (no accounts) — anonymous callers are served, but every
   // caller is rate limited by IP below since this hits paid providers.
   const caller = callerKey(request)
@@ -308,6 +332,9 @@ export async function POST(request) {
   }
 
   for (const { paid, fn } of providers) {
+    // Same reasoning as the chat: a provider that cannot finish inside the
+    // remaining budget spends the student's wait and returns nothing.
+    if (Date.now() - started > DEADLINE_MS) break
     try {
       const quiz = await fn()
       if (quiz && Array.isArray(quiz) && quiz.length > 0) {

@@ -42,6 +42,39 @@ const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
+/**
+ * A fetch that cannot hang, and a clock the whole request answers to.
+ *
+ * The reason «it is slow» and «it says تعذّر» were the same bug: nothing bounded
+ * how long a single provider could sit there, and nothing bounded how many of
+ * them would be tried. One stalled free model ate the entire function budget,
+ * the platform killed the request at the ceiling, and the page showed an
+ * apology after forty seconds of nothing.
+ *
+ * Two limits fix both symptoms. A provider gets ATTEMPT_MS to answer or it is
+ * abandoned for the next one, and the whole run stops opening new attempts once
+ * DEADLINE_MS has passed — so a reply, or an honest failure, always comes back
+ * before the platform's own axe falls.
+ */
+const ATTEMPT_MS = 18_000
+const DEADLINE_MS = 45_000
+
+function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(), ms)
+  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
+}
+
+/**
+ * OpenRouter's free-model catalogue, remembered.
+ *
+ * It was fetched on EVERY question — a full network round trip to a third party
+ * before a single token of the student's answer was requested. The list changes
+ * over days, not seconds.
+ */
+let modelCache = { at: 0, list: [] }
+const MODEL_TTL_MS = 60 * 60 * 1000
+
 async function callAnthropic(subject, messages, grounding, askLang) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
@@ -58,25 +91,28 @@ async function callAnthropic(subject, messages, grounding, askLang) {
 
 /** Every free model OpenRouter is currently serving, best-first. */
 async function getFreeModelList() {
+  if (modelCache.list.length && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.list
   try {
-    const r = await fetch('https://openrouter.ai/api/v1/models', {
+    const r = await timedFetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-    })
+    }, 6000)
     if (!r.ok) return []
     const data = await r.json()
-    return (data.data || [])
+    const list = (data.data || [])
       .filter(m => {
         const p = m.pricing?.prompt
         return p === '0' || p === 0 || p === '0.0' || Number(p) === 0
       })
       .sort((a, b) => modelScore(b) - modelScore(a))
+    modelCache = { at: Date.now(), list }
+    return list
   } catch {
     return []
   }
 }
 
 async function getFreeModels() {
-  return (await getFreeModelList()).map(m => m.id).slice(0, 8)
+  return (await getFreeModelList()).map(m => m.id).slice(0, 3)
 }
 
 /**
@@ -120,7 +156,7 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
   const errors = []
   for (const model of models) {
     try {
-      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -154,7 +190,7 @@ async function callOpenRouter(subject, messages, grounding, askLang) {
   // Try multi-model fallback with first 3
   if (freeModels.length >= 3) {
     try {
-      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -179,7 +215,7 @@ async function callOpenRouter(subject, messages, grounding, askLang) {
   const errors = []
   for (const model of freeModels) {
     try {
-      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -199,7 +235,7 @@ async function callOpenRouter(subject, messages, grounding, askLang) {
       if (text) return text
     } catch (e) { errors.push(`${model}: ${e.message}`) }
   }
-  throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 3).join('; ')}`)
+  throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 2).join('; ')}`)
 }
 
 async function callGroq(subject, messages, grounding, askLang) {
@@ -207,7 +243,7 @@ async function callGroq(subject, messages, grounding, askLang) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
   for (const model of models) {
     try {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const r = await timedFetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -263,7 +299,7 @@ async function callGemini(subject, messages, grounding, askLang, image) {
     contents: [...history, { role: 'user', parts: lastParts }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
-  const r = await fetch(url, {
+  const r = await timedFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -334,6 +370,7 @@ ${grounding.context}
 }
 
 export async function POST(request) {
+  const started = Date.now()
   // 1) The site is public (no accounts), so this endpoint serves anonymous
   // visitors. It still calls paid providers, so every caller is rate limited
   // by IP below — that budget is the only thing standing between the site and
@@ -562,6 +599,9 @@ export async function POST(request) {
   // try each provider in turn — return first success
   const errors = []
   for (const { name, paid, fn } of providers) {
+    // Starting a provider that cannot finish before the platform kills the
+    // function spends the student's wait on nothing. Better to stop and say so.
+    if (Date.now() - started > DEADLINE_MS) { errors.push(`${name}: تُخطّي — نفد الوقت`); break }
     try {
       const text = await fn()
       if (text) {
