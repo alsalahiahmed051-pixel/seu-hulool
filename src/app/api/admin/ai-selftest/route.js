@@ -114,25 +114,25 @@ async function askOpenRouter() {
   })
   if (!free.length) throw new Error('لا نماذج مجانية في القائمة')
 
-  const r = await withTimeout('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${KEYS.OpenRouter}`,
-      'HTTP-Referer': 'https://seu-hulool.vercel.app',
-      'X-Title': 'SEU Hulool',
-    },
-    body: JSON.stringify({
-      model: free[0].id,
-      messages: [{ role: 'user', content: PROBE }],
-      max_tokens: 16,
-    }),
-  })
-  const d = await r.json()
-  if (!r.ok) throw new Error(`${free[0].id}: HTTP ${r.status} ${d.error?.message || ''}`)
-  const text = d.choices?.[0]?.message?.content
-  if (!text) throw new Error(`${free[0].id}: ردٌّ فارغ`)
-  return text
+  const errors = []
+  for (const m of free.slice(0, 4)) {
+    const r = await withTimeout('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${KEYS.OpenRouter}`,
+        'HTTP-Referer': 'https://seu-hulool.vercel.app',
+        'X-Title': 'SEU Hulool',
+      },
+      body: JSON.stringify({ model: m.id, messages: [{ role: 'user', content: PROBE }], max_tokens: 16 }),
+    })
+    const d = await r.json().catch(() => ({}))
+    if (!r.ok) { errors.push(`${m.id}: HTTP ${r.status} ${d.error?.message || ''}`); continue }
+    const text = d.choices?.[0]?.message?.content
+    if (text) return text
+    errors.push(`${m.id}: ردٌّ فارغ`)
+  }
+  throw new Error(errors.join(' · ').slice(0, 200))
 }
 
 async function askAnthropic() {
