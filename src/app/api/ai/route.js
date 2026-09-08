@@ -57,13 +57,33 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
  * before the platform's own axe falls.
  */
 const ATTEMPT_MS = 18_000
-const DEADLINE_MS = 45_000
+const DEADLINE_MS = 40_000
 
 function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), ms)
   return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
 }
+
+/**
+ * How long an attempt may take, given how much of the request is already gone.
+ *
+ * Checking the deadline BEFORE starting an attempt is not enough, and that gap
+ * is what the owner hit: an attempt begun at second 44 still had its own
+ * eighteen, so it ran to sixty-two — past the platform's own ceiling. The
+ * function was killed mid-flight, the browser got the platform's HTML error
+ * page instead of JSON, and the page reported it as «تعذّر الاتصال — تحقق من
+ * الشبكة». He was told to check a network that was working perfectly.
+ *
+ * So the clock is the smaller of the two: an attempt never outlives the
+ * deadline, and the deadline never reaches the ceiling.
+ */
+function budget(deadline, max = ATTEMPT_MS) {
+  return Math.max(0, Math.min(max, deadline - Date.now()))
+}
+
+/** Enough time left for an attempt to be worth beginning. */
+const WORTH_TRYING_MS = 3000
 
 /**
  * OpenRouter's free-model catalogue, remembered.
@@ -75,7 +95,7 @@ function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
 let modelCache = { at: 0, list: [] }
 const MODEL_TTL_MS = 60 * 60 * 1000
 
-async function callAnthropic(subject, messages, grounding, askLang) {
+async function callAnthropic(subject, messages, grounding, askLang, deadline = Infinity) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
@@ -90,12 +110,12 @@ async function callAnthropic(subject, messages, grounding, askLang) {
 }
 
 /** Every free model OpenRouter is currently serving, best-first. */
-async function getFreeModelList() {
+async function getFreeModelList(deadline = Infinity) {
   if (modelCache.list.length && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.list
   try {
     const r = await timedFetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-    }, 6000)
+    }, Math.min(6000, budget(deadline, 6000)))
     if (!r.ok) return []
     const data = await r.json()
     const list = (data.data || [])
@@ -125,8 +145,8 @@ async function getFreeModelList() {
  * which is the honest limit, because what costs the student's time is seconds,
  * not attempts.
  */
-async function getFreeModels() {
-  return (await getFreeModelList()).map(m => m.id).slice(0, 8)
+async function getFreeModels(deadline) {
+  return (await getFreeModelList(deadline)).map(m => m.id).slice(0, 8)
 }
 
 /**
@@ -152,7 +172,7 @@ async function getFreeVisionModels() {
 }
 
 /** Ask a free OpenRouter vision model about the attached picture. */
-async function callOpenRouterVision(subject, messages, grounding, askLang, image) {
+async function callOpenRouterVision(subject, messages, grounding, askLang, image, deadline = Infinity) {
   const models = await getFreeVisionModels()
   if (models.length === 0) throw new Error('no free vision models on OpenRouter')
 
@@ -187,7 +207,7 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
           ],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
-      })
+      }, budget(deadline))
       const data = await r.json()
       if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
       const text = data.choices?.[0]?.message?.content
@@ -198,7 +218,7 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
 }
 
 async function callOpenRouter(subject, messages, grounding, askLang, deadline = Infinity) {
-  const freeModels = await getFreeModels()
+  const freeModels = await getFreeModels(deadline)
   if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
 
   // Try multi-model fallback with first 3
@@ -218,7 +238,7 @@ async function callOpenRouter(subject, messages, grounding, askLang, deadline = 
           messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
-      })
+      }, budget(deadline))
       const data = await r.json()
       if (r.ok && data.choices?.[0]?.message?.content)
         return data.choices[0].message.content
@@ -232,7 +252,7 @@ async function callOpenRouter(subject, messages, grounding, askLang, deadline = 
   // comes back fast, so the clock is what should stop this, never a count.
   const errors = []
   for (const model of freeModels) {
-    if (Date.now() > deadline) { errors.push('نفد الوقت قبل تجربة البقية'); break }
+    if (budget(deadline) < WORTH_TRYING_MS) { errors.push('نفد الوقت قبل تجربة البقية'); break }
     try {
       const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -247,7 +267,7 @@ async function callOpenRouter(subject, messages, grounding, askLang, deadline = 
           messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
-      })
+      }, budget(deadline))
       const data = await r.json()
       if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
       const text = data.choices?.[0]?.message?.content
@@ -258,7 +278,7 @@ async function callOpenRouter(subject, messages, grounding, askLang, deadline = 
   throw new Error(`OpenRouter: ${errors.slice(0, 3).join('; ')}`)
 }
 
-async function callGroq(subject, messages, grounding, askLang) {
+async function callGroq(subject, messages, grounding, askLang, deadline = Infinity) {
   // try multiple models in sequence
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
   for (const model of models) {
@@ -278,7 +298,7 @@ async function callGroq(subject, messages, grounding, askLang) {
           max_tokens: MAX_ANSWER_TOKENS,
           temperature: 0.7,
         }),
-      })
+      }, budget(deadline))
       const data = await r.json()
       if (!r.ok) continue
       const text = data.choices?.[0]?.message?.content
@@ -301,7 +321,7 @@ function inlineImage(dataUrl) {
   return { mime_type: m[1], data: m[2] }
 }
 
-async function callGemini(subject, messages, grounding, askLang, image) {
+async function callGemini(subject, messages, grounding, askLang, image, deadline = Infinity) {
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
@@ -323,7 +343,7 @@ async function callGemini(subject, messages, grounding, askLang, image) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }, budget(deadline))
   const data = await r.json()
   if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text
@@ -574,24 +594,24 @@ export async function POST(request) {
   const geminiUsable = GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20
   if (hasImage) {
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang, image) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang, image, started + DEADLINE_MS) })
     // OpenRouter serves free vision models too. Without this, a site holding
     // only the OpenRouter key — the key its own setup text asks for — refused
     // every picture.
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, askLang, image) })
+      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, askLang, image, started + DEADLINE_MS) })
     if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
       // Only if there is no free reader at all: this one costs money.
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang, started + DEADLINE_MS) })
     }
     if (providers.length === 0) {
       return reply({ error: 'قراءة الصور غير مفعّلة على هذا الموقع بعد — أرسل سؤالك نصاً.' }, 503)
     }
   } else {
     if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding, askLang) })
+      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding, askLang, started + DEADLINE_MS) })
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang, undefined, started + DEADLINE_MS) })
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
       providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding, askLang, started + DEADLINE_MS) })
   }
@@ -600,7 +620,7 @@ export async function POST(request) {
   if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
     paidAllowed = !(await paidQuotaExhausted(request, deviceId))
     if (paidAllowed) {
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang, started + DEADLINE_MS) })
     }
   }
 
@@ -621,7 +641,7 @@ export async function POST(request) {
   for (const { name, paid, fn } of providers) {
     // Starting a provider that cannot finish before the platform kills the
     // function spends the student's wait on nothing. Better to stop and say so.
-    if (Date.now() - started > DEADLINE_MS) { errors.push(`${name}: تُخطّي — نفد الوقت`); break }
+    if (budget(started + DEADLINE_MS) < WORTH_TRYING_MS) { errors.push(`${name}: تُخطّي — نفد الوقت`); break }
     try {
       const text = await fn()
       if (text) {
