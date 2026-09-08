@@ -3,7 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import {
   botSystemPrompt, parseProposal, validateProposal, describeAction,
 } from '@/lib/admin-bot'
-import { geminiModel } from '@/lib/gemini-model'
+import { geminiGenerate } from '@/lib/gemini-model'
 
 export const runtime = 'nodejs'
 
@@ -40,20 +40,14 @@ async function ask(system, user) {
     if (r.ok) return d.choices?.[0]?.message?.content || ''
   }
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20) {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${await geminiModel(GEMINI_KEY)}:generateContent?key=${GEMINI_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 900 },
-        }),
-      }
-    )
-    const d = await r.json()
-    if (r.ok) return d.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    try {
+      const text = await geminiGenerate(GEMINI_KEY, {
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 900 },
+      })
+      if (text) return text
+    } catch { /* fall through to the next provider, as before */ }
   }
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
     const { default: Anthropic } = await import('@anthropic-ai/sdk')

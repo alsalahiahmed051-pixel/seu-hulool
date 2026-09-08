@@ -9,7 +9,8 @@ import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { askScript, docScript, LANG_NAME } from '@/lib/lang'
-import { geminiModel } from '@/lib/gemini-model'
+import { geminiGenerate } from '@/lib/gemini-model'
+import { firstAnswer } from '@/lib/hedge'
 
 export const runtime = 'nodejs'
 
@@ -328,10 +329,6 @@ async function callGemini(subject, messages, grounding, askLang, image, deadline
     parts: [{ text: m.content }],
   }))
   const lastMsg = messages[messages.length - 1].content
-  // Asked, not assumed — a name typed by hand goes stale when Google retires
-  // the model, and a 404 then looks like «the assistant is unavailable».
-  const model = await geminiModel(GEMINI_KEY, (u, i) => timedFetch(u, i, budget(deadline, 6000)))
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`
   // Gemini's flash models read images on the free tier, which is why the
   // picture goes here rather than to the paid provider.
   const img = image ? inlineImage(image) : null
@@ -343,14 +340,10 @@ async function callGemini(subject, messages, grounding, askLang, image, deadline
     contents: [...history, { role: 'user', parts: lastParts }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
-  const r = await timedFetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }, budget(deadline))
-  const data = await r.json()
-  if (!r.ok) throw new Error(`${model}: ${data.error?.message || 'Gemini error'}`)
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+  // One request when the model name is right — which is nearly always. The
+  // catalogue is only consulted if Google says the NAME is the problem; see
+  // lib/gemini-model for why asking first made every answer slower.
+  const text = await geminiGenerate(GEMINI_KEY, body, (u, i) => timedFetch(u, i, budget(deadline)))
   if (!text) throw new Error('empty response from Gemini')
   return text
 }
@@ -640,37 +633,51 @@ export async function POST(request) {
     })
   }
 
-  // try each provider in turn — return first success
+  // The free providers race, hedged (see firstAnswer): the leader gets a head
+  // start and the rest join only if it is slow or fails, so a working provider
+  // still answers alone and a broken one no longer costs its full timeout.
   const errors = []
-  for (const { name, paid, fn } of providers) {
-    // Starting a provider that cannot finish before the platform kills the
-    // function spends the student's wait on nothing. Better to stop and say so.
-    if (budget(started + DEADLINE_MS) < WORTH_TRYING_MS) { errors.push(`${name}: تُخطّي — نفد الوقت`); break }
-    try {
-      const text = await fn()
-      if (text) {
-        // Only a successful paid reply spends the provider budget; free ones
-        // never do. The student's own allowance is spent on any answered
-        // question, free or paid, but never on a failure.
-        if (paid) await consumePaidQuota(request, deviceId)
-        const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
-        return reply({
-          text,
-          subscribed,
-          limit: points.free,
-          cost,
-          ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
-          // The server's own count, so the trial bar shows what was really
-          // spent rather than a number the page kept for itself.
-          ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
-          // Which of the course's files this answer was grounded in, so the
-          // student can see the answer came from their material and open it.
-          ...(grounding.sources.length ? { sources: grounding.sources } : {}),
-        })
+  const free = providers.filter(p => !p.paid)
+  const paidProviders = providers.filter(p => p.paid)
+  let won = free.length ? await firstAnswer(free, errors) : null
+
+  // The paid one stays strictly last and strictly sequential: it is the only
+  // provider that costs money, so it is never raced against a free one that
+  // might have answered for nothing.
+  if (!won) {
+    for (const p of paidProviders) {
+      // Starting a provider that cannot finish before the platform kills the
+      // function spends the student's wait on nothing. Better to stop and say so.
+      if (budget(started + DEADLINE_MS) < WORTH_TRYING_MS) { errors.push(`${p.name}: تُخطّي — نفد الوقت`); break }
+      try {
+        const text = await p.fn()
+        if (text) { won = { provider: p, text }; break }
+        errors.push(`${p.name}: ردٌّ فارغ`)
+      } catch (err) {
+        errors.push(`${p.name}: ${err.message}`)
       }
-    } catch (err) {
-      errors.push(`${name}: ${err.message}`)
     }
+  }
+
+  if (won) {
+    // Only a successful paid reply spends the provider budget; free ones
+    // never do. The student's own allowance is spent on any answered
+    // question, free or paid, but never on a failure.
+    if (won.provider.paid) await consumePaidQuota(request, deviceId)
+    const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
+    return reply({
+      text: won.value,
+      subscribed,
+      limit: points.free,
+      cost,
+      ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
+      // The server's own count, so the trial bar shows what was really
+      // spent rather than a number the page kept for itself.
+      ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
+      // Which of the course's files this answer was grounded in, so the
+      // student can see the answer came from their material and open it.
+      ...(grounding.sources.length ? { sources: grounding.sources } : {}),
+    })
   }
 
   console.error('[api/ai] all providers failed:', errors.join(' | '))

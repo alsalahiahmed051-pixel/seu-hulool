@@ -8781,16 +8781,27 @@ function useReminderSync(schedule, tasks, profile) {
  * one admits the model is slow today rather than pretending otherwise, because
  * by then the student has earned an explanation.
  */
+/**
+ * The waiting indicator.
+ *
+ * It used to narrate stages — «يقرأ ملفات المقرر…» then «يكتب الإجابة…» — on a
+ * timer. Nothing measured them: the page cannot see what the server is doing,
+ * so the stages were invented, and they appeared on every message including a
+ * one-word «هلا» that touches no files at all. Worse, describing work makes a
+ * wait feel like a PROCESS the reader must sit through; the owner's word for it
+ * was that the assistant «يجلس» repeating the same lines.
+ *
+ * So it claims nothing now. Dots while a normal reply lands, and only past the
+ * point where a wait is genuinely unusual does it say so — which is a fact, and
+ * the one thing a waiting person actually wants to know.
+ */
 function Thinking({ t }) {
   const [secs, setSecs] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setSecs(s => s + 1), 1000);
     return () => clearInterval(id);
   }, []);
-  const note = secs < 5 ? ""
-    : secs < 14 ? "يقرأ ملفات المقرر…"
-    : secs < 28 ? "يكتب الإجابة…"
-    : "النموذج المجاني بطيء الآن — ما زال يعمل";
+  const note = secs < 8 ? "" : "ما زال يعمل";
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", marginTop: 14 }}>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>
