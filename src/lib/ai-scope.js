@@ -1,11 +1,22 @@
 /**
- * What the assistant is allowed to be about.
+ * What the assistant is about — and what it refuses.
  *
- * The per-course assistant is naturally bounded — its subject is the course.
- * The general one ("عام") was not: asked anything, it answered anything, and a
- * quiz generated for "مادة عام" came back as general trivia rather than
- * university material. Both are the same product to a student, so both are
- * scoped here, in one place, rather than drifting apart in two route files.
+ * These used to be the same thing, and that was the mistake.
+ *
+ * The chat was told: «إذا سُئلت عن شيء خارج الدراسة الجامعية… لا تجب عن الموضوع
+ * الخارجي». So a student who asked anything else — a word in English, how to
+ * write an email, what a term in the news means — was turned away by the one
+ * assistant they had. The owner's instruction is plain: «يجيب على أي سؤال كأنه
+ * أنت أو أي ذكاء». A refusal is not a smaller answer, it is no answer, and a
+ * student who is refused once stops asking.
+ *
+ * So SPECIALITY and PERMISSION are separated here:
+ *   • The CHAT has a speciality, not a fence. It is an SEU assistant first —
+ *     it leads with the course, grounds in its files, and knows the university
+ *     — and it answers whatever else is asked instead of apologising.
+ *   • The QUIZ keeps the fence. Its questions rehearse a specific course for a
+ *     specific paper, and general trivia in an ACCT101 quiz is not a broader
+ *     service, it is a broken one. That is why `quizScope` below is unchanged.
  */
 
 import { ALL_COURSE_NAMES, canonicalCourse, isCourseCode, titleOf, titleArOf, programsOf } from '@/lib/courses'
@@ -70,21 +81,40 @@ const IN_SCOPE = `- مواد الجامعة ومحتواها الدراسي وش
 - مهارات الدراسة والتنظيم والمذاكرة والاستعداد للاختبارات`
 
 /**
+ * Answer the question that was asked.
+ *
+ * The speciality above says what this assistant is FOR; this says it is still
+ * an assistant when the question falls outside it. Refusing was never a safety
+ * measure here — it was a product decision, and the owner has reversed it.
+ */
+const ANSWER_ANYTHING = `أجب عن أيّ سؤالٍ يُطرح عليك، داخل نطاق تخصصك أو خارجه، كما يفعل أيُّ مساعدٍ ذكيٍّ عام. لا تعتذر عن السؤال ولا تردّ الطالب لأنه «خارج النطاق».
+وإن كان السؤال بعيداً عن الدراسة فأجب عنه مباشرةً وباختصار، ثم عد إلى شأنك الأساسي إن كان لذلك محلّ.`
+
+/**
+ * The one thing a wider scope makes more dangerous, not less.
+ *
+ * Inside a course the files are there to check an answer against. Outside it
+ * there is nothing, so the temptation to invent a regulation or a deadline
+ * grows exactly as the fence comes down — and a confident wrong answer about a
+ * registration date costs a student more than a refusal ever did.
+ */
+const HONESTY = `لا تخترع أنظمةً أو مواعيدَ أو أرقاماً أو مصادر لا تعرفها. إن لم تكن متأكداً فقل ذلك صراحةً في سطر، ووجّه الطالب إلى الجهة المختصة في الجامعة عندما يكون السؤال عن نظامٍ أو موعدٍ رسمي.
+وابقَ موجزاً: أجب عن المسؤول عنه دون حشو.`
+
+/**
  * The scoping paragraph appended to every system prompt.
  * `subject` is the course name, or "عام" for the general assistant.
  */
 export function scopeRules(subject) {
-  if (!isGeneral(subject)) {
-    return `أنت مساعد أكاديمي لطلاب ${UNIVERSITY}
-تخصصك مادة "${describeSubject(subject)}". اجعل كل إجابة متصلة بالمادة أو بالدراسة في الجامعة.
-إذا سُئلت عن شيء خارج الدراسة الجامعية، اعتذر بلطف في سطر واحد واقترح سؤالاً دراسياً بديلاً، ولا تجب عن الموضوع الخارجي.`
-  }
-  return `أنت المساعد العام لطلاب ${UNIVERSITY}
-تجيب فقط عمّا يخص الدراسة في هذه الجامعة:
-${IN_SCOPE}
+  const speciality = isGeneral(subject)
+    ? `تخصصك الدراسةُ في هذه الجامعة: ${IN_SCOPE}`
+    : `تخصصك مادة "${describeSubject(subject)}". إن كان السؤال متصلاً بها فاربط إجابتك بها وبملفاتها.`
 
-خارج هذا النطاق — الرياضة، السياسة، الترفيه، الأخبار، الطب، البرمجة غير الدراسية، أو أي طلب لا صلة له بالجامعة — لا تجب عن الموضوع. اعتذر بسطر واحد ووجّه الطالب إلى سؤال دراسي، مثل: «أنا مساعد خاص بالدراسة في الجامعة السعودية الإلكترونية — اسألني عن موادك أو اختباراتك أو خطتك الدراسية.»
-لا تخترع أنظمة أو مواعيد أو أرقام لا تعرفها؛ إن لم تكن متأكداً قل ذلك ووجّه الطالب إلى الجهة المختصة في الجامعة.`
+  return `أنت مساعدٌ ذكيٌّ كامل، ومساعدُ طلاب ${UNIVERSITY}
+${speciality}
+
+${ANSWER_ANYTHING}
+${HONESTY}`
 }
 
 /** How a quiz should be framed — the same boundary, for generated questions. */
