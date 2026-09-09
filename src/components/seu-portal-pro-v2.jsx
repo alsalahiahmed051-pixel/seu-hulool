@@ -1919,7 +1919,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         // client can see a device-local profile, so only the client can say —
         // see the note in /api/ai for why that is safe in the one direction
         // that matters.
-        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial, stream: true }),
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial, stream: STREAMING_ENABLED }),
       });
       clearTimeout(timeoutId);
 
@@ -8958,6 +8958,24 @@ function useReminderSync(schedule, tasks, profile) {
  * happened yet. It earns its place near the end, not at the start.
  */
 const LOW_ALLOWANCE = 5;
+
+/**
+ * Whether the chat asks the server to stream its answer word by word.
+ *
+ * Turned OFF after it shipped. The streaming path could not be tested against
+ * the live site from where it was built, and in production it made the whole
+ * assistant worse — slow, choppy, answers arriving broken or not at all — most
+ * likely because the platform buffers a streamed response instead of flushing
+ * each token, so the student paid streaming's overhead and got none of its
+ * benefit. With this false the client takes the plain-JSON path that worked
+ * well before: one complete answer, rendered at once. The server still speeds
+ * everything underneath (providers race, Gemini's deliberation is off), so the
+ * complete answer now comes back in a few seconds rather than tens.
+ *
+ * The streaming code on both sides is left intact behind this flag, to switch
+ * back on only once it can be verified on the real deployment.
+ */
+const STREAMING_ENABLED = false;
 
 function Thinking({ t }) {
   const [secs, setSecs] = useState(0);
