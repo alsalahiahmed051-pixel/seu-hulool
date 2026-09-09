@@ -34,12 +34,13 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
 /**
- * The same two clocks as the chat, for the same reason — and a quiz needs them
- * more, not less. Thirty questions of valid JSON is the heaviest thing asked of
- * a free model here, so a stalled attempt is likelier and costs more.
+ * A quiz is the heaviest thing asked of a free model here — thirty questions
+ * of valid Arabic JSON — so its attempt is given more room than a chat's. The
+ * deadline still lands well inside the platform's own sixty-second ceiling,
+ * which is what stops a killed function from returning an HTML error page.
  */
-const ATTEMPT_MS = 20_000
-const DEADLINE_MS = 45_000
+const ATTEMPT_MS = 28_000
+const DEADLINE_MS = 48_000
 
 function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
   const ctl = new AbortController()
@@ -199,7 +200,15 @@ async function callGemini(subject, count, source, grounding) {
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
-    generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
+    generationConfig: {
+      maxOutputTokens: quizTokens(count),
+      temperature: 0.7,
+      // Asked for as JSON rather than merely requested in words. A model told
+      // «أعد JSON فقط» still opens with «إليك الأسئلة:» often enough to matter,
+      // and a quiz that fails to parse is a quiz that failed — parseQuiz digs
+      // the array out of prose, but not out of prose it truncated.
+      responseMimeType: 'application/json',
+    },
   }
   // One request when the name is right; the catalogue only when Google says
   // the NAME is what it objects to. See lib/gemini-model.
@@ -366,5 +375,34 @@ export async function POST(request) {
   // trace anywhere — not in the reply, not in the log. The student still sees
   // only the apology; the owner now has something to act on.
   console.error('[api/ai-quiz] all providers failed:', errors.join(' | '))
-  return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
+  // The student sees the apology; the owner sees the reason. Without this a
+  // failing quiz left nothing anywhere he could reach, and every round of
+  // diagnosis had to start from «it does not work».
+  return reply({
+    error: 'تعذّر توليد الاختبار، جرّب مجدداً',
+    ...(await adminDetail(errors)),
+  }, 500)
+
+}
+
+/**
+ * Why every provider failed, for an admin caller only — redacted the same way
+ * the chat redacts, because an error can quote the URL a key was appended to.
+ */
+async function adminDetail(errors) {
+  try {
+    const { requireAdmin } = await import('@/lib/admin-guard')
+    const gate = await requireAdmin()
+    if (!gate.ok) return {}
+  } catch {
+    return {}
+  }
+  const detail = errors
+    .map(e => String(e)
+      .replace(/https?:\/\/\S+/g, '[url]')
+      .replace(/(key|token|api[_-]?key)=\S+/gi, '$1=[redacted]')
+      .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted]'))
+    .join(' | ')
+    .slice(0, 400)
+  return detail ? { detail } : {}
 }

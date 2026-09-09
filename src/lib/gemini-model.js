@@ -96,6 +96,34 @@ export async function discoverModel(key, fetcher = fetch) {
 }
 
 /**
+ * Turn off Gemini's internal deliberation for this site's two jobs.
+ *
+ * The 2.5 flash models «think» before answering by default, and the thinking
+ * tokens are charged against `maxOutputTokens` — the SAME budget the answer
+ * has to come out of. So a quiz capped at about eleven hundred tokens could
+ * spend the lot deliberating and return text that was empty or cut off
+ * mid-array, which `parseQuiz` cannot read. The owner's report was exactly
+ * that shape: «الاختبار يتأخر وما يشتغل» — slow AND broken, from one cause.
+ *
+ * Neither job wants it. A student's question is answered from passages that
+ * are already in the prompt, and a quiz is a formatting task. Deliberation
+ * buys nothing here and costs both the time and the room to answer.
+ *
+ * Only 2.5 and later understand the field, so older names are left alone.
+ */
+function noThinking(body, model) {
+  if (!/\b(2\.5|[3-9]\.\d)/.test(model)) return body
+  return {
+    ...body,
+    generationConfig: { ...(body.generationConfig || {}), thinkingConfig: { thinkingBudget: 0 } },
+  }
+}
+
+/** A refusal aimed at that field rather than at the request. */
+const isThinkingFault = (status, message) =>
+  status === 400 && /thinking/i.test(String(message || ''))
+
+/**
  * Whether a refusal is about the NAME rather than the key, the quota, or the
  * question — the only case worth spending a listing on.
  *
@@ -120,27 +148,34 @@ function isModelFault(status, message) {
  * @throws  {Error} carrying the provider's own reason when it refused
  */
 export async function geminiGenerate(key, body, fetcher = fetch) {
-  const post = (model) => fetcher(
+  const post = (model, payload) => fetcher(
     `${GEN_URL}/${model}:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     },
   )
   const textOf = (d) => d?.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
   let model = preferredModel()
-  let r = await post(model)
+  let r = await post(model, noThinking(body, model))
   let d = await r.json().catch(() => ({}))
 
   if (!r.ok && isModelFault(r.status, d?.error?.message)) {
     const found = await discoverModel(key, fetcher)
     if (found && found !== model) {
       model = found
-      r = await post(model)
+      r = await post(model, noThinking(body, model))
       d = await r.json().catch(() => ({}))
     }
+  }
+
+  // A model that does not accept the field is served the request without it,
+  // rather than failing over something that was only ever an optimisation.
+  if (!r.ok && isThinkingFault(r.status, d?.error?.message)) {
+    r = await post(model, body)
+    d = await r.json().catch(() => ({}))
   }
 
   if (!r.ok) throw new Error(`${model}: HTTP ${r.status} ${d?.error?.message || ''}`.trim())
@@ -159,24 +194,29 @@ export async function geminiGenerate(key, body, fetcher = fetch) {
  * only when the NAME is what it objected to.
  */
 export async function geminiStreamRequest(key, body, fetcher = fetch) {
-  const post = (model) => fetcher(
+  const post = (model, payload) => fetcher(
     `${GEN_URL}/${model}:streamGenerateContent?alt=sse&key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
     },
   )
 
   let model = preferredModel()
-  let r = await post(model)
+  let r = await post(model, noThinking(body, model))
 
   if (!r.ok && r.status === 404) {
     const found = await discoverModel(key, fetcher)
     if (found && found !== model) {
       model = found
-      r = await post(model)
+      r = await post(model, noThinking(body, model))
     }
+  }
+  // Deliberation is an optimisation, never a reason to fail the request.
+  if (!r.ok && r.status === 400) {
+    const retry = await post(model, body)
+    if (retry.ok) r = retry
   }
   if (r.ok && cache.name !== model) cache = { at: Date.now(), name: model }
   return r
