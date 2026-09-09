@@ -2199,7 +2199,56 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
 
       {/* Messages area */}
       <div style={{ flex: 1, overflowY: "auto", padding: "14px 12px", display: "flex", flexDirection: "column", gap: 0, background: t.s1, minHeight: 0 }}>
-        {msgs.map((m, i) => {
+        {/*
+          The empty state is the first thing a new student meets, and the old
+          one — a single grey chat bubble plus a row of chips that clipped at
+          the edge — did not say what this is or what it can do. This welcome
+          answers «وش يسوي؟» before the first question: what it's for, that it
+          answers anything, how to switch course, and three things to tap.
+        */}
+        {msgs.length <= 1 && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "20px 16px" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 20, background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 8px 24px ${P.blue}44`, marginBottom: 16 }}>
+              <Sparkles size={30} color={P.gold} />
+            </div>
+            <div style={{ fontSize: 21, fontWeight: 900, color: t.tx, letterSpacing: 0.2 }}>مساعد SEU الذكي</div>
+            <div style={{ fontSize: 13.5, color: t.mu, lineHeight: 1.9, maxWidth: 310, marginTop: 8 }}>
+              {subject === "عام"
+                ? "اسألني عن أي مادة، اختباراتك، خطتك الدراسية، وأنظمة الجامعة — وأي سؤال آخر كمان."
+                : <>جاهز لمادة <b style={{ color: t.tx }}>{subject}</b> وملفاتها — ولأي سؤال آخر تبيه.</>}
+            </div>
+            <div style={{ width: "100%", maxWidth: 340, display: "flex", flexDirection: "column", gap: 9, marginTop: 22 }}>
+              {(subject === "عام"
+                ? [
+                    { emoji: "📝", text: "اشرح لي طريقة مذاكرة فعّالة للاختبارات" },
+                    { emoji: "🎓", text: "كيف أرفع معدّلي التراكمي؟" },
+                    { emoji: "📅", text: "كيف تتم عملية الحذف والإضافة للمواد؟" },
+                  ]
+                : [
+                    { emoji: "📄", text: `لخّص لي أهم نقاط مادة ${subject}` },
+                    { emoji: "❓", text: `أعطني أسئلة متوقّعة في ${subject}` },
+                    { emoji: "💡", text: `اشرح لي مفهوماً مهمّاً في ${subject}` },
+                  ]
+              ).map(q => (
+                <button key={q.text} onClick={() => send(q.text)} style={{
+                  display: "flex", alignItems: "center", gap: 12, textAlign: "right",
+                  background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 14,
+                  padding: "12px 14px", cursor: "pointer", fontFamily: "inherit", width: "100%",
+                  transition: "border-color .15s, background .15s",
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.background = `${P.blue2}0e`; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = t.bd; e.currentTarget.style.background = t.s2; }}>
+                  <span style={{ width: 34, height: 34, borderRadius: 10, background: `${P.blue2}16`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 17 }}>{q.emoji}</span>
+                  <span style={{ fontSize: 13.5, color: t.tx, fontWeight: 600, lineHeight: 1.5 }}>{q.text}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11.5, color: t.dim, marginTop: 18 }}>
+              ↑ بدّل المادة من الاسم في الأعلى
+            </div>
+          </div>
+        )}
+        {msgs.length > 1 && msgs.map((m, i) => {
           const isUser = m.r === "u";
           const prevSame = i > 0 && msgs[i - 1].r === m.r;
           const isMenuOpen = menuId === m.id;
@@ -2277,37 +2326,11 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
       </div>
 
       {/*
-        Suggestions, only while the conversation is empty.
-
-        They were pinned above the composer for the whole conversation, where
-        they are a bar of chrome the student has already declined once per
-        message — and the row clipped its last chip against the edge, which is
-        most of what «متراكب» was pointing at. Their job is to show a blank
-        assistant what it can be asked; once there is a conversation, the
-        conversation is the answer to that.
+        The old suggestion row lived here, pinned above the composer and
+        clipping its last chip against the edge — most of what «متراكب» meant.
+        Its job (show a blank assistant what to ask) now belongs to the welcome
+        panel above, so the row is gone and nothing clips.
       */}
-      {!busy && msgs.length <= 1 && (
-        <div style={{
-          padding: "7px 12px 6px", display: "flex", gap: 6, overflowX: "auto",
-          background: t.s1, borderTop: `1px solid ${t.bd}`, flexShrink: 0, scrollbarWidth: "none",
-          maskImage: "linear-gradient(to left, #000 calc(100% - 28px), transparent)",
-          WebkitMaskImage: "linear-gradient(to left, #000 calc(100% - 28px), transparent)",
-        }}>
-          {allSugs.map((s, i) => (
-            <button key={i} onClick={() => send(s)} style={{
-              whiteSpace: "nowrap", background: i < fileSugs.length ? `${P.blue}10` : t.s2,
-              border: `1px solid ${i < fileSugs.length ? P.blue2 + "50" : t.bd}`,
-              borderRadius: 20, padding: "5px 13px", fontSize: 12,
-              color: i < fileSugs.length ? P.blue2 : t.mu,
-              cursor: "pointer", fontFamily: "inherit", transition: "all .2s", flexShrink: 0,
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = P.blue2; e.currentTarget.style.color = P.blue2; e.currentTarget.style.background = `${P.blue2}15`; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = i < fileSugs.length ? P.blue2 + "50" : t.bd; e.currentTarget.style.color = i < fileSugs.length ? P.blue2 : t.mu; e.currentTarget.style.background = i < fileSugs.length ? `${P.blue}10` : t.s2; }}>
-              {i < fileSugs.length ? "📄 " : ""}{s}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* Email gate — asked once, then never again on this device */}
       {askEmail && (
@@ -2537,8 +2560,8 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
   if (!quiz && !loading) {
     return (
       <div style={{ textAlign: "center", padding: "30px 20px" }}>
-        <div style={{ width: 64, height: 64, borderRadius: 18, background: `${P.purple}18`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", border: `1px solid ${P.purple}30` }}>
-          <FileQuestion size={28} color={P.purple} />
+        <div style={{ width: 64, height: 64, borderRadius: 18, background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", boxShadow: `0 8px 24px ${P.blue}44` }}>
+          <FileQuestion size={28} color={P.gold} />
         </div>
         <div style={{ fontSize: 15, fontWeight: 800, color: t.tx, marginBottom: 8 }}>اختبار بالذكاء الاصطناعي</div>
 
@@ -2562,10 +2585,10 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
               <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
                 {QUIZ_SOURCE_CHOICES.map(x => (
                   <button key={x.id} onClick={() => setSource(x.id)} style={{
-                    background: source === x.id ? `${P.purple}18` : t.s2,
-                    border: `1.5px solid ${source === x.id ? P.purple : t.bd}`,
+                    background: source === x.id ? `${P.blue2}18` : t.s2,
+                    border: `1.5px solid ${source === x.id ? P.blue2 : t.bd}`,
                     borderRadius: 9, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit",
-                    fontSize: 12.5, fontWeight: 800, color: source === x.id ? P.purple : t.mu,
+                    fontSize: 12.5, fontWeight: 800, color: source === x.id ? P.blue2 : t.mu,
                   }}>{x.label}</button>
                 ))}
               </div>
@@ -2584,10 +2607,10 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
                   }} />
                 {[5, 10, 15, 20, 30].map(n => (
                   <button key={n} onClick={() => setCount(String(n))} style={{
-                    background: String(n) === String(count) ? `${P.purple}18` : t.s2,
-                    border: `1px solid ${String(n) === String(count) ? P.purple : t.bd}`,
+                    background: String(n) === String(count) ? `${P.blue2}18` : t.s2,
+                    border: `1px solid ${String(n) === String(count) ? P.blue2 : t.bd}`,
                     borderRadius: 8, padding: "7px 11px", cursor: "pointer", fontFamily: "inherit",
-                    fontSize: 12.5, fontWeight: 800, color: String(n) === String(count) ? P.purple : t.mu,
+                    fontSize: 12.5, fontWeight: 800, color: String(n) === String(count) ? P.blue2 : t.mu,
                   }}>{n}</button>
                 ))}
               </div>
@@ -2609,7 +2632,7 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
     return (
       <div style={{ textAlign: "center", padding: "40px 20px" }}>
         <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 14 }}>
-          {[0,1,2].map(i => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: P.purple, animation: `bounce .9s ${i * .15}s infinite` }} />)}
+          {[0,1,2].map(i => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: P.blue2, animation: `bounce .9s ${i * .15}s infinite` }} />)}
         </div>
         <div style={{ fontSize: 13, color: t.mu }}>جارٍ توليد الأسئلة…</div>
       </div>
@@ -9115,12 +9138,18 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAI, setShowAI] = useState(false);
-  // Re-arm the confirmation whenever what is being confirmed changes, and each
-  // time the panel is opened. Declared here, below `showAI`: as a dependency it
-  // is read when the effect is created, and sitting above the `useState` that
-  // defines it put it in the temporal dead zone — which took the whole app down
-  // on load, not just the assistant.
-  useEffect(() => { setAiConfirmed(aiGlobalTab === "chat"); }, [aiSubject, aiGlobalTab, showAI]);
+  // The «قبل أن تبدأ» gate is gone for BOTH tabs now. Chat needs no
+  // confirmation — the first message is the confirmation. And the quiz has its
+  // own setup screen (source + count + a «ابدأ الاختبار» button), so a gate in
+  // front of it was a second screen asking the student to confirm before the
+  // screen that actually asks them anything — pure friction hiding the very
+  // source choice the owner wanted visible. Landing straight on each tab shows
+  // «من أين تُؤخذ الأسئلة؟» at once.
+  //
+  // Declared below `showAI`: as a dependency it is read when the effect is
+  // created, and sitting above the `useState` that defines it put it in the
+  // temporal dead zone — which took the whole app down on load once.
+  useEffect(() => { setAiConfirmed(true); }, [aiSubject, aiGlobalTab, showAI]);
 
   const [showOnboard, setShowOnboard] = useState(true);
   const t = T(dark, brandPreset);
