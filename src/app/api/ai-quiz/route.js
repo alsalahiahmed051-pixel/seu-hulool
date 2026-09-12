@@ -34,13 +34,45 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
 /**
- * A quiz is the heaviest thing asked of a free model here — thirty questions
- * of valid Arabic JSON — so its attempt is given more room than a chat's. The
- * deadline still lands well inside the platform's own sixty-second ceiling,
- * which is what stops a killed function from returning an HTML error page.
+ * How long a quiz may take to fail.
+ *
+ * The owner's report was «حتى لو سؤال ١ يتأخر جداً», and the count was never
+ * the reason. When Gemini refuses, the run walked EIGHT OpenRouter models at
+ * twenty-eight seconds each until a forty-eight second deadline — so a
+ * one-question quiz could sit for most of a minute and then say «تعذّر». The
+ * wait was in the attempts, not the generation.
+ *
+ * Three questions' worth of free models is the honest limit: a quiz the first
+ * three cannot produce will not come from the fourth, and the rest buy only
+ * delay. And the deadline now lands where a student is still watching.
  */
+const DEADLINE_MS = 35_000
+const MAX_FREE_MODELS = 3
+
+/**
+ * The whole run's budget, sized like the attempt.
+ *
+ * Capping the attempt alone was not enough: three models at a small quiz's
+ * timeout still added up to most of the old wait. A one-question quiz that is
+ * going to fail should say so in about a dozen seconds; thirty questions keep
+ * the full ceiling, which stays under the platform's own.
+ */
+function deadlineFor(count) {
+  const n = Math.min(30, Math.max(1, Number(count) || 5))
+  return Math.min(DEADLINE_MS, Math.round(11_000 + n * 800))
+}
+
+/**
+ * An attempt sized to what was asked for.
+ *
+ * One question does not need the same clock as thirty. A flat timeout meant
+ * the smallest quiz paid the largest quiz's patience for every failure.
+ */
+function attemptMs(count) {
+  const n = Math.min(30, Math.max(1, Number(count) || 5))
+  return Math.round(9_000 + n * 650)
+}
 const ATTEMPT_MS = 28_000
-const DEADLINE_MS = 48_000
 
 function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
   const ctl = new AbortController()
@@ -64,11 +96,32 @@ function quizTokens(count) {
   return Math.min(8192, Math.max(1024, 400 + (Number(count) || 5) * 140))
 }
 
-function buildQuizSystem(subject, grounding) {
+/**
+ * The language a quiz is written in.
+ *
+ * It was inferred from the course's own files and nothing else — which is
+ * sound when there ARE files, and silent when there are not. Almost no course
+ * here has indexed files yet, so the inference had nothing to read and every
+ * quiz fell back to Arabic. That is the whole of «مايفرق بين اللغات»: not a
+ * broken detector, a detector with no input.
+ *
+ * So the student says. «auto» keeps the old behaviour — the material decides,
+ * which is the right default when files exist — and «ar»/«en» are an explicit
+ * answer that never depends on whether anyone uploaded anything.
+ */
+const LANG_RULE = {
+  ar: 'اكتب الأسئلة وخياراتها بالعربية.',
+  en: 'Write the questions and all answer options in English.',
+}
+
+function buildQuizSystem(subject, grounding, lang = 'auto') {
   let sys = `أنت مساعد اختبارات لطلاب الجامعة السعودية الإلكترونية (SEU).
 ${quizScope(subject)}
 
 أعد JSON فقط بهذا الشكل: [{"q":"السؤال","options":["أ","ب","ج","د"],"answer":0}]. لا تكتب أي نص خارج JSON.`
+
+  // An explicit choice outranks anything guessed from the files.
+  if (LANG_RULE[lang]) sys += `\n${LANG_RULE[lang]}`
 
   // «التجميعات المرفقة» used to be a SENTENCE in the prompt — «اعتمد على
   // التجميعات والملخصات المرفقة» — with nothing attached. The model was told
@@ -89,7 +142,7 @@ ${grounding.context}
     // read to understand; a quiz question is answered to rehearse. Rehearsing
     // an English-taught course in Arabic trains a student for a paper they
     // will not sit, so here the file decides.
-    const docLang = docScript(grounding.context)
+    const docLang = lang === 'auto' ? docScript(grounding.context) : ''
     if (docLang === 'en') {
       sys += `
 اكتب الأسئلة وخياراتها بالإنجليزية، لأن ملفات هذه المادة بالإنجليزية وورقة الاختبار ستكون بها.`
@@ -120,13 +173,13 @@ function parseQuiz(text) {
   return null
 }
 
-async function callAnthropic(subject, count, source, grounding) {
+async function callAnthropic(subject, count, source, grounding, lang) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: quizTokens(count),
-    system: buildQuizSystem(subject, grounding),
+    system: buildQuizSystem(subject, grounding, lang),
     messages: [{ role: 'user', content: quizAsk(subject, count, source) }],
   })
   return parseQuiz(res.content[0]?.text || '')
@@ -156,37 +209,39 @@ async function getFreeModels() {
   } catch { return [] }
 }
 
-async function callOpenRouter(subject, count, source, grounding, deadline = Infinity) {
-  const freeModels = await getFreeModels()
+async function callOpenRouter(subject, count, source, grounding, lang, deadline = Infinity) {
+  const freeModels = (await getFreeModels()).slice(0, MAX_FREE_MODELS)
   if (freeModels.length === 0) throw new Error('no free models')
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding, lang) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  const errors = []
   for (const model of freeModels) {
-    if (Date.now() > deadline) break
+    if (Date.now() > deadline) { errors.push('نفد الوقت'); break }
     try {
       const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENROUTER_KEY}`, 'HTTP-Referer': 'https://seu-hulool.vercel.app', 'X-Title': 'SEU Hulool' },
         body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count) }),
-      })
+      }, Math.min(attemptMs(count), Math.max(0, deadline - Date.now())))
       const data = await r.json()
-      if (!r.ok) continue
+      if (!r.ok) { errors.push(`${model}: HTTP ${r.status}`); continue }
       const quiz = parseQuiz(data.choices?.[0]?.message?.content || '')
       if (quiz) return quiz
-    } catch { continue }
+      errors.push(`${model}: JSON غير صالح`)
+    } catch (e) { errors.push(`${model}: ${e.message}`) }
   }
-  throw new Error('OpenRouter all failed')
+  throw new Error(errors.join(' · ').slice(0, 200) || 'OpenRouter all failed')
 }
 
-async function callGroq(subject, count, source, grounding) {
+async function callGroq(subject, count, source, grounding, lang) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding, lang) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of models) {
     try {
       const r = await timedFetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
         body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count), temperature: 0.7 }),
-      })
+      }, attemptMs(count))
       const data = await r.json()
       if (!r.ok) continue
       const quiz = parseQuiz(data.choices?.[0]?.message?.content || '')
@@ -196,9 +251,9 @@ async function callGroq(subject, count, source, grounding) {
   throw new Error('all Groq models failed')
 }
 
-async function callGemini(subject, count, source, grounding) {
+async function callGemini(subject, count, source, grounding, lang) {
   const body = {
-    system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
+    system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding, lang) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
     generationConfig: {
       maxOutputTokens: quizTokens(count),
@@ -212,7 +267,7 @@ async function callGemini(subject, count, source, grounding) {
   }
   // One request when the name is right; the catalogue only when Google says
   // the NAME is what it objects to. See lib/gemini-model.
-  return parseQuiz(await geminiGenerate(GEMINI_KEY, body, timedFetch))
+  return parseQuiz(await geminiGenerate(GEMINI_KEY, body, (u, i) => timedFetch(u, i, attemptMs(count))))
 }
 
 export async function POST(request) {
@@ -237,6 +292,8 @@ export async function POST(request) {
   // asking a provider for hundreds of questions.
   const count = clampQuestions(body.count)
   const source = resolveSource(body.source)
+  // Validated, not trusted: this string reaches the system prompt.
+  const lang = ['ar', 'en'].includes(body.lang) ? body.lang : 'auto'
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)
@@ -325,13 +382,13 @@ export async function POST(request) {
   // paid allowance left today, and only a successful paid reply spends it.
   const providers = []
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding, lang) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding, lang) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding, started + DEADLINE_MS) })
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding, lang, started + deadlineFor(count)) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
-    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding) })
+    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding, lang) })
 
   const reply = (bodyObj, status = 200) => {
     const res = Response.json(bodyObj, { status })
@@ -355,7 +412,7 @@ export async function POST(request) {
   // The paid one never races: it is the only provider that costs money.
   if (!won) {
     for (const p of paidProviders) {
-      if (Date.now() - started > DEADLINE_MS) { errors.push(`${p.name}: نفد الوقت`); break }
+      if (Date.now() - started > deadlineFor(count)) { errors.push(`${p.name}: نفد الوقت`); break }
       try {
         const quiz = await p.fn()
         if (isQuiz(quiz)) { won = { provider: p, value: quiz }; break }
