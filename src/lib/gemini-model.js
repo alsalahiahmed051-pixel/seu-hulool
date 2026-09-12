@@ -49,7 +49,29 @@ export function preferredModel() {
 }
 
 /**
- * Prefer a fast, current, generally-available flash model.
+ * Which generation serves a FREE key best — which is not the newest one.
+ *
+ * This is the regression the owner spotted without seeing any code: «قبل كان
+ * تقريباً مجان ويشتغل فل». It did. It ran an older flash model, and the free
+ * tier is not uniform across generations — the newest flash carries much
+ * tighter free per-minute and per-day limits than the one before it.
+ *
+ * Ranking by novelty therefore aimed this site, whose whole engine IS the free
+ * tier, at the model that runs out of free allowance first. And a 429 does not
+ * show up as «out of quota»: it falls through to OpenRouter's free catalogue,
+ * which is exactly where the one-word replies, the cut-off answers and the
+ * «أحياناً يرضى وأحياناً لا» came from. One wrong sort key produced every
+ * symptom he reported.
+ *
+ * So generation is scored by headroom on a free key, not by version number.
+ * Unknown generations sit below the known-generous one rather than above it:
+ * on a free tier, proven room to breathe beats a bigger number.
+ */
+const GEN_SCORE = { '2.0': 30, '2.5': 12, '3.0': 12, '1.5': 2 }
+const GEN_UNKNOWN = 8
+
+/**
+ * Prefer a fast, generally-available flash model with free-tier headroom.
  *
  * Higher is better. «flash» is the free tier's workhorse and the only family
  * cheap enough to serve every student question; previews and experiments are
@@ -63,9 +85,8 @@ function score(name) {
   if (/preview|exp|experimental/i.test(name)) s -= 60
   if (/vision|embedding|aqa|imagen|tts|image/i.test(name)) s -= 200
   if (/lite/i.test(name)) s -= 10
-  // A newer generation wins between two flashes: 2.5 beats 2.0 beats 1.5.
-  const gen = name.match(/(\d+)\.(\d+)/)
-  if (gen) s += Number(gen[1]) * 10 + Number(gen[2])
+  const gen = name.match(/(\d+\.\d+)/)
+  s += gen ? (GEN_SCORE[gen[1]] ?? GEN_UNKNOWN) : GEN_UNKNOWN
   return s
 }
 
