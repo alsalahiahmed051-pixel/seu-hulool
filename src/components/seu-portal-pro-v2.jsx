@@ -2510,6 +2510,16 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
   // ask for as 10. The server clamps it as well — this field is a
   // convenience, not the rule.
   const [count, setCount] = useState("5");
+  /**
+   * Which language the questions come in.
+   *
+   * «auto» lets the course's own files decide, which is right when files
+   * exist — and silent when they do not. Almost no course here is indexed yet,
+   * so auto had nothing to read and every quiz came out Arabic. That is what
+   * «مايفرق بين اللغات» was: not a broken detector, a detector with no input.
+   * An explicit choice never depends on whether anyone uploaded anything.
+   */
+  const [lang, setLang] = useState("auto");
   const [trialSpent, setTrialSpent] = useState(false);
 
   const startQuiz = async () => {
@@ -2519,13 +2529,17 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
       const res = await fetch("/api/ai-quiz", {
         method: "POST", headers: { "Content-Type": "application/json" },
         signal: abortAfter(65000),
-        body: JSON.stringify({ subject, source, count: n }),
+        body: JSON.stringify({ subject, source, count: n, lang }),
       });
       const d = await res.json();
       if (d.quiz && Array.isArray(d.quiz)) { setQuiz(d.quiz); }
       else {
         if (d.trialUsed || d.need === "subscription") setTrialSpent(true);
-        onToast?.(safeText(d.error, "تعذّر توليد الاختبار"), "error");
+        // `detail` is the per-provider reason, and the server sends it only to
+        // an admin. It was already being returned and never shown, so every
+        // failed quiz still arrived as a bare «تعذّر» — the exact dead end that
+        // made each round of diagnosis start from «ما يشتغل».
+        onToast?.(safeText(d.detail ? `${d.error} — ${d.detail}` : d.error, "تعذّر توليد الاختبار"), "error");
       }
     } catch (e) {
       onToast?.(e?.name === "AbortError"
@@ -2590,6 +2604,20 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
                     borderRadius: 9, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit",
                     fontSize: 12.5, fontWeight: 800, color: source === x.id ? P.blue2 : t.mu,
                   }}>{x.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ textAlign: "right", marginBottom: 14 }}>
+              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 7 }}>بأي لغة؟</div>
+              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                {[["auto", "حسب ملفات المادة"], ["ar", "بالعربية"], ["en", "English"]].map(([id, label]) => (
+                  <button key={id} onClick={() => setLang(id)} style={{
+                    background: lang === id ? `${P.blue2}18` : t.s2,
+                    border: `1.5px solid ${lang === id ? P.blue2 : t.bd}`,
+                    borderRadius: 9, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit",
+                    fontSize: 12.5, fontWeight: 800, color: lang === id ? P.blue2 : t.mu,
+                  }}>{label}</button>
                 ))}
               </div>
             </div>
