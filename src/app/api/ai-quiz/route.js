@@ -261,10 +261,21 @@ export async function POST(request) {
   // Providers FREE FIRST — paid Anthropic only when this visitor still has
   // paid allowance left today, and only a successful paid reply spends it.
   const providers = []
-  if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding) })
+  // Gemini BEFORE Groq, and the order is about Arabic, not speed.
+  //
+  // Groq is the fastest thing here by a wide margin, and it was first for
+  // that reason alone. But it serves Llama models, whose Arabic is visibly
+  // weaker than Gemini's — so the moment a Groq key was added, every answer
+  // started arriving fastest and worst, and the owner's verdict was «رجع أخس
+  // بكثير». Speed is not the quality a student reads.
+  //
+  // So Gemini answers, and Groq is what catches the fall when Gemini's free
+  // quota runs out — which is far better than the OpenRouter free catalogue
+  // that used to catch it.
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
     providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding) })
+  if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
     providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
