@@ -491,10 +491,21 @@ export async function POST(request) {
       return reply({ error: 'قراءة الصور غير مفعّلة على هذا الموقع بعد — أرسل سؤالك نصاً.' }, 503)
     }
   } else {
-    if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding) })
+    // Gemini BEFORE Groq, and the order is about Arabic, not speed.
+    //
+    // Groq is the fastest thing here by a wide margin, and it was first for
+    // that reason alone. But it serves Llama models, whose Arabic is visibly
+    // weaker than Gemini's — so the moment a Groq key was added, every answer
+    // started arriving fastest and worst, and the owner's verdict was «رجع أخس
+    // بكثير». Speed is not the quality a student reads.
+    //
+    // So Gemini answers, and Groq is what catches the fall when Gemini's free
+    // quota runs out — which is far better than the OpenRouter free catalogue
+    // that used to catch it.
     if (geminiUsable)
       providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding) })
+    if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
+      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding) })
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
       providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding) })
   }
