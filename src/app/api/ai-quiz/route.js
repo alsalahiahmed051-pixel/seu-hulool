@@ -118,7 +118,11 @@ async function callOpenRouter(subject, count, source, grounding) {
 }
 
 async function callGroq(subject, count, source, grounding) {
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
+  // `llama3-70b-8192` was decommissioned by Groq, so every fallback through
+  // this list ended on a model that cannot answer — a wasted round trip at
+  // exactly the moment the first two had already failed. Both names left are
+  // current: the versatile one answers, the instant one is the quick retry.
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
   const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of models) {
     try {
