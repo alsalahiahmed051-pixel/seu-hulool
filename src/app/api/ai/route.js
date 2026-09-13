@@ -8,26 +8,9 @@ import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
-import { askScript, docScript, LANG_NAME } from '@/lib/lang'
-import { geminiGenerate, geminiStreamRequest } from '@/lib/gemini-model'
-import { firstAnswer } from '@/lib/hedge'
-import { openStream, geminiDelta, openaiDelta } from '@/lib/stream'
 
 export const runtime = 'nodejs'
-
-/**
- * The platform's own clock, raised off its default.
- *
- * Unset, a function on this plan is killed at TEN SECONDS. A free model
- * answering a real question with a course's passages under it routinely needs
- * twenty or forty — so the request died mid-generation, and the page showed
- * either an error or nothing at all, at random, depending only on how fast the
- * provider happened to be that minute. It read as «sometimes it works».
- *
- * The indexer has carried this line since it was written; these two never got
- * it, and lived on the edge of the default until answers grew long enough to
- * fall off it.
- */
+// The platform kills a function at ten seconds unless told otherwise.
 export const maxDuration = 60
 
 /**
@@ -45,178 +28,13 @@ const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
 
-/**
- * A fetch that cannot hang, and a clock the whole request answers to.
- *
- * The reason «it is slow» and «it says تعذّر» were the same bug: nothing bounded
- * how long a single provider could sit there, and nothing bounded how many of
- * them would be tried. One stalled free model ate the entire function budget,
- * the platform killed the request at the ceiling, and the page showed an
- * apology after forty seconds of nothing.
- *
- * Two limits fix both symptoms. A provider gets ATTEMPT_MS to answer or it is
- * abandoned for the next one, and the whole run stops opening new attempts once
- * DEADLINE_MS has passed — so a reply, or an honest failure, always comes back
- * before the platform's own axe falls.
- */
-const ATTEMPT_MS = 18_000
-const DEADLINE_MS = 40_000
-
-function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
-  const ctl = new AbortController()
-  const t = setTimeout(() => ctl.abort(), ms)
-  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
-}
-
-/**
- * How long an attempt may take, given how much of the request is already gone.
- *
- * Checking the deadline BEFORE starting an attempt is not enough, and that gap
- * is what the owner hit: an attempt begun at second 44 still had its own
- * eighteen, so it ran to sixty-two — past the platform's own ceiling. The
- * function was killed mid-flight, the browser got the platform's HTML error
- * page instead of JSON, and the page reported it as «تعذّر الاتصال — تحقق من
- * الشبكة». He was told to check a network that was working perfectly.
- *
- * So the clock is the smaller of the two: an attempt never outlives the
- * deadline, and the deadline never reaches the ceiling.
- */
-function budget(deadline, max = ATTEMPT_MS) {
-  return Math.max(0, Math.min(max, deadline - Date.now()))
-}
-
-/** Enough time left for an attempt to be worth beginning. */
-const WORTH_TRYING_MS = 3000
-
-/**
- * OpenRouter's free-model catalogue, remembered.
- *
- * It was fetched on EVERY question — a full network round trip to a third party
- * before a single token of the student's answer was requested. The list changes
- * over days, not seconds.
- */
-let modelCache = { at: 0, list: [] }
-const MODEL_TTL_MS = 60 * 60 * 1000
-
-/**
- * ── The streaming half of each provider ─────────────────────────────────
- *
- * Each `stream*` below opens the provider's SSE endpoint and resolves only
- * once a first real token is in hand (see lib/stream: openStream). That is
- * what lets the SAME hedged race run over streams — a provider that opens a
- * socket and then says nothing still loses, which is precisely the failure
- * mode this site's free OpenRouter models keep showing.
- */
-
-/**
- * A finished answer, dressed as a stream.
- *
- * The image path has no streaming implementation of its own, and inventing one
- * would be work for a case that is rare and already slow for other reasons.
- * Wrapping the complete text as a single chunk lets the streaming branch serve
- * every provider through one code path — the picture answer simply arrives all
- * at once, as it does today.
- */
-function asStream(text) {
-  if (!text) throw new Error('ردٌّ فارغ')
-  return { first: text, rest: async function* () {} }
-}
-
-async function streamGemini(subject, messages, grounding, askLang, image, deadline = Infinity) {
-  const history = messages.slice(0, -1).map(m => ({
-    role: m.role === 'user' ? 'user' : 'model',
-    parts: [{ text: m.content }],
-  }))
-  const lastMsg = messages[messages.length - 1].content
-  const img = image ? inlineImage(image) : null
-  const body = {
-    system_instruction: { parts: [{ text: buildSystem(subject, grounding, askLang) }] },
-    contents: [...history, {
-      role: 'user',
-      parts: img ? [{ text: lastMsg }, { inline_data: img }] : [{ text: lastMsg }],
-    }],
-    generationConfig: { maxOutputTokens: MAX_ANSWER_TOKENS, temperature: 0.7 },
-  }
-  const r = await geminiStreamRequest(GEMINI_KEY, body, (u, i) => timedFetch(u, i, budget(deadline)))
-  return openStream(r, geminiDelta, 'Gemini')
-}
-
-async function streamGroq(subject, messages, grounding, askLang, deadline = Infinity) {
-  const r = await timedFetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      stream: true,
-      max_tokens: MAX_ANSWER_TOKENS,
-      messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
-    }),
-  }, budget(deadline))
-  return openStream(r, openaiDelta, 'Groq')
-}
-
-/**
- * OpenRouter, walking its free catalogue until one of them actually speaks.
- *
- * The models are tried in order, but each is abandoned the moment it refuses
- * or falls silent, so this whole function usually costs one request. The clock
- * stops it rather than a count, for the reason getFreeModels explains.
- */
-async function streamOpenRouter(subject, messages, grounding, askLang, deadline = Infinity) {
-  const models = await getFreeModels(deadline)
-  if (!models.length) throw new Error('no free models')
-  const msgs = [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages]
-  const errors = []
-  for (const model of models) {
-    if (budget(deadline) < WORTH_TRYING_MS) break
-    try {
-      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${OPENROUTER_KEY}`,
-          'HTTP-Referer': 'https://seu-hulool.vercel.app',
-          'X-Title': 'SEU Hulool',
-        },
-        body: JSON.stringify({ model, messages: msgs, stream: true, max_tokens: MAX_ANSWER_TOKENS }),
-      }, budget(deadline))
-      return await openStream(r, openaiDelta, model)
-    } catch (e) {
-      errors.push(`${model}: ${e.message}`)
-    }
-  }
-  throw new Error(errors.join(' · ').slice(0, 200) || 'OpenRouter: لا ردّ')
-}
-
-async function streamAnthropic(subject, messages, grounding, askLang) {
-  const { default: Anthropic } = await import('@anthropic-ai/sdk')
-  const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
-  const s = await client.messages.stream({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: MAX_ANSWER_TOKENS,
-    system: buildSystem(subject, grounding, askLang),
-    messages,
-  })
-  const iter = (async function* () {
-    for await (const ev of s) {
-      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') yield ev.delta.text
-    }
-  })()
-  // Same contract as the others: nothing counts until a first token exists.
-  for (;;) {
-    const { value, done } = await iter.next()
-    if (done) throw new Error('Anthropic: ردٌّ فارغ')
-    if (value) return { first: value, rest: async function* () { yield* iter } }
-  }
-}
-
-async function callAnthropic(subject, messages, grounding, askLang, deadline = Infinity) {
+async function callAnthropic(subject, messages, grounding) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: MAX_ANSWER_TOKENS,
-    system: buildSystem(subject, grounding, askLang),
+    system: buildSystem(subject, grounding),
     messages,
   })
   const text = res.content[0]?.text
@@ -225,43 +43,26 @@ async function callAnthropic(subject, messages, grounding, askLang, deadline = I
 }
 
 /** Every free model OpenRouter is currently serving, best-first. */
-async function getFreeModelList(deadline = Infinity) {
-  if (modelCache.list.length && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.list
+async function getFreeModelList() {
   try {
-    const r = await timedFetch('https://openrouter.ai/api/v1/models', {
+    const r = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-    }, Math.min(6000, budget(deadline, 6000)))
+    })
     if (!r.ok) return []
     const data = await r.json()
-    const list = (data.data || [])
+    return (data.data || [])
       .filter(m => {
         const p = m.pricing?.prompt
         return p === '0' || p === 0 || p === '0.0' || Number(p) === 0
       })
       .sort((a, b) => modelScore(b) - modelScore(a))
-    modelCache = { at: Date.now(), list }
-    return list
   } catch {
     return []
   }
 }
 
-/**
- * Candidates to try, best-ranked first.
- *
- * I cut this to three to save time, and that was the wrong lever: a model that
- * returns an EMPTY reply fails in under a second, so trying more of them costs
- * almost nothing — while trying too few is how «كل مزوّدٍ رفض» happens on a day
- * when the top of the free catalogue is junk. The self-test caught exactly
- * that: `inclusionai/ling-3.0-flash-sante:free` first in the list, answering
- * with nothing.
- *
- * The count is back to eight and the LOOP is bounded by the clock instead —
- * which is the honest limit, because what costs the student's time is seconds,
- * not attempts.
- */
-async function getFreeModels(deadline) {
-  return (await getFreeModelList(deadline)).map(m => m.id).slice(0, 8)
+async function getFreeModels() {
+  return (await getFreeModelList()).map(m => m.id).slice(0, 8)
 }
 
 /**
@@ -287,7 +88,7 @@ async function getFreeVisionModels() {
 }
 
 /** Ask a free OpenRouter vision model about the attached picture. */
-async function callOpenRouterVision(subject, messages, grounding, askLang, image, deadline = Infinity) {
+async function callOpenRouterVision(subject, messages, grounding, image) {
   const models = await getFreeVisionModels()
   if (models.length === 0) throw new Error('no free vision models on OpenRouter')
 
@@ -305,7 +106,7 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
   const errors = []
   for (const model of models) {
     try {
-      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -316,13 +117,13 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject, grounding, askLang) },
+            { role: 'system', content: buildSystem(subject, grounding) },
             ...history,
             withImage,
           ],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
-      }, budget(deadline))
+      })
       const data = await r.json()
       if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
       const text = data.choices?.[0]?.message?.content
@@ -332,14 +133,14 @@ async function callOpenRouterVision(subject, messages, grounding, askLang, image
   throw new Error(errors.join(' | ') || 'vision models returned nothing')
 }
 
-async function callOpenRouter(subject, messages, grounding, askLang, deadline = Infinity) {
-  const freeModels = await getFreeModels(deadline)
+async function callOpenRouter(subject, messages, grounding) {
+  const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models found on OpenRouter')
 
   // Try multi-model fallback with first 3
   if (freeModels.length >= 3) {
     try {
-      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -350,26 +151,21 @@ async function callOpenRouter(subject, messages, grounding, askLang, deadline = 
         body: JSON.stringify({
           models: freeModels.slice(0, 3),
           route: 'fallback',
-          messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, grounding) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
-      }, budget(deadline))
+      })
       const data = await r.json()
       if (r.ok && data.choices?.[0]?.message?.content)
         return data.choices[0].message.content
     } catch {}
   }
 
-  // Fallback: try each model individually, until one answers or time runs out.
-  //
-  // «ردٌّ فارغ» is a real outcome, not an error — a free model that accepts the
-  // request and returns nothing — and the only cure is the next model. It also
-  // comes back fast, so the clock is what should stop this, never a count.
+  // Fallback: try each model individually
   const errors = []
   for (const model of freeModels) {
-    if (budget(deadline) < WORTH_TRYING_MS) { errors.push('نفد الوقت قبل تجربة البقية'); break }
     try {
-      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -379,26 +175,25 @@ async function callOpenRouter(subject, messages, grounding, askLang, deadline = 
         },
         body: JSON.stringify({
           model,
-          messages: [{ role: 'system', content: buildSystem(subject, grounding, askLang) }, ...messages],
+          messages: [{ role: 'system', content: buildSystem(subject, grounding) }, ...messages],
           max_tokens: MAX_ANSWER_TOKENS,
         }),
-      }, budget(deadline))
+      })
       const data = await r.json()
       if (!r.ok) { errors.push(`${model}: ${data.error?.message}`); continue }
       const text = data.choices?.[0]?.message?.content
       if (text) return text
-      errors.push(`${model}: ردٌّ فارغ`)
     } catch (e) { errors.push(`${model}: ${e.message}`) }
   }
-  throw new Error(`OpenRouter: ${errors.slice(0, 3).join('; ')}`)
+  throw new Error(`OpenRouter all failed (${freeModels.length} models tried): ${errors.slice(0, 3).join('; ')}`)
 }
 
-async function callGroq(subject, messages, grounding, askLang, deadline = Infinity) {
+async function callGroq(subject, messages, grounding) {
   // try multiple models in sequence
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
   for (const model of models) {
     try {
-      const r = await timedFetch('https://api.groq.com/openai/v1/chat/completions', {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -407,13 +202,13 @@ async function callGroq(subject, messages, grounding, askLang, deadline = Infini
         body: JSON.stringify({
           model,
           messages: [
-            { role: 'system', content: buildSystem(subject, grounding, askLang) },
+            { role: 'system', content: buildSystem(subject, grounding) },
             ...messages,
           ],
           max_tokens: MAX_ANSWER_TOKENS,
           temperature: 0.7,
         }),
-      }, budget(deadline))
+      })
       const data = await r.json()
       if (!r.ok) continue
       const text = data.choices?.[0]?.message?.content
@@ -436,51 +231,44 @@ function inlineImage(dataUrl) {
   return { mime_type: m[1], data: m[2] }
 }
 
-async function callGemini(subject, messages, grounding, askLang, image, deadline = Infinity) {
+async function callGemini(subject, messages, grounding, image) {
   const history = messages.slice(0, -1).map(m => ({
     role: m.role === 'user' ? 'user' : 'model',
     parts: [{ text: m.content }],
   }))
   const lastMsg = messages[messages.length - 1].content
-  // Gemini's flash models read images on the free tier, which is why the
-  // picture goes here rather than to the paid provider.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`
+  // gemini-2.0-flash reads images on the free tier, which is why the picture
+  // goes here rather than to the paid provider.
   const img = image ? inlineImage(image) : null
   const lastParts = img
     ? [{ text: lastMsg }, { inline_data: img }]
     : [{ text: lastMsg }]
   const body = {
-    system_instruction: { parts: [{ text: buildSystem(subject, grounding, askLang) }] },
+    system_instruction: { parts: [{ text: buildSystem(subject, grounding) }] },
     contents: [...history, { role: 'user', parts: lastParts }],
     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
   }
-  // One request when the model name is right — which is nearly always. The
-  // catalogue is only consulted if Google says the NAME is the problem; see
-  // lib/gemini-model for why asking first made every answer slower.
-  const text = await geminiGenerate(GEMINI_KEY, body, (u, i) => timedFetch(u, i, budget(deadline)))
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await r.json()
+  if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
   if (!text) throw new Error('empty response from Gemini')
   return text
 }
 
-function buildSystem(subject, grounding, askLang = 'ar') {
+function buildSystem(subject, grounding) {
   // The boundary lives in one place, shared with the quiz route: "عام" is a
   // university-wide assistant, not a general-purpose one.
-  //
-  // The language rule below replaced «أجب دائماً باللغة العربية». That rule was
-  // wrong in both directions: it answered an English question in Arabic, and it
-  // made an Arabic answer about English material translate away the very terms
-  // the student is examined on. Many SEU courses are taught in English while
-  // their students think and ask in Arabic, so the two languages are not a
-  // choice between each other — the explanation follows the student, the
-  // terminology follows the exam.
-  const langRule = askLang === 'en'
-    ? `- Answer in English, since the question was asked in English`
-    : `- أجب بالعربية الفصيحة البسيطة، لأن السؤال طُرح بالعربية`
-
   let sys = `${scopeRules(subject)}
 
 مهمتك مساعدة الطلاب في: شرح المفاهيم، تلخيص الوحدات، حل الأسئلة، وتقديم نصائح دراسية.
 قواعد:
-${langRule}
+- أجب دائماً باللغة العربية الفصيحة البسيطة
 - كن موجزاً ودقيقاً ومفيداً
 - استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة
 - إن كان السؤال عن معلومة خاصة بهذا المقرر لا تعرفها — موعد اختبار، رقم فصل في الكتاب، توزيع الدرجات، اسم المحاضر — قل إنك لا تعرفها ووجّه الطالب إلى البلاكبورد أو الدعم، ولا تخمّنها
@@ -503,24 +291,11 @@ ${grounding.context}
 - المقاطع مستخرجة آلياً من ملفات PDF وقد تحتوي أخطاء أو كلمات مشوّهة — افهم المعنى ولا تنقل التشويه.
 - إن لم تكفِ المقاطع للإجابة، قل ذلك صراحةً ثم أجب من معرفتك العامة بالمادة، ووضّح أن هذا الجزء ليس من الملفات.
 - لا تنسب إلى الملفات ما ليس فيها.`
-
-    // The bilingual rule, and only when the material is really in another
-    // language than the question. A student asking in Arabic about an English
-    // course must not be handed «الإهلاك» alone: the exam paper will say
-    // "depreciation", and an answer that translated the term away has taught
-    // them something they cannot recognise when it counts.
-    const docLang = docScript(grounding.context)
-    if (docLang && docLang !== 'mixed' && docLang !== askLang) {
-      sys += `
-- ملفات هذه المادة بـ${LANG_NAME[docLang]} والسؤال بـ${LANG_NAME[askLang] || LANG_NAME.ar}: اشرح بلغة السؤال، واكتب المصطلحات والرموز والصيغ كما وردت في الملف لا مترجمةً — فورقة الاختبار ستستعمل لفظ الملف.
-- وابقَ موجزاً: لا تشرح كل مصطلح، اشرح ما سُئلت عنه.`
-    }
   }
   return sys
 }
 
 export async function POST(request) {
-  const started = Date.now()
   // 1) The site is public (no accounts), so this endpoint serves anonymous
   // visitors. It still calls paid providers, so every caller is rate limited
   // by IP below — that budget is the only thing standing between the site and
@@ -535,9 +310,6 @@ export async function POST(request) {
     return Response.json({ error: 'صيغة الطلب غير صحيحة' }, { status: 400 })
   }
   const { messages, fileContext } = body
-  // The page opts in; every other caller (and every test) keeps the JSON reply
-  // it already expects, so streaming is added rather than swapped in.
-  const wantsStream = body.stream === true
 
   if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 200) {
     return Response.json({ error: 'مادة غير صحيحة' }, { status: 400 })
@@ -569,12 +341,6 @@ export async function POST(request) {
   const lastAsk = [...messages].reverse().find(m => m.role === 'user')?.content || ''
   let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
   try { grounding = await contextFor(subject, lastAsk) } catch { /* answer ungrounded rather than fail */ }
-
-  // The language to answer in, measured from what the student actually wrote
-  // rather than fixed to Arabic. See lib/lang: an Arabic sentence carrying
-  // English terms is an Arabic question, which is the ordinary shape of a
-  // question about an English-taught course.
-  const askLang = askScript(lastAsk) || 'ar'
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)
@@ -707,33 +473,33 @@ export async function POST(request) {
   const geminiUsable = GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20
   if (hasImage) {
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang, image, started + DEADLINE_MS), stream: () => streamGemini(subject, messages, grounding, askLang, image, started + DEADLINE_MS) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, image) })
     // OpenRouter serves free vision models too. Without this, a site holding
     // only the OpenRouter key — the key its own setup text asks for — refused
     // every picture.
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, askLang, image, started + DEADLINE_MS), stream: () => callOpenRouterVision(subject, messages, grounding, askLang, image, started + DEADLINE_MS).then(asStream) })
+      providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, image) })
     if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
       // Only if there is no free reader at all: this one costs money.
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang, started + DEADLINE_MS), stream: () => streamAnthropic(subject, messages, grounding, askLang) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
     }
     if (providers.length === 0) {
       return reply({ error: 'قراءة الصور غير مفعّلة على هذا الموقع بعد — أرسل سؤالك نصاً.' }, 503)
     }
   } else {
     if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding, askLang, started + DEADLINE_MS), stream: () => streamGroq(subject, messages, grounding, askLang, started + DEADLINE_MS) })
+      providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding) })
     if (geminiUsable)
-      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, askLang, undefined, started + DEADLINE_MS), stream: () => streamGemini(subject, messages, grounding, askLang, undefined, started + DEADLINE_MS) })
+      providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding) })
     if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding, askLang, started + DEADLINE_MS), stream: () => streamOpenRouter(subject, messages, grounding, askLang, started + DEADLINE_MS) })
+      providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding) })
   }
 
   let paidAllowed = false
   if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
     paidAllowed = !(await paidQuotaExhausted(request, deviceId))
     if (paidAllowed) {
-      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding, askLang, started + DEADLINE_MS), stream: () => streamAnthropic(subject, messages, grounding, askLang) })
+      providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
     }
   }
 
@@ -749,122 +515,34 @@ export async function POST(request) {
     })
   }
 
-  // The free providers race, hedged (see firstAnswer): the leader gets a head
-  // start and the rest join only if it is slow or fails, so a working provider
-  // still answers alone and a broken one no longer costs its full timeout.
+  // try each provider in turn — return first success
   const errors = []
-  const free = providers.filter(p => !p.paid)
-  const paidProviders = providers.filter(p => p.paid)
-
-  // ── Streamed, when the page asks for it ───────────────────────────────
-  //
-  // Same providers, same race — the difference is only WHEN a provider counts
-  // as having won: here it is the first token rather than the last, so the
-  // student starts reading in about a second instead of watching a blank
-  // bubble for the whole generation. Every gate above has already been
-  // decided, so once bytes start flowing nothing can still refuse.
-  if (wantsStream) {
-    const streamers = free.map(p => ({ name: p.name, paid: p.paid, fn: p.stream }))
-    let opened = streamers.length ? await firstAnswer(streamers, errors) : null
-    if (!opened) {
-      for (const p of paidProviders) {
-        if (budget(started + DEADLINE_MS) < WORTH_TRYING_MS) { errors.push(`${p.name}: تُخطّي — نفد الوقت`); break }
-        try { opened = { provider: p, value: await p.stream() }; break }
-        catch (err) { errors.push(`${p.name}: ${err.message}`) }
-      }
-    }
-    if (!opened) {
-      console.error('[api/ai] all providers failed:', errors.join(' | '))
-      return reply({
-        error: 'عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.',
-        ...(await adminDetail(errors)),
-      }, 500)
-    }
-
-    if (opened.provider.paid) await consumePaidQuota(request, deviceId)
-    const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
-
-    const encoder = new TextEncoder()
-    const line = (obj) => encoder.encode(JSON.stringify(obj) + '\n')
-    const body = new ReadableStream({
-      async start(controller) {
-        // The bookkeeping the page needs travels first, so the quota bar and
-        // the sources list settle before a single word is drawn.
-        controller.enqueue(line({
-          type: 'meta',
+  for (const { name, paid, fn } of providers) {
+    try {
+      const text = await fn()
+      if (text) {
+        // Only a successful paid reply spends the provider budget; free ones
+        // never do. The student's own allowance is spent on any answered
+        // question, free or paid, but never on a failure.
+        if (paid) await consumePaidQuota(request, deviceId)
+        const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
+        return reply({
+          text,
           subscribed,
           limit: points.free,
           cost,
           ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
+          // The server's own count, so the trial bar shows what was really
+          // spent rather than a number the page kept for itself.
           ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
+          // Which of the course's files this answer was grounded in, so the
+          // student can see the answer came from their material and open it.
           ...(grounding.sources.length ? { sources: grounding.sources } : {}),
-        }))
-        try {
-          controller.enqueue(line({ type: 'delta', t: opened.value.first }))
-          for await (const t of opened.value.rest()) controller.enqueue(line({ type: 'delta', t }))
-          controller.enqueue(line({ type: 'done' }))
-        } catch (err) {
-          // The answer broke in the middle. The page keeps what it already
-          // drew and says so, which is truer than replacing a half-answer
-          // with an apology.
-          controller.enqueue(line({ type: 'error', error: 'انقطعت الإجابة قبل أن تكتمل.' }))
-          console.error('[api/ai] stream broke:', err?.message)
-        }
-        controller.close()
-      },
-    })
-    const res = new Response(body, {
-      headers: {
-        'Content-Type': 'application/x-ndjson; charset=utf-8',
-        'Cache-Control': 'no-store, no-transform',
-        // Vercel's edge buffers by default, which would hold the tokens back
-        // and undo the whole point of streaming them.
-        'X-Accel-Buffering': 'no',
-      },
-    })
-    if (setCookie) res.headers.append('Set-Cookie', setCookie)
-    return res
-  }
-
-  let won = free.length ? await firstAnswer(free, errors) : null
-
-  // The paid one stays strictly last and strictly sequential: it is the only
-  // provider that costs money, so it is never raced against a free one that
-  // might have answered for nothing.
-  if (!won) {
-    for (const p of paidProviders) {
-      // Starting a provider that cannot finish before the platform kills the
-      // function spends the student's wait on nothing. Better to stop and say so.
-      if (budget(started + DEADLINE_MS) < WORTH_TRYING_MS) { errors.push(`${p.name}: تُخطّي — نفد الوقت`); break }
-      try {
-        const text = await p.fn()
-        if (text) { won = { provider: p, text }; break }
-        errors.push(`${p.name}: ردٌّ فارغ`)
-      } catch (err) {
-        errors.push(`${p.name}: ${err.message}`)
+        })
       }
+    } catch (err) {
+      errors.push(`${name}: ${err.message}`)
     }
-  }
-
-  if (won) {
-    // Only a successful paid reply spends the provider budget; free ones
-    // never do. The student's own allowance is spent on any answered
-    // question, free or paid, but never on a failure.
-    if (won.provider.paid) await consumePaidQuota(request, deviceId)
-    const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
-    return reply({
-      text: won.value,
-      subscribed,
-      limit: points.free,
-      cost,
-      ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
-      // The server's own count, so the trial bar shows what was really
-      // spent rather than a number the page kept for itself.
-      ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
-      // Which of the course's files this answer was grounded in, so the
-      // student can see the answer came from their material and open it.
-      ...(grounding.sources.length ? { sources: grounding.sources } : {}),
-    })
   }
 
   console.error('[api/ai] all providers failed:', errors.join(' | '))

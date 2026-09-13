@@ -7,82 +7,15 @@ import { ownerKey } from '@/lib/ai-points'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
-import { docScript } from '@/lib/lang'
-import { geminiGenerate } from '@/lib/gemini-model'
-import { firstAnswer } from '@/lib/hedge'
 
 export const runtime = 'nodejs'
-
-/**
- * The platform's own clock, raised off its default.
- *
- * Unset, a function on this plan is killed at TEN SECONDS. A free model
- * answering a real question with a course's passages under it routinely needs
- * twenty or forty — so the request died mid-generation, and the page showed
- * either an error or nothing at all, at random, depending only on how fast the
- * provider happened to be that minute. It read as «sometimes it works».
- *
- * The indexer has carried this line since it was written; these two never got
- * it, and lived on the edge of the default until answers grew long enough to
- * fall off it.
- */
+// The platform kills a function at ten seconds unless told otherwise.
 export const maxDuration = 60
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 const GROQ_KEY = process.env.GROQ_API_KEY
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
-
-/**
- * How long a quiz may take to fail.
- *
- * The owner's report was «حتى لو سؤال ١ يتأخر جداً», and the count was never
- * the reason. When Gemini refuses, the run walked EIGHT OpenRouter models at
- * twenty-eight seconds each until a forty-eight second deadline — so a
- * one-question quiz could sit for most of a minute and then say «تعذّر». The
- * wait was in the attempts, not the generation.
- *
- * Three questions' worth of free models is the honest limit: a quiz the first
- * three cannot produce will not come from the fourth, and the rest buy only
- * delay. And the deadline now lands where a student is still watching.
- */
-const DEADLINE_MS = 35_000
-const MAX_FREE_MODELS = 3
-
-/**
- * The whole run's budget, sized like the attempt.
- *
- * Capping the attempt alone was not enough: three models at a small quiz's
- * timeout still added up to most of the old wait. A one-question quiz that is
- * going to fail should say so in about a dozen seconds; thirty questions keep
- * the full ceiling, which stays under the platform's own.
- */
-function deadlineFor(count) {
-  const n = Math.min(30, Math.max(1, Number(count) || 5))
-  return Math.min(DEADLINE_MS, Math.round(11_000 + n * 800))
-}
-
-/**
- * An attempt sized to what was asked for.
- *
- * One question does not need the same clock as thirty. A flat timeout meant
- * the smallest quiz paid the largest quiz's patience for every failure.
- */
-function attemptMs(count) {
-  const n = Math.min(30, Math.max(1, Number(count) || 5))
-  return Math.round(9_000 + n * 650)
-}
-const ATTEMPT_MS = 28_000
-
-function timedFetch(url, init = {}, ms = ATTEMPT_MS) {
-  const ctl = new AbortController()
-  const t = setTimeout(() => ctl.abort(), ms)
-  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(t))
-}
-
-/** The free-model catalogue, remembered rather than re-fetched every quiz. */
-let modelCache = { at: 0, list: [] }
-const MODEL_TTL_MS = 60 * 60 * 1000
 
 /**
  * Room for `count` questions.
@@ -96,32 +29,11 @@ function quizTokens(count) {
   return Math.min(8192, Math.max(1024, 400 + (Number(count) || 5) * 140))
 }
 
-/**
- * The language a quiz is written in.
- *
- * It was inferred from the course's own files and nothing else — which is
- * sound when there ARE files, and silent when there are not. Almost no course
- * here has indexed files yet, so the inference had nothing to read and every
- * quiz fell back to Arabic. That is the whole of «مايفرق بين اللغات»: not a
- * broken detector, a detector with no input.
- *
- * So the student says. «auto» keeps the old behaviour — the material decides,
- * which is the right default when files exist — and «ar»/«en» are an explicit
- * answer that never depends on whether anyone uploaded anything.
- */
-const LANG_RULE = {
-  ar: 'اكتب الأسئلة وخياراتها بالعربية.',
-  en: 'Write the questions and all answer options in English.',
-}
-
-function buildQuizSystem(subject, grounding, lang = 'auto') {
+function buildQuizSystem(subject, grounding) {
   let sys = `أنت مساعد اختبارات لطلاب الجامعة السعودية الإلكترونية (SEU).
 ${quizScope(subject)}
 
 أعد JSON فقط بهذا الشكل: [{"q":"السؤال","options":["أ","ب","ج","د"],"answer":0}]. لا تكتب أي نص خارج JSON.`
-
-  // An explicit choice outranks anything guessed from the files.
-  if (LANG_RULE[lang]) sys += `\n${LANG_RULE[lang]}`
 
   // «التجميعات المرفقة» used to be a SENTENCE in the prompt — «اعتمد على
   // التجميعات والملخصات المرفقة» — with nothing attached. The model was told
@@ -136,23 +48,6 @@ ${grounding.context}
 
 ابنِ الأسئلة من هذه المقاطع. المقاطع مستخرجة آلياً وقد تحتوي تشويهاً — تجاهل المشوّه ولا تبنِ عليه سؤالاً.
 لا تسأل عمّا ليس في المقاطع إن طُلب منك الاعتماد عليها.`
-
-    // A quiz follows the MATERIAL's language, where the chat follows the
-    // student's — and the difference is the point of each. A chat answer is
-    // read to understand; a quiz question is answered to rehearse. Rehearsing
-    // an English-taught course in Arabic trains a student for a paper they
-    // will not sit, so here the file decides.
-    const docLang = lang === 'auto' ? docScript(grounding.context) : ''
-    if (docLang === 'en') {
-      sys += `
-اكتب الأسئلة وخياراتها بالإنجليزية، لأن ملفات هذه المادة بالإنجليزية وورقة الاختبار ستكون بها.`
-    } else if (docLang === 'ar') {
-      sys += `
-اكتب الأسئلة وخياراتها بالعربية، كما وردت المادة في ملفاتها.`
-    } else if (docLang === 'mixed') {
-      sys += `
-ملفات هذه المادة تخلط العربية والإنجليزية: اكتب كل سؤال بلغة المقطع الذي بُني عليه، وأبقِ المصطلحات كما وردت في الملف ولا تترجمها.`
-    }
   }
   return sys
 }
@@ -173,75 +68,65 @@ function parseQuiz(text) {
   return null
 }
 
-async function callAnthropic(subject, count, source, grounding, lang) {
+async function callAnthropic(subject, count, source, grounding) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY })
   const res = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: quizTokens(count),
-    system: buildQuizSystem(subject, grounding, lang),
+    system: buildQuizSystem(subject, grounding),
     messages: [{ role: 'user', content: quizAsk(subject, count, source) }],
   })
   return parseQuiz(res.content[0]?.text || '')
 }
 
 async function getFreeModels() {
-  if (modelCache.list.length && Date.now() - modelCache.at < MODEL_TTL_MS) return modelCache.list
   try {
-    const r = await timedFetch('https://openrouter.ai/api/v1/models', {
+    const r = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
-    }, 6000)
+    })
     if (!r.ok) return []
     const data = await r.json()
-    const list = (data.data || [])
+    return (data.data || [])
       .filter(m => { const p = m.pricing?.prompt; return p === '0' || p === 0 || p === '0.0' || Number(p) === 0 })
       // Capability, not context length — see modelScore. Writing valid Arabic
       // quiz JSON is exactly the task a small or specialist model fails at,
       // and this list was ordered by the one property unrelated to it.
       .sort((a, b) => modelScore(b) - modelScore(a))
-      // Eight candidates, and the loop below stops on the CLOCK rather than a
-      // count: an empty reply costs under a second, so trying more of them is
-      // nearly free — and trying too few is how every provider ends up
-      // «refusing» on a day when the top of the free catalogue is junk.
       .map(m => m.id).slice(0, 8)
-    modelCache = { at: Date.now(), list }
-    return list
   } catch { return [] }
 }
 
-async function callOpenRouter(subject, count, source, grounding, lang, deadline = Infinity) {
-  const freeModels = (await getFreeModels()).slice(0, MAX_FREE_MODELS)
+async function callOpenRouter(subject, count, source, grounding) {
+  const freeModels = await getFreeModels()
   if (freeModels.length === 0) throw new Error('no free models')
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding, lang) }, { role: 'user', content: quizAsk(subject, count, source) }]
-  const errors = []
-  for (const model of freeModels) {
-    if (Date.now() > deadline) { errors.push('نفد الوقت'); break }
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  for (const model of freeModels.slice(0, 5)) {
     try {
-      const r = await timedFetch('https://openrouter.ai/api/v1/chat/completions', {
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${OPENROUTER_KEY}`, 'HTTP-Referer': 'https://seu-hulool.vercel.app', 'X-Title': 'SEU Hulool' },
         body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count) }),
-      }, Math.min(attemptMs(count), Math.max(0, deadline - Date.now())))
+      })
       const data = await r.json()
-      if (!r.ok) { errors.push(`${model}: HTTP ${r.status}`); continue }
+      if (!r.ok) continue
       const quiz = parseQuiz(data.choices?.[0]?.message?.content || '')
       if (quiz) return quiz
-      errors.push(`${model}: JSON غير صالح`)
-    } catch (e) { errors.push(`${model}: ${e.message}`) }
+    } catch { continue }
   }
-  throw new Error(errors.join(' · ').slice(0, 200) || 'OpenRouter all failed')
+  throw new Error('OpenRouter all failed')
 }
 
-async function callGroq(subject, count, source, grounding, lang) {
+async function callGroq(subject, count, source, grounding) {
   const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding, lang) }, { role: 'user', content: quizAsk(subject, count, source) }]
+  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
   for (const model of models) {
     try {
-      const r = await timedFetch('https://api.groq.com/openai/v1/chat/completions', {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
         body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count), temperature: 0.7 }),
-      }, attemptMs(count))
+      })
       const data = await r.json()
       if (!r.ok) continue
       const quiz = parseQuiz(data.choices?.[0]?.message?.content || '')
@@ -251,27 +136,20 @@ async function callGroq(subject, count, source, grounding, lang) {
   throw new Error('all Groq models failed')
 }
 
-async function callGemini(subject, count, source, grounding, lang) {
+async function callGemini(subject, count, source, grounding) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`
   const body = {
-    system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding, lang) }] },
+    system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
-    generationConfig: {
-      maxOutputTokens: quizTokens(count),
-      temperature: 0.7,
-      // Asked for as JSON rather than merely requested in words. A model told
-      // «أعد JSON فقط» still opens with «إليك الأسئلة:» often enough to matter,
-      // and a quiz that fails to parse is a quiz that failed — parseQuiz digs
-      // the array out of prose, but not out of prose it truncated.
-      responseMimeType: 'application/json',
-    },
+    generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
   }
-  // One request when the name is right; the catalogue only when Google says
-  // the NAME is what it objects to. See lib/gemini-model.
-  return parseQuiz(await geminiGenerate(GEMINI_KEY, body, (u, i) => timedFetch(u, i, attemptMs(count))))
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const data = await r.json()
+  if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
+  return parseQuiz(data.candidates?.[0]?.content?.parts?.[0]?.text || '')
 }
 
 export async function POST(request) {
-  const started = Date.now()
   // 1) Public site (no accounts) — anonymous callers are served, but every
   // caller is rate limited by IP below since this hits paid providers.
   const caller = callerKey(request)
@@ -292,8 +170,6 @@ export async function POST(request) {
   // asking a provider for hundreds of questions.
   const count = clampQuestions(body.count)
   const source = resolveSource(body.source)
-  // Validated, not trusted: this string reaches the system prompt.
-  const lang = ['ar', 'en'].includes(body.lang) ? body.lang : 'auto'
 
   // 3) Rate limit — per caller IP, since there are no accounts
   const minuteCheck = await aiPerMinuteLimit.limit(caller)
@@ -382,13 +258,13 @@ export async function POST(request) {
   // paid allowance left today, and only a successful paid reply spends it.
   const providers = []
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding, lang) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding) })
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding, lang) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding, lang, started + deadlineFor(count)) })
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
-    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding, lang) })
+    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding) })
 
   const reply = (bodyObj, status = 200) => {
     const res = Response.json(bodyObj, { status })
@@ -400,66 +276,15 @@ export async function POST(request) {
     return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
   }
 
-  // Free providers race with a head start, exactly as the chat does — a quiz
-  // used to wait out each provider's full timeout in turn, which is why
-  // «تعذّر توليد الاختبار» arrived after most of a minute.
-  const errors = []
-  const isQuiz = (q) => Array.isArray(q) && q.length > 0
-  const free = providers.filter(p => !p.paid)
-  const paidProviders = providers.filter(p => p.paid)
-  let won = free.length ? await firstAnswer(free, errors, { isGood: isQuiz }) : null
-
-  // The paid one never races: it is the only provider that costs money.
-  if (!won) {
-    for (const p of paidProviders) {
-      if (Date.now() - started > deadlineFor(count)) { errors.push(`${p.name}: نفد الوقت`); break }
-      try {
-        const quiz = await p.fn()
-        if (isQuiz(quiz)) { won = { provider: p, value: quiz }; break }
-        errors.push(`${p.name}: ردٌّ فارغ`)
-      } catch (err) {
-        errors.push(`${p.name}: ${err.message}`)
+  for (const { paid, fn } of providers) {
+    try {
+      const quiz = await fn()
+      if (quiz && Array.isArray(quiz) && quiz.length > 0) {
+        if (paid) await consumePaidQuota(request, deviceId)
+        return reply({ quiz })
       }
-    }
+    } catch {}
   }
 
-  if (won) {
-    if (won.provider.paid) await consumePaidQuota(request, deviceId)
-    return reply({ quiz: won.value })
-  }
-
-  // The reasons used to be swallowed by `catch {}`, so a failing quiz left no
-  // trace anywhere — not in the reply, not in the log. The student still sees
-  // only the apology; the owner now has something to act on.
-  console.error('[api/ai-quiz] all providers failed:', errors.join(' | '))
-  // The student sees the apology; the owner sees the reason. Without this a
-  // failing quiz left nothing anywhere he could reach, and every round of
-  // diagnosis had to start from «it does not work».
-  return reply({
-    error: 'تعذّر توليد الاختبار، جرّب مجدداً',
-    ...(await adminDetail(errors)),
-  }, 500)
-
-}
-
-/**
- * Why every provider failed, for an admin caller only — redacted the same way
- * the chat redacts, because an error can quote the URL a key was appended to.
- */
-async function adminDetail(errors) {
-  try {
-    const { requireAdmin } = await import('@/lib/admin-guard')
-    const gate = await requireAdmin()
-    if (!gate.ok) return {}
-  } catch {
-    return {}
-  }
-  const detail = errors
-    .map(e => String(e)
-      .replace(/https?:\/\/\S+/g, '[url]')
-      .replace(/(key|token|api[_-]?key)=\S+/gi, '$1=[redacted]')
-      .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted]'))
-    .join(' | ')
-    .slice(0, 400)
-  return detail ? { detail } : {}
+  return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
 }
