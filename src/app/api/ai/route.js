@@ -190,7 +190,11 @@ async function callOpenRouter(subject, messages, grounding) {
 
 async function callGroq(subject, messages, grounding) {
   // try multiple models in sequence
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192']
+  // `llama3-70b-8192` was decommissioned by Groq, so every fallback through
+  // this list ended on a model that cannot answer — a wasted round trip at
+  // exactly the moment the first two had already failed. Both names left are
+  // current: the versatile one answers, the instant one is the quick retry.
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
   for (const model of models) {
     try {
       const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
