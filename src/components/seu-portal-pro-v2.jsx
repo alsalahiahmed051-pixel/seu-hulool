@@ -1919,97 +1919,10 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         // client can see a device-local profile, so only the client can say —
         // see the note in /api/ai for why that is safe in the one direction
         // that matters.
-        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial, stream: STREAMING_ENABLED }),
+        body: JSON.stringify({ subject, messages: history, fileContext, email: aiEmail, image: sentImage || undefined, trial: isTrial }),
       });
       clearTimeout(timeoutId);
 
-      // ── The answer, as it is written ──────────────────────────────────
-      //
-      // A streamed reply arrives as newline-delimited JSON: one `meta` frame
-      // carrying the quota and the sources, then a `delta` per token. The page
-      // used to wait for the whole answer and print it at once, which is what
-      // made the assistant feel like a form rather than a conversation.
-      //
-      // The gates (subscription, trial, profile) are all decided by the server
-      // BEFORE it starts streaming, so anything that must refuse still comes
-      // back as ordinary JSON and falls through to the branch below.
-      if (res.ok && res.headers.get("content-type")?.includes("ndjson")) {
-        const id = mkId();
-        let acc = "";
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        const startedAt = Date.now();
-        /**
-         * Show the answer so far, and SAVE it.
-         *
-         * The save is not a copy of the React state — it is written straight to
-         * storage from here, and that is what fixes «لو خرجت من المساعد
-         * يتوقف». Leaving the screen unmounts this component, after which
-         * setMsgs updates nothing; the fetch itself is untouched by React and
-         * keeps running, so writing the accumulated text directly means the
-         * rest of the answer still lands and is waiting when the student comes
-         * back, instead of being thrown away for having navigated.
-         */
-        const flush = (final) => {
-          const bubble = { r: "a", id, text: acc, ts: startedAt, streaming: !final };
-          // Whether this bubble already exists is decided from the list itself,
-          // inside the updater. Tracking it in a variable alongside looks
-          // equivalent and is not: React runs the updater when it re-renders,
-          // by which time the flag has already been flipped — so the very first
-          // token took the «replace» branch, replaced a message that had never
-          // been added, and the whole answer went nowhere. Nothing threw and no
-          // test could see it; the empty screenshot is what caught it.
-          setMsgs(m => m.some(x => x.id === id)
-            ? m.map(x => x.id === id ? bubble : x)
-            : [...m, bubble]);
-          try { storage.set(histKey, [...newMsgs, bubble].slice(-20)); } catch { /* full or blocked */ }
-        };
-        try {
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            let nl;
-            while ((nl = buf.indexOf("\n")) >= 0) {
-              const raw = buf.slice(0, nl).trim();
-              buf = buf.slice(nl + 1);
-              if (!raw) continue;
-              let ev; try { ev = JSON.parse(raw); } catch { continue; }
-              if (ev.type === "meta") {
-                if (ev.subscribed || ev.remaining != null || ev.resetAt) {
-                  setGate({
-                    subscribed: !!ev.subscribed,
-                    limit: ev.limit ?? 5,
-                    used: ev.used ?? 0,
-                    remaining: ev.subscribed ? Infinity : (ev.remaining ?? 0),
-                    resetAt: ev.resetAt || 0,
-                    blocked: false,
-                  });
-                }
-                if (ev.trial) onTrialSpent?.(ev.trial);
-              } else if (ev.type === "delta") {
-                acc += ev.t;
-                setLoading(false);
-                flush(false);
-              } else if (ev.type === "error") {
-                acc += (acc ? "\n\n" : "") + ev.error;
-                flush(false);
-              }
-            }
-          }
-        } catch (streamErr) {
-          // Stopped on purpose, or the connection dropped. Either way what was
-          // already written stays — deleting a half-answer the student was
-          // reading is worse than leaving it and saying it was cut short.
-          if (!stoppedRef.current && !acc) throw streamErr;
-        }
-        setLoading(false);
-        abortRef.current = null;
-        if (acc) flush(true);
-        else setMsgs(m => [...m, { r: "a", id: mkId(), ts: Date.now(), text: "لم يصل أي ردّ. أعد المحاولة." }]);
-        return;
-      }
       // A function the platform killed returns an HTML error page, not JSON.
       // Parsing that throws, and it used to land in the same catch as a real
       // network failure — so a server that gave up told the student their
@@ -2510,16 +2423,6 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
   // ask for as 10. The server clamps it as well — this field is a
   // convenience, not the rule.
   const [count, setCount] = useState("5");
-  /**
-   * Which language the questions come in.
-   *
-   * «auto» lets the course's own files decide, which is right when files
-   * exist — and silent when they do not. Almost no course here is indexed yet,
-   * so auto had nothing to read and every quiz came out Arabic. That is what
-   * «مايفرق بين اللغات» was: not a broken detector, a detector with no input.
-   * An explicit choice never depends on whether anyone uploaded anything.
-   */
-  const [lang, setLang] = useState("auto");
   const [trialSpent, setTrialSpent] = useState(false);
 
   const startQuiz = async () => {
@@ -2529,7 +2432,7 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
       const res = await fetch("/api/ai-quiz", {
         method: "POST", headers: { "Content-Type": "application/json" },
         signal: abortAfter(65000),
-        body: JSON.stringify({ subject, source, count: n, lang }),
+        body: JSON.stringify({ subject, source, count: n }),
       });
       const d = await res.json();
       if (d.quiz && Array.isArray(d.quiz)) { setQuiz(d.quiz); }
@@ -2604,20 +2507,6 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
                     borderRadius: 9, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit",
                     fontSize: 12.5, fontWeight: 800, color: source === x.id ? P.blue2 : t.mu,
                   }}>{x.label}</button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ textAlign: "right", marginBottom: 14 }}>
-              <div style={{ fontSize: 11.5, color: t.mu, fontWeight: 700, marginBottom: 7 }}>بأي لغة؟</div>
-              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                {[["auto", "حسب ملفات المادة"], ["ar", "بالعربية"], ["en", "English"]].map(([id, label]) => (
-                  <button key={id} onClick={() => setLang(id)} style={{
-                    background: lang === id ? `${P.blue2}18` : t.s2,
-                    border: `1.5px solid ${lang === id ? P.blue2 : t.bd}`,
-                    borderRadius: 9, padding: "8px 12px", cursor: "pointer", fontFamily: "inherit",
-                    fontSize: 12.5, fontWeight: 800, color: lang === id ? P.blue2 : t.mu,
-                  }}>{label}</button>
                 ))}
               </div>
             </div>
@@ -9009,24 +8898,6 @@ function useReminderSync(schedule, tasks, profile) {
  * happened yet. It earns its place near the end, not at the start.
  */
 const LOW_ALLOWANCE = 5;
-
-/**
- * Whether the chat asks the server to stream its answer word by word.
- *
- * Turned OFF after it shipped. The streaming path could not be tested against
- * the live site from where it was built, and in production it made the whole
- * assistant worse — slow, choppy, answers arriving broken or not at all — most
- * likely because the platform buffers a streamed response instead of flushing
- * each token, so the student paid streaming's overhead and got none of its
- * benefit. With this false the client takes the plain-JSON path that worked
- * well before: one complete answer, rendered at once. The server still speeds
- * everything underneath (providers race, Gemini's deliberation is off), so the
- * complete answer now comes back in a few seconds rather than tens.
- *
- * The streaming code on both sides is left intact behind this flag, to switch
- * back on only once it can be verified on the real deployment.
- */
-const STREAMING_ENABLED = false;
 
 function Thinking({ t }) {
   const [secs, setSecs] = useState(0);
