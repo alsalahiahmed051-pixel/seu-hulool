@@ -2435,7 +2435,14 @@ function QuizMode({ subject, t, onToast, onSubscribe }) {
         body: JSON.stringify({ subject, source, count: n }),
       });
       const d = await res.json();
-      if (d.quiz && Array.isArray(d.quiz)) { setQuiz(d.quiz); }
+      if (d.quiz && Array.isArray(d.quiz)) {
+        setQuiz(d.quiz);
+        // Asking for «التجميعات» on a course that has no files used to be a
+        // refusal. Now it is a quiz built from the course itself — and saying
+        // so is the whole difference between that and passing invented
+        // questions off as coming from attached material.
+        if (d.note) onToast?.(safeText(d.note, ""), "info", 7000);
+      }
       else {
         if (d.trialUsed || d.need === "subscription") setTrialSpent(true);
         // `detail` is the per-provider reason, and the server sends it only to

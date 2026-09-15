@@ -212,9 +212,50 @@ export async function POST(request) {
     return res
   }
 
+  /**
+   * The course's own files — read BEFORE anything is spent.
+   *
+   * This used to sit after the trial claim, and that order is what made the
+   * quiz «ما يشتغل». «التجميعات المرفقة» and «التلخيص» name uploaded material
+   * by definition, so a course with none was refused outright — but the free
+   * quiz had already been claimed on the way in. The student was told the
+   * quiz could not be built, and then, on the next attempt, that they had
+   * used their one free turn. Half the trials on the live table were spent
+   * exactly that way, on courses that hold no indexed file at all.
+   *
+   * So the material is looked at first, and what it turns out to be changes
+   * how the quiz is built rather than whether there is one.
+   */
+  const wantsFiles = source === 'collections' || source === 'summary'
+  let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
+  try {
+    grounding = await contextFor(subject, QUIZ_SOURCES[source]?.ask || subject, { maxChars: 8000 })
+  } catch { /* fall through ungrounded */ }
+
+  /**
+   * No files is not a dead end — it is a different quiz, said out loud.
+   *
+   * Refusing was defensible while the promise was «أسئلة من التجميعات»: better
+   * an honest no than questions invented and labelled as coming from files.
+   * But a student who asks for a quiz and gets a wall has no route forward,
+   * and the fix keeps the honesty without the wall — the questions are built
+   * from the course itself, and `note` says so on the screen. What is never
+   * done is claiming they came from attached material.
+   */
+  let effectiveSource = source
+  let note = ''
+  if (wantsFiles && !grounding.context) {
+    effectiveSource = 'curriculum'
+    note = grounding.hasFiles
+      ? 'ملفات هذه المادة مرفوعة لكن لم يُستخرج منها نصّ بعد — بُني الاختبار من محتوى المقرر نفسه.'
+      : 'لا توجد ملفات مرفوعة لهذه المادة، فبُني الاختبار من محتوى المقرر نفسه.'
+  }
+
   const subscribed = await isSubscribed(deviceId)
+  // Remembered so a turn that produces nothing can be handed back below.
+  let db = null
+  let claimedNow = false
   if (!subscribed) {
-    let db = null
     try { db = createAdminClient() } catch { /* unconfigured */ }
     if (db) {
       // Claimed in one statement. Two quizzes started together would
@@ -233,29 +274,15 @@ export async function POST(request) {
           trialUsed: true,
         }, 402)
       }
+      claimedNow = claimed === true
     }
   }
 
-  /**
-   * The course's own files, for the sources that promise them.
-   *
-   * «التجميعات المرفقة» and «التلخيص» name uploaded material by definition, so
-   * when the course has none the honest answer is to say so — not to generate
-   * questions out of nothing and label them as coming from the collections.
-   */
-  const wantsFiles = source === 'collections' || source === 'summary'
-  let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
-  try {
-    grounding = await contextFor(subject, QUIZ_SOURCES[source]?.ask || subject, { maxChars: 8000 })
-  } catch { /* fall through ungrounded */ }
-
-  if (wantsFiles && !grounding.context) {
-    return replyWith({
-      error: grounding.hasFiles
-        ? 'ملفات هذه المادة مرفوعة لكن لم يُستخرج منها نصّ قابل للقراءة بعد — جرّب «المقرر الدراسي» أو «عشوائي من كل شيء».'
-        : 'لا توجد ملفات مرفوعة لهذه المادة بعد، فلا يمكن بناء اختبار منها — جرّب «المقرر الدراسي» أو «عشوائي من كل شيء».',
-      need: 'files',
-    }, 409)
+  /** Hand the free quiz back when this request produced no quiz. */
+  const releaseTrial = async () => {
+    if (!claimedNow || !db) return
+    claimedNow = false
+    try { await db.rpc('release_quiz_trial', { p_owner: owner }) } catch { /* best effort */ }
   }
 
   // Providers FREE FIRST — paid Anthropic only when this visitor still has
@@ -273,13 +300,13 @@ export async function POST(request) {
   // quota runs out — which is far better than the OpenRouter free catalogue
   // that used to catch it.
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
-    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, source, grounding) })
+    providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, effectiveSource, grounding) })
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
-    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, source, grounding) })
+    providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, effectiveSource, grounding) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
-    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, source, grounding) })
+    providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, effectiveSource, grounding) })
   if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
-    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, source, grounding) })
+    providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, effectiveSource, grounding) })
 
   const reply = (bodyObj, status = 200) => {
     const res = Response.json(bodyObj, { status })
@@ -288,6 +315,7 @@ export async function POST(request) {
   }
 
   if (providers.length === 0) {
+    await releaseTrial()
     return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
   }
 
@@ -296,10 +324,12 @@ export async function POST(request) {
       const quiz = await fn()
       if (quiz && Array.isArray(quiz) && quiz.length > 0) {
         if (paid) await consumePaidQuota(request, deviceId)
-        return reply({ quiz })
+        return reply(note ? { quiz, note } : { quiz })
       }
     } catch {}
   }
 
+  // Nothing was delivered, so nothing was owed: the free quiz goes back.
+  await releaseTrial()
   return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
 }
