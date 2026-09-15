@@ -7,6 +7,7 @@ import { ownerKey } from '@/lib/ai-points'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { withDeadline, budget } from '@/lib/deadline'
 
 export const runtime = 'nodejs'
 // The platform kills a function at ten seconds unless told otherwise.
@@ -319,9 +320,14 @@ export async function POST(request) {
     return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
   }
 
-  for (const { paid, fn } of providers) {
+  // Same clock as the chat route: a provider that hangs must not spend the
+  // whole function, or the student waits a minute to be told «تعذّر».
+  const clock = budget()
+  for (let i = 0; i < providers.length; i++) {
+    const { paid, fn } = providers[i]
+    if (i > 0 && !clock.canTry()) break
     try {
-      const quiz = await fn()
+      const quiz = await withDeadline(fn(), clock.next(providers.length - i))
       if (quiz && Array.isArray(quiz) && quiz.length > 0) {
         if (paid) await consumePaidQuota(request, deviceId)
         return reply(note ? { quiz, note } : { quiz })

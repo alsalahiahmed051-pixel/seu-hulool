@@ -23,7 +23,7 @@ import {
   Briefcase, Globe, Code, Trophy, Flag, Coffee, Target,
   Heart, Clock, Layers, Activity, Wifi, Settings, User,
   Volume2, VolumeX, Flame, Edit3, Check, Trash2, Save,
-  Sparkles, Lock, Send, ChevronLeft, Share2, History,
+  Sparkles, Lock, Send, ChevronLeft, Share2, History, Menu,
   PenLine, Compass, Lightbulb, Shield, ArrowUpRight, Hash,
   ExternalLink, Link2, GraduationCap as GradCap, Mail, Library,
   CreditCard, HelpCircle, Newspaper, Radio, Building2,
@@ -100,6 +100,61 @@ const storage = {
       }
     } catch (e) {}
   },
+};
+
+/* ══════════════════════════════════════════════════════════════
+   CONVERSATIONS — a list you can reopen, rename by using, and delete
+   ══════════════════════════════════════════════════════════════
+   The assistant kept exactly ONE conversation per course, in a key named
+   after the course, and "+" overwrote it. So there was no list to open, no
+   way back to yesterday's answer, and nothing to delete — which is what the
+   owner reported three times: «مافيش حذف محادثة، محادثة جديدة… مافيش قوائم
+   وحذفه». Every assistant a student already uses has a conversation list;
+   this is that list.
+
+   Kept in the same local store as the rest of the app: there are no student
+   accounts, so a conversation belongs to the device that had it.
+*/
+const CONVOS_KEY = "aiConvos";
+/** Enough to be a history, few enough that the drawer stays readable. */
+const MAX_CONVOS = 40;
+
+const loadConvos = () => {
+  const list = storage.get(CONVOS_KEY, []);
+  return Array.isArray(list) ? list : [];
+};
+const saveConvos = (list) => {
+  storage.set(CONVOS_KEY, list
+    .slice()
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    .slice(0, MAX_CONVOS));
+};
+
+/**
+ * A conversation's name, taken from the first thing the student actually
+ * asked. Naming it after the course would give every row the same title.
+ */
+const convoTitle = (msgs, subject) => {
+  const firstAsk = (msgs || []).find(m => m.r === "u" && String(m.text || "").trim());
+  const raw = firstAsk ? String(firstAsk.text).trim() : "";
+  if (!raw) return subject === "عام" ? "محادثة جديدة" : `محادثة — ${subject}`;
+  return raw.replace(/\s+/g, " ").slice(0, 48);
+};
+
+/** «أمس»، «قبل ٣ أيام» — a date a student reads without doing arithmetic. */
+const convoWhen = (ts) => {
+  if (!ts) return "";
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  if (days <= 0) {
+    const mins = Math.floor((Date.now() - ts) / 60000);
+    if (mins < 1) return "الآن";
+    if (mins < 60) return `قبل ${mins} دقيقة`;
+    return `قبل ${Math.floor(mins / 60)} ساعة`;
+  }
+  if (days === 1) return "أمس";
+  if (days < 7) return `قبل ${days} أيام`;
+  try { return new Date(ts).toLocaleDateString("ar-SA", { day: "numeric", month: "short" }); }
+  catch { return ""; }
 };
 
 /**
@@ -1536,7 +1591,7 @@ const untilLabel = (resetAt) => {
   return `خلال ${h} ساعة${m ? ` و${m} د` : ""}`;
 };
 
-function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null, onToast = null, isTrial = false, onTrialSpent = null, onTrialExhausted = null }) {
+function AIChat({ subject, t, onChat, standalone = true, files = null, seed = "", profile = null, onSubscribe = null, email = "", onSaveEmail = null, onToast = null, isTrial = false, onTrialSpent = null, onTrialExhausted = null, convoId = null, onConvoChange = null }) {
   // This component called `onToast?.(...)` in a dozen places without ever
   // receiving it. Optional chaining does not save an *undeclared* identifier:
   // every one of those lines threw ReferenceError and took the whole click
@@ -1546,6 +1601,13 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   const mkId = () => Date.now() + Math.random();
   const makeDefault = () => ({ r: "a", id: mkId(), text: `مرحباً! أنا مساعدك الذكي لمادة **${subject}**.\nاسألني عن الاختبارات، الواجبات، الملخصات، أو أي شيء آخر.`, ts: Date.now() });
   const [msgs, setMsgs] = useState(() => {
+    // A named conversation from the drawer wins; the per-course slot is what
+    // the course page still uses, and what a device's old history lives in.
+    if (convoId) {
+      const found = loadConvos().find(c => c.id === convoId);
+      if (found && found.msgs?.length) return found.msgs.map(m => ({ ...m, id: m.id || mkId() }));
+      return [makeDefault()];
+    }
     const stored = storage.get(histKey, null);
     if (stored && stored.length > 0) return stored.map(m => ({ ...m, id: m.id || mkId() }));
     return [makeDefault()];
@@ -1681,8 +1743,22 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
   }, []);
 
   useEffect(() => {
-    if (msgs.length > 1) storage.set(histKey, msgs.slice(-20));
-  }, [msgs]);
+    if (msgs.length <= 1) return;
+    const kept = msgs.slice(-20);
+    if (!convoId) { storage.set(histKey, kept); return; }
+    // A conversation earns its place in the drawer the moment it has a real
+    // exchange in it — an untouched greeting is not history, and a drawer
+    // full of empty rows is worse than no drawer.
+    const list = loadConvos().filter(c => c.id !== convoId);
+    const row = {
+      id: convoId, subject,
+      title: convoTitle(kept, subject),
+      msgs: kept.map(({ streaming, ...m }) => m),
+      updatedAt: Date.now(),
+    };
+    saveConvos([row, ...list]);
+    onConvoChange?.();
+  }, [msgs, convoId, subject]);
   // Body must be braced: React stores whatever an effect returns as its
   // cleanup and calls it on the next run/unmount. A concise body returns
   // scrollIntoView's result, and any browser that returns a non-undefined
@@ -1727,7 +1803,16 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     }).catch(() => setFileContext(lines.join("\n")));
   }, [files]);
 
-  const clearChat = () => { storage.set(histKey, null); setMsgs([makeDefault()]); setMenuId(null); };
+  const clearChat = () => {
+    if (convoId) {
+      saveConvos(loadConvos().filter(c => c.id !== convoId));
+      onConvoChange?.();
+    } else {
+      storage.set(histKey, null);
+    }
+    setMsgs([makeDefault()]);
+    setMenuId(null);
+  };
 
   const fmtTime = (ts) => {
     if (!ts) return "";
@@ -2166,8 +2251,17 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
           const prevSame = i > 0 && msgs[i - 1].r === m.r;
           const isMenuOpen = menuId === m.id;
           return (
-            <div key={m.id || i} style={{ display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 3 : 14, animation: "fadeUp .3s ease" }}>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, maxWidth: "84%" }}>
+            // `position: relative` is the fix for «متراكبة». The action menu
+            // below is absolutely positioned, and without a positioned parent
+            // it measured itself against whatever ancestor happened to be
+            // positioned — landing over other messages instead of under the
+            // bubble it belongs to.
+            <div key={m.id || i} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: isUser ? "flex-start" : "flex-end", marginTop: prevSame ? 3 : 14, animation: "fadeUp .3s ease" }}>
+              {/* `minWidth: 0` lets the bubble shrink inside the row. Without
+                  it a flex child refuses to go below its content width, so a
+                  long word or a URL pushed the bubble past the gutter and out
+                  of the screen. */}
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, maxWidth: "84%", minWidth: 0 }}>
                 {!isUser && (
                   <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg,${P.navy},${P.blue2})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: prevSame ? 0 : 1, boxShadow: `0 2px 8px ${P.blue}40` }}>
                     <Sparkles size={14} color={P.gold} />
@@ -2183,6 +2277,7 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
                     boxShadow: isMenuOpen ? `0 0 0 2px ${P.blue2}, 0 6px 24px ${P.blue}40` : isUser ? `0 4px 16px ${P.blue}40` : `0 2px 8px rgba(0,0,0,.07)`,
                     border: isUser ? "none" : `1px solid ${isMenuOpen ? P.blue2 : t.bd}`,
                     cursor: "pointer", userSelect: "none", wordBreak: "break-word",
+                    overflowWrap: "anywhere", minWidth: 0,
                     transition: "box-shadow .15s, border-color .15s",
                   }}>
                   {renderMsg(m.text)}
@@ -2396,6 +2491,111 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
             <Send size={17} color={(!inp.trim() && !image) ? t.dim : "#fff"} />
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONVERSATIONS DRAWER — «قائمة جانبية» with delete
+   ══════════════════════════════════════════════════════════════
+   Slides in from the right, because the app is RTL and the button that
+   opens it sits there. Nothing here overlays the chat's own controls: the
+   sheet takes the screen while it is open and gives it all back on close,
+   which is the opposite of the stacked header the owner called «متراكبة».
+*/
+function ConvoDrawer({ open, onClose, convos, activeId, onPick, onDelete, onNew, t }) {
+  // `confirming` holds the row whose delete was tapped once. A conversation
+  // is the student's own writing — deleting it on a single tap next to the
+  // row you open is how people lose things.
+  const [confirming, setConfirming] = useState(null);
+  useEffect(() => { if (!open) setConfirming(null); }, [open]);
+  if (!open) return null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,.45)",
+        display: "flex", justifyContent: "flex-start",
+      }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "min(320px, 86vw)", height: "100%", background: t.s1,
+          borderLeft: `1px solid ${t.bd}`, display: "flex", flexDirection: "column",
+          boxShadow: "0 0 40px rgba(0,0,0,.35)",
+        }}>
+        <div style={{
+          padding: "16px 16px 12px", borderBottom: `1px solid ${t.bd}`,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <div style={{ flex: 1, fontSize: 14.5, fontWeight: 800, color: t.tx }}>محادثاتي</div>
+          <button onClick={onClose} aria-label="إغلاق" style={{
+            background: t.s2, border: `1px solid ${t.bd}`, borderRadius: 9,
+            width: 32, height: 32, cursor: "pointer", color: t.mu,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+          }}><X size={15} /></button>
+        </div>
+
+        <div style={{ padding: "12px 16px" }}>
+          <Btn variant="primary" onClick={() => { onNew(); onClose(); }} style={{ width: "100%" }}>
+            <Plus size={15} /> محادثة جديدة
+          </Btn>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 16px" }}>
+          {convos.length === 0 ? (
+            <div style={{ padding: "26px 14px", textAlign: "center", fontSize: 12.5, color: t.mu, lineHeight: 1.9 }}>
+              ما عندك محادثات محفوظة بعد.<br />أي سؤال تسأله يُحفظ هنا تلقائياً.
+            </div>
+          ) : convos.map(c => {
+            const active = c.id === activeId;
+            const isConfirming = confirming === c.id;
+            return (
+              <div key={c.id} style={{
+                display: "flex", alignItems: "center", gap: 6, marginBottom: 6,
+                background: active ? `${P.blue2}16` : "transparent",
+                border: `1px solid ${active ? `${P.blue2}55` : "transparent"}`,
+                borderRadius: 11, padding: "2px 4px",
+              }}>
+                <button
+                  onClick={() => { onPick(c.id); onClose(); }}
+                  style={{
+                    flex: 1, minWidth: 0, textAlign: "right", background: "none", border: "none",
+                    padding: "9px 8px", cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  <div style={{
+                    fontSize: 12.8, fontWeight: 700, color: active ? P.blue2 : t.tx,
+                    // A long question must not push the delete button off the
+                    // row — that is how a list becomes «متراكب».
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>{c.title || "محادثة"}</div>
+                  <div style={{ fontSize: 10.5, color: t.dim, marginTop: 3 }}>
+                    {c.subject === "عام" ? "عام" : c.subject} · {convoWhen(c.updatedAt)}
+                  </div>
+                </button>
+                {isConfirming ? (
+                  <button
+                    onClick={() => { onDelete(c.id); setConfirming(null); }}
+                    style={{
+                      background: P.red, border: "none", borderRadius: 8, padding: "7px 10px",
+                      cursor: "pointer", fontFamily: "inherit", fontSize: 11.5, fontWeight: 800,
+                      color: "#fff", flexShrink: 0,
+                    }}>أكّد</button>
+                ) : (
+                  <button
+                    onClick={() => setConfirming(c.id)}
+                    aria-label={`حذف ${c.title || "المحادثة"}`}
+                    style={{
+                      background: `${P.red}14`, border: "none", borderRadius: 8, padding: 7,
+                      cursor: "pointer", color: P.red, flexShrink: 0, display: "flex",
+                    }}><Trash2 size={14} /></button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -9018,10 +9218,27 @@ export default function App() {
   // exactly right, and no other assistant a student uses does this.
   const [aiConfirmed, setAiConfirmed] = useState(true);
   const [aiClearKey, setAiClearKey] = useState(0);
+
+  /* ── The conversation list ────────────────────────────────────────────
+     One id names the conversation on screen; the drawer switches it. A new
+     id IS a new conversation, so "+" no longer destroys the old one — it
+     steps away from it, and the drawer is the way back. */
+  const [aiConvoId, setAiConvoId] = useState(() => `c${Date.now()}`);
+  const [aiConvos, setAiConvos] = useState([]);
+  const [convoDrawer, setConvoDrawer] = useState(false);
+  const refreshConvos = useCallback(() => setAiConvos(loadConvos()), []);
+  useEffect(() => { refreshConvos(); }, [refreshConvos]);
+
   const clearGlobalAI = () => {
-    const histKey = `aiHistory_${aiSubject.replace(/\s+/g, "_").slice(0, 40)}`;
-    storage.set(histKey, null);
+    setAiConvoId(`c${Date.now()}${Math.random().toString(36).slice(2, 6)}`);
     setAiClearKey(k => k + 1);
+    refreshConvos();
+  };
+  const openConvo = (id) => { setAiConvoId(id); setAiClearKey(k => k + 1); };
+  const deleteConvo = (id) => {
+    saveConvos(loadConvos().filter(c => c.id !== id));
+    refreshConvos();
+    if (id === aiConvoId) clearGlobalAI();
   };
   const [notifOpen, setNotifOpen] = useState(false);
   const [messagesOpen, setMessagesOpen] = useState(false);
@@ -9841,8 +10058,26 @@ export default function App() {
               <button onClick={clearGlobalAI} title="ابدأ محادثة جديدة" aria-label="ابدأ محادثة جديدة" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, width: 38, height: 38, fontSize: 12, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                 <Plus size={17} />
               </button>
+              {/* The list. Sits beside "+" because they are the same idea:
+                  start one, or go back to one you already had. */}
+              <button onClick={() => { refreshConvos(); setConvoDrawer(true); }} title="محادثاتي" aria-label="محادثاتي" style={{ background: "rgba(255,255,255,.1)", border: "1px solid rgba(255,255,255,.2)", borderRadius: 10, width: 38, height: 38, color: "rgba(255,255,255,.85)", cursor: "pointer", fontFamily: "inherit", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 0, position: "relative" }}>
+                <Menu size={17} />
+                {aiConvos.length > 0 && (
+                  <span style={{
+                    position: "absolute", top: -5, insetInlineStart: -5, minWidth: 17, height: 17,
+                    borderRadius: 9, background: P.gold, color: "#14261c", fontSize: 10,
+                    fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: "0 4px",
+                  }}>{aiConvos.length}</span>
+                )}
+              </button>
             </div>
-            {aiSubjectGroups.mine.length > 0 && !aiAllSubjects && (
+            {/* One line, not two: this used to sit on its own row above the
+                tabs, which is a third stacked strip in a header that already
+                had a title and a tab bar. It only ever applies to the course
+                picker, so it belongs under the picker — and only in chat,
+                where it is the picker you are using. */}
+            {aiSubjectGroups.mine.length > 0 && !aiAllSubjects && aiGlobalTab === "chat" && (
               <div style={{ padding: "0 16px 8px" }}>
                 <button onClick={() => setAiAllSubjects(true)} style={{
                   background: "none", border: "none", padding: 0, cursor: "pointer",
@@ -9893,6 +10128,7 @@ export default function App() {
               />
             ) : aiGlobalTab === "chat"
               ? <AIChat key={`${aiSubject}-${aiClearKey}-${aiSeed ? "s" : ""}`} subject={aiSubject} t={t} onChat={() => setAiChats(c => c + 1)} standalone={false} seed={aiSeed} onToast={toasts.push}
+                  convoId={aiConvoId} onConvoChange={refreshConvos}
                   profile={profile} onSubscribe={(g) => setSubOpen(g || {})}
                   email={aiEmail} onSaveEmail={setAiEmail}
                   isTrial={ai.trial}
@@ -9905,6 +10141,11 @@ export default function App() {
               : <div style={{ padding: 16, overflowY: "auto", height: "100%" }}><QuizMode key={aiSubject} subject={aiSubject} t={t} onToast={toasts.push} onSubscribe={() => setSubOpen({})} /></div>
             }
           </div>
+          <ConvoDrawer
+            open={convoDrawer} onClose={() => setConvoDrawer(false)}
+            convos={aiConvos} activeId={aiConvoId} t={t}
+            onPick={openConvo} onDelete={deleteConvo} onNew={clearGlobalAI}
+          />
         </div>
       )}
       {needAccount && (

@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server'
 import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
+import { withDeadline, budget } from '@/lib/deadline'
 
 export const runtime = 'nodejs'
 // The platform kills a function at ten seconds unless told otherwise.
@@ -272,7 +273,7 @@ function buildSystem(subject, grounding) {
 
 مهمتك مساعدة الطلاب في: شرح المفاهيم، تلخيص الوحدات، حل الأسئلة، وتقديم نصائح دراسية.
 قواعد:
-- أجب دائماً باللغة العربية الفصيحة البسيطة
+- أجب بلغة السؤال: سؤالٌ بالعربية يُجاب بالعربية، وبالإنجليزية بالإنجليزية. وإن كانت مقاطع الملفات بلغة أخرى فالعبرة بلغة الطالب
 - كن موجزاً ودقيقاً ومفيداً
 - استخدم النقاط والعناوين (##) لتنظيم الإجابة عند الحاجة
 - إن كان السؤال عن معلومة خاصة بهذا المقرر لا تعرفها — موعد اختبار، رقم فصل في الكتاب، توزيع الدرجات، اسم المحاضر — قل إنك لا تعرفها ووجّه الطالب إلى البلاكبورد أو الدعم، ولا تخمّنها
@@ -530,11 +531,20 @@ export async function POST(request) {
     })
   }
 
-  // try each provider in turn — return first success
+  // Try each provider in turn — first success wins, and nobody gets to hang.
+  // The clock is the point: an overloaded provider used to hold the whole
+  // function open until the platform killed it at sixty seconds, so the
+  // student waited a minute for an apology. See src/lib/deadline.js.
   const errors = []
-  for (const { name, paid, fn } of providers) {
+  const clock = budget()
+  for (let i = 0; i < providers.length; i++) {
+    const { name, paid, fn } = providers[i]
+    if (i > 0 && !clock.canTry()) {
+      errors.push(`${name}: skipped — out of time`)
+      break
+    }
     try {
-      const text = await fn()
+      const text = await withDeadline(fn(), clock.next(providers.length - i))
       if (text) {
         // Only a successful paid reply spends the provider budget; free ones
         // never do. The student's own allowance is spent on any answered
