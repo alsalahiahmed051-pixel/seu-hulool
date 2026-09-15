@@ -73,18 +73,43 @@ const IN_SCOPE = `- مواد الجامعة ومحتواها الدراسي وش
  * The scoping paragraph appended to every system prompt.
  * `subject` is the course name, or "عام" for the general assistant.
  */
+/**
+ * ── لماذا لم يعد هناك رفض ───────────────────────────────────────────────
+ *
+ * The owner pasted one line back at me as the bug: «أنا مساعد خاص بالدراسة
+ * في الجامعة السعودية الإلكترونية — اسألني عن موادك أو اختباراتك أو خطتك
+ * الدراسية.» It was not a failure. It was this file, working exactly as
+ * written — the model was ORDERED to say it and forbidden to answer.
+ *
+ * That order was mine, and it contradicts what he asked for three separate
+ * times: «ويجيب على اي سؤال كانه انت او اي ذكاء جيمنج او شات جي بي تي». A
+ * student who asks his study app one thing it will not touch learns the app
+ * is not worth asking, and stops asking it about his courses too.
+ *
+ * So the scope is now a BIAS, not a gate. The assistant is a university
+ * assistant — it leads with the course, it knows SEU, it pulls an off-topic
+ * question back toward study when that genuinely helps — but it answers.
+ * The only lines it still holds are the ones any assistant holds: do not
+ * invent university rules, dates or numbers.
+ */
 export function scopeRules(subject) {
-  if (!isGeneral(subject)) {
-    return `أنت مساعد أكاديمي لطلاب ${UNIVERSITY}
-تخصصك مادة "${describeSubject(subject)}". اجعل كل إجابة متصلة بالمادة أو بالدراسة في الجامعة.
-إذا سُئلت عن شيء خارج الدراسة الجامعية، اعتذر بلطف في سطر واحد واقترح سؤالاً دراسياً بديلاً، ولا تجب عن الموضوع الخارجي.`
-  }
-  return `أنت المساعد العام لطلاب ${UNIVERSITY}
-تجيب فقط عمّا يخص الدراسة في هذه الجامعة:
+  const frame = `أنت مساعد ذكي لطلاب ${UNIVERSITY}
+
+أجب عن أي سؤال يسأله الطالب — أياً كان موضوعه — بإجابة كاملة ومفيدة ومباشرة، تماماً كما يفعل أي مساعد ذكاء اصطناعي متقدّم. لا ترفض سؤالاً لأنه خارج الدراسة، ولا تعتذر عن الإجابة، ولا تقل إنك «مساعد خاص بالدراسة فقط».
+
+وفي الوقت نفسه أنت تعرف هذه الجامعة جيداً، فاجعلها إطارك حين يكون للسؤال صلة بها:
 ${IN_SCOPE}
 
-خارج هذا النطاق — الرياضة، السياسة، الترفيه، الأخبار، الطب، البرمجة غير الدراسية، أو أي طلب لا صلة له بالجامعة — لا تجب عن الموضوع. اعتذر بسطر واحد ووجّه الطالب إلى سؤال دراسي، مثل: «أنا مساعد خاص بالدراسة في الجامعة السعودية الإلكترونية — اسألني عن موادك أو اختباراتك أو خطتك الدراسية.»
-لا تخترع أنظمة أو مواعيد أو أرقام لا تعرفها؛ إن لم تكن متأكداً قل ذلك ووجّه الطالب إلى الجهة المختصة في الجامعة.`
+قواعد تلتزم بها دائماً:
+- لا تخترع أنظمة الجامعة أو مواعيدها أو أرقامها أو درجاتها. إن لم تكن متأكداً فقل ذلك صراحةً ووجّه الطالب إلى الجهة المختصة.
+- أجب بلغة السؤال: سؤالٌ بالعربية يُجاب بالعربية، وبالإنجليزية يُجاب بالإنجليزية.
+- كن مباشراً ومنظّماً. ابدأ بالجواب لا بالمقدّمات، واستعمل نقاطاً أو خطوات حين تنفع.`
+
+  if (!isGeneral(subject)) {
+    return `${frame}
+- الطالب فاتحٌ الآن مادة "${describeSubject(subject)}"، فإن كان سؤاله متصلاً بها فاربطه بها.`
+  }
+  return frame
 }
 
 /** How a quiz should be framed — the same boundary, for generated questions. */
