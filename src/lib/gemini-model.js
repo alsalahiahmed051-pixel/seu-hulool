@@ -1,3 +1,4 @@
+import { shouldTryNextKey } from '@/lib/api-keys'
 /**
  * Calling Gemini without betting the request on a model name.
  *
@@ -169,6 +170,29 @@ function isModelFault(status, message) {
  * @throws  {Error} carrying the provider's own reason when it refused
  */
 export async function geminiGenerate(key, body, fetcher = fetch) {
+  // One key or several. A free ceiling is per key, so a second key doubles
+  // the day's allowance — and the owner's own diagnosis was «انتهت الحصّة
+  // المجانية» on every provider at once. See src/lib/api-keys.js.
+  const keys = Array.isArray(key) ? key.filter(Boolean) : [key].filter(Boolean)
+  if (keys.length > 1) {
+    let last = null
+    for (let i = 0; i < keys.length; i++) {
+      try {
+        return await geminiGenerate(keys[i], body, fetcher)
+      } catch (e) {
+        last = e
+        // Only a refusal ABOUT THIS KEY is worth spending the spare on.
+        // A timeout or a dead model name would meet the same wall under
+        // every key, and trying them all would burn the ceiling this
+        // rotation exists to raise.
+        const m = String(e?.message || '')
+        if (!shouldTryNextKey(Number(m.match(/HTTP (\d{3})/)?.[1] || 0), m)) throw e
+      }
+    }
+    throw last || new Error('no Gemini key answered')
+  }
+  key = keys[0]
+
   const post = (model, payload) => fetcher(
     `${GEN_URL}/${model}:generateContent?key=${key}`,
     {

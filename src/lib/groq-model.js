@@ -1,3 +1,4 @@
+import { shouldTryNextKey } from '@/lib/api-keys'
 /**
  * Calling Groq without betting the request on a model name.
  *
@@ -91,6 +92,23 @@ function isModelFault(status, message) {
  * @throws  {Error} carrying the provider's own reason when it refused
  */
 export async function groqChat(key, messages, opts = {}, fetcher = fetch) {
+  // Same rotation as Gemini — a free ceiling is per key. See api-keys.js.
+  const keys = Array.isArray(key) ? key.filter(Boolean) : [key].filter(Boolean)
+  if (keys.length > 1) {
+    let last = null
+    for (const k of keys) {
+      try {
+        return await groqChat(k, messages, opts, fetcher)
+      } catch (e) {
+        last = e
+        const m = String(e?.message || '')
+        if (!shouldTryNextKey(Number(m.match(/HTTP (\d{3})/)?.[1] || 0), m)) throw e
+      }
+    }
+    throw last || new Error('no Groq key answered')
+  }
+  key = keys[0]
+
   const post = (model) => fetcher(`${BASE}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },

@@ -15,6 +15,7 @@ import { isUsable, cooldownLeft, noteFailure, noteSuccess } from '@/lib/provider
 import { geminiGenerate } from '@/lib/gemini-model'
 import { groqChat } from '@/lib/groq-model'
 import { DEFAULT_POINTS } from '@/lib/ai-points'
+import { geminiKeys, groqKeys, openRouterKeys, anthropicKeys } from '@/lib/api-keys'
 
 export const runtime = 'nodejs'
 // The platform kills a function at ten seconds unless told otherwise.
@@ -30,10 +31,25 @@ export const maxDuration = 60
  */
 const MAX_ANSWER_TOKENS = 2048
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
-const GROQ_KEY = process.env.GROQ_API_KEY
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
+/**
+ * Every key configured per provider, not just the first.
+ *
+ * A free ceiling is per KEY, and the owner's own diagnosis read «انتهت
+ * الحصّة المجانية» on every provider at once. A second `GEMINI_API_KEY_2`
+ * doubles the day's allowance with no other change. See src/lib/api-keys.js.
+ *
+ * `[0]` is kept for the places that only need to know whether a provider is
+ * configured at all; the CALLS get the whole set.
+ */
+const GEMINI_SET = geminiKeys()
+const GROQ_SET = groqKeys()
+const OPENROUTER_SET = openRouterKeys()
+const ANTHROPIC_SET = anthropicKeys()
+
+const ANTHROPIC_KEY = ANTHROPIC_SET[0] || ''
+const GROQ_KEY = GROQ_SET[0] || ''
+const GEMINI_KEY = GEMINI_SET[0] || ''
+const OPENROUTER_KEY = OPENROUTER_SET[0] || ''
 
 async function callAnthropic(subject, messages, grounding) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
@@ -50,19 +66,41 @@ async function callAnthropic(subject, messages, grounding) {
 }
 
 /** Every free model OpenRouter is currently serving, best-first. */
+/**
+ * The free catalogue, remembered for an hour.
+ *
+ * The owner's diagnosis said «OpenRouter: المزوّد لم يستجب». It is the last
+ * provider tried, so by then little time is left — and it was spending that
+ * little on a CATALOGUE request before asking anything, then walking up to
+ * five models one at a time. Six sequential round trips to a provider whose
+ * free models are the slowest thing here: the deadline was always going to
+ * win.
+ *
+ * The catalogue barely changes from hour to hour, so it is fetched once and
+ * kept. Now the first question of the hour pays for it and the rest go
+ * straight to a model.
+ */
+let orCatalogue = { at: 0, list: [] }
+const OR_TTL_MS = 60 * 60 * 1000
+
 async function getFreeModelList() {
+  if (orCatalogue.list.length && Date.now() - orCatalogue.at < OR_TTL_MS) {
+    return orCatalogue.list
+  }
   try {
     const r = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${OPENROUTER_KEY}` },
     })
     if (!r.ok) return []
     const data = await r.json()
-    return (data.data || [])
+    const list = (data.data || [])
       .filter(m => {
         const p = m.pricing?.prompt
         return p === '0' || p === 0 || p === '0.0' || Number(p) === 0
       })
       .sort((a, b) => modelScore(b) - modelScore(a))
+    if (list.length) orCatalogue = { at: Date.now(), list }
+    return list
   } catch {
     return []
   }
@@ -168,9 +206,13 @@ async function callOpenRouter(subject, messages, grounding) {
     } catch {}
   }
 
-  // Fallback: try each model individually
+  // Fallback: try each model individually — but only the best two. This ran
+  // through all eight, and eight sequential requests to the slowest provider
+  // on the list is how «لم يستجب» happens: the deadline arrives long before
+  // the eighth model does. The route's own fallback chain is the redundancy
+  // here, not this loop.
   const errors = []
-  for (const model of freeModels) {
+  for (const model of freeModels.slice(0, 2)) {
     try {
       const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -200,7 +242,7 @@ async function callGroq(subject, messages, grounding) {
   // decommissioned it, and replacing it by hand with two newer names was the
   // same mistake with a later expiry date. groqChat asks Groq for its own
   // catalogue when — and only when — the name is what was refused.
-  return groqChat(GROQ_KEY, [
+  return groqChat(GROQ_SET, [
     { role: 'system', content: buildSystem(subject, grounding) },
     ...messages,
   ], { max_tokens: MAX_ANSWER_TOKENS, temperature: 0.7 })
@@ -242,7 +284,7 @@ async function callGemini(subject, messages, grounding, image) {
   // الذكي غير متاح». geminiGenerate tries the name we trust, and when the
   // NAME is what was refused it asks Google what this key can call today,
   // retries, and caches the working name for an hour. See gemini-model.js.
-  const text = await geminiGenerate(GEMINI_KEY, body)
+  const text = await geminiGenerate(GEMINI_SET, body)
   if (!text) throw new Error('empty response from Gemini')
   return text
 }
@@ -495,16 +537,16 @@ export async function POST(request) {
   // Falling through to a text-only model would not fail — it would answer
   // confidently about a picture it never received, which is worse than an
   // error because nothing about the reply says it did not look.
-  const geminiUsable = GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20
+  const geminiUsable = GEMINI_SET.length > 0
   if (hasImage) {
     if (geminiUsable)
       providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding, image) })
     // OpenRouter serves free vision models too. Without this, a site holding
     // only the OpenRouter key — the key its own setup text asks for — refused
     // every picture.
-    if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+    if (OPENROUTER_SET.length > 0)
       providers.push({ name: 'OpenRouter-vision', paid: false, fn: () => callOpenRouterVision(subject, messages, grounding, image) })
-    if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && providers.length === 0) {
+    if (ANTHROPIC_SET.length > 0 && providers.length === 0) {
       // Only if there is no free reader at all: this one costs money.
       providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
     }
@@ -525,14 +567,14 @@ export async function POST(request) {
     // that used to catch it.
     if (geminiUsable)
       providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, messages, grounding) })
-    if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
+    if (GROQ_SET.length > 0)
       providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, messages, grounding) })
-    if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+    if (OPENROUTER_SET.length > 0)
       providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, messages, grounding) })
   }
 
   let paidAllowed = false
-  if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
+  if (!hasImage && ANTHROPIC_SET.length > 0) {
     paidAllowed = !paidExhausted
     if (paidAllowed) {
       providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
@@ -541,7 +583,7 @@ export async function POST(request) {
 
   if (providers.length === 0) {
     // Either nothing is configured, or only the paid key is and it is spent.
-    if (paidAllowed === false && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
+    if (paidAllowed === false && ANTHROPIC_SET.length > 0) {
       return reply({
         error: `استهلكت رصيدك اليومي من المساعد الذكي (${PAID_DAILY_LIMIT} رسائل). جرّب غداً.`,
       }, 429)
