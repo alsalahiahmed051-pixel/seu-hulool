@@ -1,4 +1,5 @@
 import { aiPerMinuteLimit, callerKey } from '@/lib/rate-limit'
+import { preferredSpeechModels, discoverSpeechModels } from '@/lib/groq-model'
 
 export const runtime = 'nodejs'
 
@@ -59,25 +60,52 @@ export async function POST(request) {
     : type.includes('wav') ? 'wav'
     : 'webm'
   out.append('file', audio, `voice.${ext}`)
-  out.append('model', 'whisper-large-v3-turbo')
   // The students write and speak Arabic; naming it keeps Whisper from
   // "transcribing" Arabic speech into transliterated English.
   out.append('language', 'ar')
   out.append('response_format', 'json')
 
-  try {
+  /** One attempt with a named model. The form is rebuilt per try: a FormData
+   *  body is consumed by the request that sends it. */
+  const attempt = async (model) => {
+    const form = new FormData()
+    for (const [k, v] of out.entries()) form.append(k, v)
+    form.append('model', model)
     const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${GROQ_KEY}` },
-      body: out,
+      body: form,
     })
     const data = await r.json().catch(() => ({}))
-    if (!r.ok) {
-      return Response.json({ error: 'تعذّر تحويل الصوت إلى نص — حاول مجدداً' }, { status: 502 })
+    return { ok: r.ok, status: r.status, message: data?.error?.message || '', text: String(data.text || '').trim() }
+  }
+
+  try {
+    // The voice button was pinned to `whisper-large-v3-turbo`. Same rule as
+    // everywhere else now: when the NAME is what Groq refused, ask which
+    // speech models this key can call today and try those. See groq-model.js.
+    let last = null
+    let nameFault = false
+    for (const model of preferredSpeechModels()) {
+      last = await attempt(model)
+      if (last.ok && last.text) return Response.json({ text: last.text })
+      if (last.ok) break // heard nothing — a different model will not help
+      if (last.status === 404 || (last.status === 400 && /model|decommission|not found/i.test(last.message))) {
+        nameFault = true
+        continue
+      }
+      break // a bad key or an exhausted quota meets the same wall under every name
     }
-    const text = String(data.text || '').trim()
-    if (!text) return Response.json({ error: 'لم أسمع كلاماً واضحاً — حاول مرة أخرى' }, { status: 422 })
-    return Response.json({ text })
+    if (nameFault) {
+      for (const model of await discoverSpeechModels(GROQ_KEY)) {
+        last = await attempt(model)
+        if (last.ok && last.text) return Response.json({ text: last.text })
+      }
+    }
+    if (last && last.ok && !last.text) {
+      return Response.json({ error: 'لم أسمع كلاماً واضحاً — حاول مرة أخرى' }, { status: 422 })
+    }
+    return Response.json({ error: 'تعذّر تحويل الصوت إلى نص — حاول مجدداً' }, { status: 502 })
   } catch {
     return Response.json({ error: 'تعذّر الاتصال بخدمة التفريغ' }, { status: 502 })
   }
