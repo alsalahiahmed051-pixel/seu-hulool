@@ -9,6 +9,7 @@ import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { withDeadline, budget } from '@/lib/deadline'
+import { judgeAnswer } from '@/lib/answer-quality'
 import { DEFAULT_POINTS } from '@/lib/ai-points'
 
 export const runtime = 'nodejs'
@@ -576,6 +577,49 @@ export async function POST(request) {
   // function open until the platform killed it at sixty seconds, so the
   // student waited a minute for an apology. See src/lib/deadline.js.
   const errors = []
+
+  /**
+   * The reply that will be sent, once something passes.
+   *
+   * «أحياناً تمام، أحياناً لا، يخبط» is the provider chain showing through:
+   * Gemini answers well, and when its free quota runs out the question falls
+   * to Llama and then to OpenRouter's rotating free catalogue. The chain is
+   * why the assistant never goes dark — but the loop's only test was
+   * `if (text)`, so a single word, a sentence cut in half, or English for an
+   * Arabic question was shown as the answer just the same.
+   *
+   * Now a reply is judged before it is shown, and a failure moves to the next
+   * provider. `best` keeps the least-bad rejected reply: if every provider
+   * fails the judgement, showing the strongest of them still beats «تعذر».
+   */
+  let best = null
+  const finish = async (text, paid) => {
+    // Only a successful paid reply spends the provider budget; free ones
+    // never do. The student's own allowance is spent on any answered
+    // question, free or paid, but never on a failure.
+    if (paid) await consumePaidQuota(request, deviceId)
+    // The answer is already written. A slow ledger must not hold it back:
+    // the spend is still awaited (a dropped write is a free question, and
+    // Vercel may end the function the moment this responds) — but on a
+    // clock, so a stalled database costs seconds, not the whole answer.
+    const usage = subscribed
+      ? null
+      : await soft(spendPoints(owner, cost, points.free), 4000, null)
+    return reply({
+      text,
+      subscribed,
+      limit: points.free,
+      cost,
+      ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
+      // The server's own count, so the trial bar shows what was really
+      // spent rather than a number the page kept for itself.
+      ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
+      // Which of the course's files this answer was grounded in, so the
+      // student can see the answer came from their material and open it.
+      ...(grounding.sources.length ? { sources: grounding.sources } : {}),
+    })
+  }
+
   for (let i = 0; i < providers.length; i++) {
     const { name, paid, fn } = providers[i]
     if (i > 0 && !clock.canTry()) {
@@ -585,34 +629,23 @@ export async function POST(request) {
     try {
       const text = await withDeadline(fn(), clock.next(providers.length - i))
       if (text) {
-        // Only a successful paid reply spends the provider budget; free ones
-        // never do. The student's own allowance is spent on any answered
-        // question, free or paid, but never on a failure.
-        if (paid) await consumePaidQuota(request, deviceId)
-        // The answer is already written. A slow ledger must not hold it back:
-        // the spend is still awaited (a dropped write is a free question, and
-        // Vercel may end the function the moment this responds) — but on a
-        // clock, so a stalled database costs seconds, not the whole answer.
-        const usage = subscribed
-          ? null
-          : await soft(spendPoints(owner, cost, points.free), 4000, null)
-        return reply({
-          text,
-          subscribed,
-          limit: points.free,
-          cost,
-          ...(usage ? { used: usage.used, remaining: usage.remaining, resetAt: usage.resetAt } : {}),
-          // The server's own count, so the trial bar shows what was really
-          // spent rather than a number the page kept for itself.
-          ...(trialState ? { trial: { used: trialState.used, remaining: trialState.remaining, limit: BROWSE_TRIAL_AI } } : {}),
-          // Which of the course's files this answer was grounded in, so the
-          // student can see the answer came from their material and open it.
-          ...(grounding.sources.length ? { sources: grounding.sources } : {}),
-        })
+        const verdict = judgeAnswer(text, lastAsk)
+        if (verdict.ok) return await finish(text, paid)
+        // Not shown — but remembered, in case nothing better arrives.
+        errors.push(`${name}: rejected (${verdict.reason})`)
+        if (!best || verdict.score > best.score) best = { text, paid, score: verdict.score }
       }
     } catch (err) {
       errors.push(`${name}: ${err.message}`)
     }
+  }
+
+  // Everything was judged poor. A weak answer is still an answer, and the
+  // student asked a question — so the strongest of them is sent rather than
+  // an apology for replies we actually received.
+  if (best) {
+    console.error('[api/ai] all replies judged poor:', errors.join(' | '))
+    return await finish(best.text, best.paid)
   }
 
   console.error('[api/ai] all providers failed:', errors.join(' | '))
