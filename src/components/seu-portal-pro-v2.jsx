@@ -1688,6 +1688,26 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
     abortRef.current = null;
     setLoading(false);
   };
+
+  /**
+   * Leaving the assistant stops the question.
+   *
+   * «خرجت من المحادثة ما يوقف، يستمر» — closing the panel or switching to
+   * the quiz tab unmounts this component, but the fetch it started went on
+   * running against a `setMsgs` that would never be rendered again. The
+   * student had left and the request had not.
+   *
+   * The cleanup runs on unmount only (no deps), and it reads the ref rather
+   * than closing over a request that did not exist when the effect was set
+   * up — abort() on an already-settled controller is a no-op, so a finished
+   * answer costs nothing here.
+   */
+  useEffect(() => () => {
+    stoppedRef.current = true;
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
+
   const [copied, setCopied] = useState(false);
   const [fileContext, setFileContext] = useState(null);
   const [fileCount, setFileCount] = useState(0);
