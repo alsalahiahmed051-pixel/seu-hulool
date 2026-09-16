@@ -9,6 +9,8 @@ import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { withDeadline, budget } from '@/lib/deadline'
 import { explainFailure } from '@/lib/provider-errors'
+import { isUsable, cooldownLeft, noteFailure, noteSuccess } from '@/lib/provider-health'
+import { parseQuiz } from '@/lib/quiz-parse'
 import { geminiGenerate } from '@/lib/gemini-model'
 import { groqChat } from '@/lib/groq-model'
 
@@ -65,12 +67,6 @@ function quizAsk(subject, count = 5, source = 'all') {
     : `أنشئ ${count} أسئلة اختيار من متعدد عن مادة "${subject}".${tail}`
 }
 
-function parseQuiz(text) {
-  try { return JSON.parse(text.trim()) } catch {}
-  const m = text.match(/\[[\s\S]*\]/)
-  if (m) { try { return JSON.parse(m[0]) } catch {} }
-  return null
-}
 
 async function callAnthropic(subject, count, source, grounding) {
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
@@ -331,8 +327,13 @@ export async function POST(request) {
   for (let i = 0; i < providers.length; i++) {
     const { name, paid, fn } = providers[i]
     if (i > 0 && !clock.canTry()) break
+    if (!isUsable(name)) {
+      errors.push(`${name}: skipped — cooling down ${cooldownLeft(name)}s`)
+      continue
+    }
     try {
       const raw = await withDeadline(fn(), clock.next(providers.length - i))
+      noteSuccess(name)
       // Valid JSON is not a valid quiz. See sanitiseQuiz: an answer index
       // outside the options makes a question nobody can get right, and the
       // route used to hand it straight to the student.
@@ -343,6 +344,7 @@ export async function POST(request) {
       }
       if (reason) errors.push(`${name}: ${reason}`)
     } catch (err) {
+      noteFailure(name, err.message)
       errors.push(`${name}: ${err.message}`)
     }
   }
