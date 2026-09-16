@@ -1,4 +1,6 @@
 import { requireAdmin } from '@/lib/admin-guard'
+import { geminiKeys, groqKeys, openRouterKeys, anthropicKeys } from '@/lib/api-keys'
+import { cooldowns } from '@/lib/provider-health'
 import { geminiGenerate, preferredModel } from '@/lib/gemini-model'
 import { groqChat, preferredModels as preferredGroqModels } from '@/lib/groq-model'
 
@@ -24,11 +26,32 @@ export const maxDuration = 60
  * question meets, so it must go the same way and cost the same quota.
  */
 
+/**
+ * Every key per provider, not just the first — and COUNTED on screen.
+ *
+ * A free ceiling is per key, so the fix for «انتهت الحصّة» is a second
+ * `GEMINI_API_KEY_2`. But the commonest way that fails is invisible: the
+ * variable is named `GEMINI_API_KEY2` without the underscore, or carries a
+ * trailing space, or was added to the wrong Vercel environment. Then nothing
+ * changes, nothing errors, and the owner is back to «ما يشتغل» with no way
+ * to tell a missed key from a spent one.
+ *
+ * So the count is reported. «جيميناي: مفتاحان» is the whole confirmation,
+ * and «مفتاح واحد» after adding a second says the name is wrong — which is
+ * a thirty-second fix instead of another round of guessing.
+ */
+const SETS = {
+  Groq: groqKeys(),
+  Gemini: geminiKeys(),
+  OpenRouter: openRouterKeys(),
+  Anthropic: anthropicKeys(),
+}
+
 const KEYS = {
-  Groq: process.env.GROQ_API_KEY,
-  Gemini: process.env.GEMINI_API_KEY || process.env.GEMINI,
-  OpenRouter: process.env.OPENROUTER_API_KEY || process.env.OpenRouter,
-  Anthropic: process.env.ANTHROPIC_API_KEY,
+  Groq: SETS.Groq[0],
+  Gemini: SETS.Gemini[0],
+  OpenRouter: SETS.OpenRouter[0],
+  Anthropic: SETS.Anthropic[0],
 }
 
 /** Short enough that a slow provider is slow for its own reasons, not ours. */
@@ -75,7 +98,7 @@ async function askGroq() {
   // A self-test pinned to a hardcoded name reports «Groq معطّل» the day that
   // name is decommissioned, while Groq itself is perfectly fine: the one tool
   // built to end the guessing would be the thing sending you the wrong way.
-  const text = await groqChat(KEYS.Groq, [{ role: 'user', content: PROBE }],
+  const text = await groqChat(SETS.Groq, [{ role: 'user', content: PROBE }],
     { max_tokens: 16 }, withTimeout)
   return text ? `${preferredGroqModels()[0]}: ${text}` : ''
 }
@@ -83,7 +106,7 @@ async function askGroq() {
 async function askGemini() {
   // The same call path the site uses, so this reports what a student's question
   // would actually meet — including the model name it settles on.
-  const text = await geminiGenerate(KEYS.Gemini, {
+  const text = await geminiGenerate(SETS.Gemini, {
     contents: [{ role: 'user', parts: [{ text: PROBE }] }],
     generationConfig: { maxOutputTokens: 16 },
   }, withTimeout)
@@ -151,11 +174,11 @@ export async function GET() {
   const results = []
   for (const p of PROVIDERS) {
     if (!usable(KEYS[p.name])) {
-      results.push({ name: p.name, paid: p.paid, note: p.note, configured: false, ok: false })
+      results.push({ name: p.name, paid: p.paid, note: p.note, configured: false, ok: false, keys: 0 })
       continue
     }
     const r = await timed(p.ask)
-    results.push({ name: p.name, paid: p.paid, note: p.note, configured: true, ...r })
+    results.push({ name: p.name, paid: p.paid, note: p.note, configured: true, keys: (SETS[p.name] || []).length, ...r })
   }
 
   const working = results.filter(r => r.ok)
@@ -177,5 +200,19 @@ export async function GET() {
     verdict = 'كل مزوّدٍ مضبوط رفض الطلب. السبب مكتوب بجانب كل واحد أدناه.'
   }
 
-  return Response.json({ results, verdict })
+  // How much free ceiling the site actually has, in one line. This is the
+  // sentence that confirms a newly added key was picked up at all.
+  const keyLine = results
+    .filter(r => r.configured)
+    .map(r => `${r.name}: ${r.keys === 1 ? 'مفتاح واحد' : `${r.keys} مفاتيح`}`)
+    .join(' · ')
+
+  return Response.json({
+    results,
+    verdict,
+    keys: keyLine || 'لا مفاتيح',
+    // Which providers are currently being skipped, and for how long — so a
+    // «cooling down» is not mistaken for a provider that is broken.
+    cooling: cooldowns(),
+  })
 }

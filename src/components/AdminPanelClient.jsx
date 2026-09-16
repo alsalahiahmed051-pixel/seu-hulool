@@ -547,6 +547,21 @@ function AiTestResult({ data }) {
       <div style={{ fontWeight: 800, color: anyFree ? P.green : P.orange, marginBottom: 5 }}>
         {data.verdict}
       </div>
+      {/* The free ceiling is per KEY, so a second GEMINI_API_KEY_2 doubles it.
+          The commonest way that fails is silent — the variable named without
+          the underscore, or added to the wrong environment — and then nothing
+          changes and nothing errors. Counting the keys here turns that into a
+          thirty-second fix: «جيميناي: مفتاحان» confirms it was picked up. */}
+      {data.keys && (
+        <div style={{ color: 'var(--mu)', marginBottom: 5, paddingBottom: 5, borderBottom: '1px solid var(--bd)' }}>
+          🔑 المفاتيح المقروءة — {data.keys}
+        </div>
+      )}
+      {data.cooling && Object.keys(data.cooling).length > 0 && (
+        <div style={{ color: P.orange, marginBottom: 5 }}>
+          ⏸️ مُتخطّى مؤقتاً: {Object.entries(data.cooling).map(([n, s]) => `${n} (${s}ث)`).join(' · ')}
+        </div>
+      )}
       {(data.results || []).map(r => (
         <div key={r.name} style={{
           display: 'flex', alignItems: 'flex-start', gap: 7, padding: '4px 0',
@@ -560,7 +575,7 @@ function AiTestResult({ data }) {
             {!r.configured
               ? `غير مضبوط — ${r.note}`
               : r.ok
-                ? `ردّ في ${(r.ms / 1000).toFixed(1)}ث · ${r.note}`
+                ? `ردّ في ${(r.ms / 1000).toFixed(1)}ث${r.keys > 1 ? ` · ${r.keys} مفاتيح` : ''} · ${r.note}`
                 : <span style={{ direction: 'ltr', display: 'inline-block', textAlign: 'right' }}>{r.reason || 'لم يردّ'}</span>}
           </span>
         </div>
