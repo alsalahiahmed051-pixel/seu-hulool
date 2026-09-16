@@ -465,11 +465,37 @@ export async function POST(request) {
   // and small enough not to blow up the request.
   const MAX_IMAGE_CHARS = 4_000_000
   const rawImage = typeof body.image === 'string' ? body.image : ''
-  const image = rawImage.startsWith('data:image/') && rawImage.length <= MAX_IMAGE_CHARS
-    ? rawImage
-    : ''
-  if (rawImage && !image) {
-    return reply({ error: 'الصورة كبيرة أو غير مدعومة — جرّب صورة أصغر (PNG أو JPG).' }, 400)
+
+  /**
+   * An image that cannot be read must SAY SO, never be dropped.
+   *
+   * «أرفق الصور ما يتعرّف عليه». The picture was reaching the server and
+   * being discarded here in silence: `inlineImage` accepts png/jpeg/webp/gif
+   * and returns null for anything else — and `image/heic`, the DEFAULT format
+   * of an iPhone camera, is anything else. The question then went to the model
+   * as pure text («حلّ السؤال الموجود في الصورة») with no image attached, so
+   * the model invented an exercise and solved it. Confidently, and wrongly,
+   * with nothing in the reply admitting it never saw a picture.
+   *
+   * That is the worst failure shape available: an error is honest, a silent
+   * drop is not. So the three cases are now told apart and each says its own
+   * thing.
+   */
+  let image = ''
+  if (rawImage) {
+    if (!rawImage.startsWith('data:image/')) {
+      return reply({ error: 'هذا ليس ملف صورة — اختر صورة (JPG أو PNG).' }, 400)
+    }
+    if (rawImage.length > MAX_IMAGE_CHARS) {
+      return reply({ error: 'الصورة كبيرة جداً — جرّب لقطة شاشة أو صورة أصغر.' }, 400)
+    }
+    if (!inlineImage(rawImage)) {
+      const kind = rawImage.slice(5, rawImage.indexOf(';')) || 'غير معروفة'
+      return reply({
+        error: `صيغة الصورة (${kind}) غير مدعومة. إن كنت على آيفون، افتح الإعدادات ← الكاميرا ← الصيغ ← «الأكثر توافقاً»، أو أرسل لقطة شاشة للصورة بدلاً منها.`,
+      }, 400)
+    }
+    image = rawImage
   }
   const hasImage = Boolean(image)
   const cost = costOf(hasImage ? 'image' : 'message', points)
@@ -690,7 +716,7 @@ export async function POST(request) {
    * provider's own text (that text quotes the request, and for Gemini the
    * request carries the key), only its own fixed Arabic sentences.
    */
-  const why = explainFailure(errors)
+  const why = explainFailure(errors, GEMINI_SET.length)
   // The apology stays the apology — for a student, a provider's error text is
   // noise. But it hid a plain scoping bug («grounding is not defined») behind
   // «جرّب بعد دقيقة» for as long as it took someone to ask, because the reason

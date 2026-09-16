@@ -68,7 +68,11 @@ export function classifyOne(line) {
   // «سبب غير معروف» — the skip meant to speed things up would have made the
   // message worse than the round trip it saved.
   if (/cooling down/i.test(s)) return FAILURE.QUOTA
-  if (/\b429\b|quota|rate.?limit|exhaust|too many requests|insufficient_quota/i.test(s)) return FAILURE.QUOTA
+  // 402 is OpenRouter's own shape for «this key has no allowance left», and
+  // its free models phrase the refusal several other ways. Unmatched, they
+  // fell through to «رفض الطلب لسبب غير معروف» — which is the message the
+  // owner read last, and it told him nothing he could act on.
+  if (/\b(429|402)\b|quota|rate.?limit|exhaust|too many requests|insufficient_quota|insufficient credit|no auth credentials|credits|limit reached|daily limit|free-models-per-day/i.test(s)) return FAILURE.QUOTA
   if (/\b40[13]\b|api key not valid|invalid api key|unauthor|forbidden|permission denied|invalid_api_key/i.test(s)) return FAILURE.BAD_KEY
   if (/timed out|deadline|etimedout|econnreset|enotfound|socket hang up|\b50[234]\b|overload|unavailable/i.test(s)) return FAILURE.SILENT
   if (/\b404\b|not found|decommission|does not exist|no longer|no free models|no free vision/i.test(s)) return FAILURE.MODEL
@@ -97,7 +101,20 @@ const say = (n) => AR_NAME[n] || n || 'المزوّد'
  * @param {string[]} errors the loop's own `Name: reason` lines
  * @returns {{error: string, kind: string}}
  */
-export function explainFailure(errors = []) {
+/**
+ * Advice for a spent quota, given how many keys the site already has.
+ *
+ * «أضف مفتاحاً ثانياً» is useless to an owner who has just added one — it
+ * reads as though nothing he did registered. The count is known, so the
+ * sentence says the next number.
+ */
+function quotaAdvice(keyCount) {
+  if (!keyCount || keyCount < 1) return FIX[FAILURE.QUOTA]
+  if (keyCount === 1) return 'انتظر تجدّد الحصّة، أو أضف مفتاحاً ثانياً من حساب آخر (GEMINI_API_KEY_2).'
+  return `انتظر تجدّد الحصّة — عندك ${keyCount} مفاتيح ونفدت كلُّها. مفتاحٌ إضافي (GEMINI_API_KEY_${keyCount + 1}) يرفع السقف أكثر.`
+}
+
+export function explainFailure(errors = [], keyCount = 0) {
   const lines = (Array.isArray(errors) ? errors : []).filter(Boolean)
   if (!lines.length) {
     return { error: 'المساعد الذكي غير مفعّل — لا يوجد مفتاح مضبوط.', kind: FAILURE.NO_KEY }
@@ -119,7 +136,8 @@ export function explainFailure(errors = []) {
   const kinds = [...new Set(per.map(p => p.kind))]
   if (kinds.length === 1) {
     const kind = kinds[0]
-    const fix = when || (FIX[kind] ? ` ${FIX[kind]}` : '')
+    const advice = kind === FAILURE.QUOTA ? quotaAdvice(keyCount) : FIX[kind]
+    const fix = when || (advice ? ` ${advice}` : '')
     return {
       error: `تعذّر الحصول على إجابة: ${SAY[kind]}.${fix}`,
       kind,
@@ -134,8 +152,9 @@ export function explainFailure(errors = []) {
   // The most actionable kind leads the advice.
   const lead = [FAILURE.BAD_KEY, FAILURE.QUOTA, FAILURE.MODEL, FAILURE.SILENT]
     .find(k => kinds.includes(k))
+  const leadFix = lead === FAILURE.QUOTA ? quotaAdvice(keyCount) : FIX[lead]
   return {
-    error: `تعذّر الحصول على إجابة — ${detail}.${lead && FIX[lead] ? ` ${FIX[lead]}` : ''}`,
+    error: `تعذّر الحصول على إجابة — ${detail}.${leadFix ? ` ${leadFix}` : ''}`,
     kind: lead || FAILURE.UNKNOWN,
   }
 }
