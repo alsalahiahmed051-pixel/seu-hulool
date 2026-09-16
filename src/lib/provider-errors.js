@@ -63,6 +63,11 @@ const FIX = {
 export function classifyOne(line) {
   const s = String(line || '')
   if (/rejected \(/i.test(s)) return FAILURE.POOR
+  // «cooling down» is a quota refusal we are REMEMBERING rather than
+  // re-asking for (see provider-health.js). Without this it fell through to
+  // «سبب غير معروف» — the skip meant to speed things up would have made the
+  // message worse than the round trip it saved.
+  if (/cooling down/i.test(s)) return FAILURE.QUOTA
   if (/\b429\b|quota|rate.?limit|exhaust|too many requests|insufficient_quota/i.test(s)) return FAILURE.QUOTA
   if (/\b40[13]\b|api key not valid|invalid api key|unauthor|forbidden|permission denied|invalid_api_key/i.test(s)) return FAILURE.BAD_KEY
   if (/timed out|deadline|etimedout|econnreset|enotfound|socket hang up|\b50[234]\b|overload|unavailable/i.test(s)) return FAILURE.SILENT
@@ -100,11 +105,21 @@ export function explainFailure(errors = []) {
 
   const per = lines.map(l => ({ name: nameOf(l), kind: classifyOne(l) }))
 
+  // When the wait is KNOWN — a remembered refusal carries its own clock —
+  // say it. «جرّب بعد دقيقتين» is a different message from «انتظر».
+  const waits = lines
+    .map(l => Number(String(l).match(/cooling down (\d+)s/)?.[1] || 0))
+    .filter(n => n > 0)
+  const wait = waits.length === lines.length && waits.length ? Math.max(...waits) : 0
+  const when = wait >= 60
+    ? ` جرّب بعد ${Math.ceil(wait / 60)} دقيقة.`
+    : wait > 0 ? ` جرّب بعد ${wait} ثانية.` : ''
+
   // Every provider hit the same wall → name the wall, and the way past it.
   const kinds = [...new Set(per.map(p => p.kind))]
   if (kinds.length === 1) {
     const kind = kinds[0]
-    const fix = FIX[kind] ? ` ${FIX[kind]}` : ''
+    const fix = when || (FIX[kind] ? ` ${FIX[kind]}` : '')
     return {
       error: `تعذّر الحصول على إجابة: ${SAY[kind]}.${fix}`,
       kind,

@@ -11,6 +11,7 @@ import { contextFor } from '@/lib/retrieval'
 import { withDeadline, budget } from '@/lib/deadline'
 import { judgeAnswer } from '@/lib/answer-quality'
 import { explainFailure } from '@/lib/provider-errors'
+import { isUsable, cooldownLeft, noteFailure, noteSuccess } from '@/lib/provider-health'
 import { geminiGenerate } from '@/lib/gemini-model'
 import { groqChat } from '@/lib/groq-model'
 import { DEFAULT_POINTS } from '@/lib/ai-points'
@@ -604,9 +605,17 @@ export async function POST(request) {
       errors.push(`${name}: skipped — out of time`)
       break
     }
+    // A provider that said "out of quota" a moment ago will say it again, and
+    // the round trip to hear it costs the student a second or more of every
+    // question. See src/lib/provider-health.js.
+    if (!isUsable(name)) {
+      errors.push(`${name}: skipped — cooling down ${cooldownLeft(name)}s`)
+      continue
+    }
     try {
       const text = await withDeadline(fn(), clock.next(providers.length - i))
       if (text) {
+        noteSuccess(name)
         const verdict = judgeAnswer(text, lastAsk)
         if (verdict.ok) return await finish(text, paid)
         // Not shown — but remembered, in case nothing better arrives.
@@ -614,6 +623,7 @@ export async function POST(request) {
         if (!best || verdict.score > best.score) best = { text, paid, score: verdict.score }
       }
     } catch (err) {
+      noteFailure(name, err.message)
       errors.push(`${name}: ${err.message}`)
     }
   }
