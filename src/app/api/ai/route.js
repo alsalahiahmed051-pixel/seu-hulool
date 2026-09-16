@@ -9,6 +9,7 @@ import { scopeRules, resolveSubject } from '@/lib/ai-scope'
 import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { withDeadline, budget } from '@/lib/deadline'
+import { DEFAULT_POINTS } from '@/lib/ai-points'
 
 export const runtime = 'nodejs'
 // The platform kills a function at ten seconds unless told otherwise.
@@ -306,6 +307,8 @@ export async function POST(request) {
   // by IP below — that budget is the only thing standing between the site and
   // provider abuse, so keep it in place.
   const caller = callerKey(request)
+  // Started HERE, not at the provider loop: see the note below on «هلا».
+  const clock = budget()
 
   // 2) Parse + validate body
   let body
@@ -344,26 +347,70 @@ export async function POST(request) {
    * copy is ignored now; this is the grounding.
    */
   const lastAsk = [...messages].reverse().find(m => m.role === 'user')?.content || ''
-  let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
-  try { grounding = await contextFor(subject, lastAsk) } catch { /* answer ungrounded rather than fail */ }
+  const { deviceId, setCookie } = deviceIdentity(request)
+
+  /**
+   * ── Why «هلا» took over a minute and then said «تعذر» ──────────────────
+   *
+   * Everything below used to run STRICTLY ONE AFTER ANOTHER, and none of it
+   * had a clock: the file lookup, two Upstash calls, the session read, the
+   * points config, the subscription (asked TWICE), the usage balance, the
+   * paid-quota check. Eight or nine round trips to two different services
+   * before the model was sent a single word — and on a cold function, in a
+   * region away from the database, that is tens of seconds of nothing.
+   *
+   * Then the provider loop started its own fresh forty-second budget on top.
+   * The total ran past the platform's sixty-second limit, the function was
+   * killed mid-flight, and the browser got an HTML error page where JSON
+   * should have been — which lands in the same catch as a dead network and
+   * reads, to the student, as «تعذر» after a minute of waiting. For «هلا».
+   *
+   * So: one round instead of eight, every piece on its own short clock, and
+   * a safe answer for anything that does not come back in time. None of this
+   * is needed to say hello, and none of it may hold the answer hostage.
+   */
+  const soft = (p, ms, fallback) =>
+    withDeadline(Promise.resolve(p), ms).catch(() => fallback)
+
+  const [grounding, minuteCheck, dayCheck, userId, points, subscribed, paidExhausted] =
+    await Promise.all([
+      // Retrieval is an improvement to the answer, never a precondition for
+      // it. A library that is slow to read costs the student four seconds,
+      // then the question is answered from the model's own knowledge.
+      soft(contextFor(subject, lastAsk), 4000, { context: '', sources: [], hasFiles: false, indexed: 0 }),
+      // The limiters guard the providers from abuse. When Upstash itself
+      // stops answering, refusing every student protects nothing and breaks
+      // everything — so a TIMEOUT (not a refusal) lets the question through.
+      soft(aiPerMinuteLimit.limit(caller), 3000, { success: true, reset: Date.now() }),
+      soft(aiDailyLimit.limit(caller), 3000, { success: true, reset: Date.now() }),
+      soft((async () => {
+        try {
+          const supabase = await createClient()
+          const { data: { user } } = await supabase.auth.getUser()
+          return user?.id || null
+        } catch { return null }
+      })(), 3000, null),
+      soft(readPointsConfig(), 3000, { ...DEFAULT_POINTS }),
+      // Falling back to "not subscribed" keeps the allowance in force rather
+      // than handing out an unlimited assistant when the database is slow.
+      soft(isSubscribed(deviceId), 3000, false),
+      // And to "spent", so a slow check never reaches for the paid provider.
+      soft(paidQuotaExhausted(request, deviceId), 3000, true),
+    ])
 
   // 3) Rate limit — per caller IP, since there are no accounts
-  const minuteCheck = await aiPerMinuteLimit.limit(caller)
   if (!minuteCheck.success) {
     return Response.json(
       { error: 'الرجاء الانتظار قليلاً قبل إرسال طلب آخر', retry_after: Math.ceil((minuteCheck.reset - Date.now()) / 1000) },
       { status: 429 }
     )
   }
-  const dayCheck = await aiDailyLimit.limit(caller)
   if (!dayCheck.success) {
     return Response.json(
       { error: 'لقد استنفدت رصيدك اليومي من المساعد الذكي', reset_at: new Date(dayCheck.reset).toISOString() },
       { status: 429 }
     )
   }
-
-  const { deviceId, setCookie } = deviceIdentity(request)
 
   // Every response from here must carry the device cookie when one was
   // freshly minted, or the next request starts a brand-new allowance.
@@ -384,14 +431,6 @@ export async function POST(request) {
   // The balance belongs to the account when there is one, and only falls back
   // to the device otherwise. That is the difference between an allowance that
   // follows the person and one that resets on every new phone.
-  let userId = null
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id || null
-  } catch { /* no session — the device key stands in */ }
-
-  const points = await readPointsConfig()
   const owner = ownerKey({ userId, deviceId })
 
   // What this particular question costs. An image is more to read and more to
@@ -429,7 +468,7 @@ export async function POST(request) {
   // private window no longer restores it, because the count is keyed on the
   // signed device cookie and the caller's IP, neither of which the page can
   // touch. See src/lib/ai-trial.js for why the IP is a ceiling, not the trial.
-  if (body.trial === true && !(await isSubscribed(deviceId))) {
+  if (body.trial === true && !subscribed) {
     const trial = await claimTrial(request, deviceId)
     if (trial.error) {
       // A database that cannot answer must not become a free pass — nor a
@@ -449,9 +488,10 @@ export async function POST(request) {
     trialState = trial
   }
 
-  const subscribed = await isSubscribed(deviceId)
   if (!subscribed) {
-    const usage = await readUsage(owner, points.free)
+    const usage = await soft(readUsage(owner, points.free), 3000,
+      // Unreadable balance must not lock a student out of their own quota.
+      { used: 0, remaining: points.free, resetAt: 0 })
     if (usage.remaining < cost) {
       return reply({
         error: usage.remaining <= 0
@@ -513,7 +553,7 @@ export async function POST(request) {
 
   let paidAllowed = false
   if (!hasImage && ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder')) {
-    paidAllowed = !(await paidQuotaExhausted(request, deviceId))
+    paidAllowed = !paidExhausted
     if (paidAllowed) {
       providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, messages, grounding) })
     }
@@ -536,7 +576,6 @@ export async function POST(request) {
   // function open until the platform killed it at sixty seconds, so the
   // student waited a minute for an apology. See src/lib/deadline.js.
   const errors = []
-  const clock = budget()
   for (let i = 0; i < providers.length; i++) {
     const { name, paid, fn } = providers[i]
     if (i > 0 && !clock.canTry()) {
@@ -550,7 +589,13 @@ export async function POST(request) {
         // never do. The student's own allowance is spent on any answered
         // question, free or paid, but never on a failure.
         if (paid) await consumePaidQuota(request, deviceId)
-        const usage = subscribed ? null : await spendPoints(owner, cost, points.free)
+        // The answer is already written. A slow ledger must not hold it back:
+        // the spend is still awaited (a dropped write is a free question, and
+        // Vercel may end the function the moment this responds) — but on a
+        // clock, so a stalled database costs seconds, not the whole answer.
+        const usage = subscribed
+          ? null
+          : await soft(spendPoints(owner, cost, points.free), 4000, null)
         return reply({
           text,
           subscribed,

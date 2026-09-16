@@ -158,6 +158,8 @@ export async function POST(request) {
   // 1) Public site (no accounts) — anonymous callers are served, but every
   // caller is rate limited by IP below since this hits paid providers.
   const caller = callerKey(request)
+  // One clock for the WHOLE request, not just the providers.
+  const clock = budget()
 
   // 2) Parse + validate body
   let body
@@ -176,15 +178,43 @@ export async function POST(request) {
   const count = clampQuestions(body.count)
   const source = resolveSource(body.source)
 
+  const { deviceId, setCookie } = deviceIdentity(request)
+
+  /**
+   * One round, not six. Same fault as the chat route: the limiters, the
+   * session, the subscription, the file lookup and the paid-quota check all
+   * ran in sequence with no clock, so a quiz spent tens of seconds before a
+   * provider was asked anything — and then the provider loop started its own
+   * budget on top, past the platform's limit. See the long note in
+   * src/app/api/ai/route.js.
+   */
+  const soft = (p, ms, fallback) =>
+    withDeadline(Promise.resolve(p), ms).catch(() => fallback)
+
+  const [minuteCheck, dayCheck, userId, subscribed, paidExhausted, groundingResult] =
+    await Promise.all([
+      soft(aiPerMinuteLimit.limit(caller), 3000, { success: true, reset: Date.now() }),
+      soft(aiDailyLimit.limit(caller), 3000, { success: true, reset: Date.now() }),
+      soft((async () => {
+        try {
+          const supabase = await createClient()
+          const { data: { user } } = await supabase.auth.getUser()
+          return user?.id || null
+        } catch { return null }
+      })(), 3000, null),
+      soft(isSubscribed(deviceId), 3000, false),
+      soft(paidQuotaExhausted(request, deviceId), 3000, true),
+      soft(contextFor(subject, QUIZ_SOURCES[source]?.ask || subject, { maxChars: 8000 }),
+        5000, { context: '', sources: [], hasFiles: false, indexed: 0 }),
+    ])
+
   // 3) Rate limit — per caller IP, since there are no accounts
-  const minuteCheck = await aiPerMinuteLimit.limit(caller)
   if (!minuteCheck.success) {
     return Response.json(
       { error: 'الرجاء الانتظار قليلاً قبل إرسال طلب آخر', retry_after: Math.ceil((minuteCheck.reset - Date.now()) / 1000) },
       { status: 429 }
     )
   }
-  const dayCheck = await aiDailyLimit.limit(caller)
   if (!dayCheck.success) {
     return Response.json(
       { error: 'لقد استنفدت رصيدك اليومي من المساعد الذكي', reset_at: new Date(dayCheck.reset).toISOString() },
@@ -192,19 +222,11 @@ export async function POST(request) {
     )
   }
 
-  const { deviceId, setCookie } = deviceIdentity(request)
-
   // ── One free quiz per person ────────────────────────────────────────
   // The owner's rule: everyone gets exactly one, then it is a subscription.
   // Keyed on the account when there is one and the signed device cookie
   // otherwise — the same key the points balance uses, so signing up after
   // spending the trial anonymously does not hand out a second one.
-  let userId = null
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    userId = user?.id || null
-  } catch { /* no session — the device key stands in */ }
   const owner = ownerKey({ userId, deviceId })
 
   const replyWith = (obj, status = 200) => {
@@ -228,10 +250,7 @@ export async function POST(request) {
    * how the quiz is built rather than whether there is one.
    */
   const wantsFiles = source === 'collections' || source === 'summary'
-  let grounding = { context: '', sources: [], hasFiles: false, indexed: 0 }
-  try {
-    grounding = await contextFor(subject, QUIZ_SOURCES[source]?.ask || subject, { maxChars: 8000 })
-  } catch { /* fall through ungrounded */ }
+  const grounding = groundingResult
 
   /**
    * No files is not a dead end — it is a different quiz, said out loud.
@@ -252,7 +271,6 @@ export async function POST(request) {
       : 'لا توجد ملفات مرفوعة لهذه المادة، فبُني الاختبار من محتوى المقرر نفسه.'
   }
 
-  const subscribed = await isSubscribed(deviceId)
   // Remembered so a turn that produces nothing can be handed back below.
   let db = null
   let claimedNow = false
@@ -306,7 +324,7 @@ export async function POST(request) {
     providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, effectiveSource, grounding) })
   if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
     providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, effectiveSource, grounding) })
-  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !(await paidQuotaExhausted(request, deviceId)))
+  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !paidExhausted)
     providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, effectiveSource, grounding) })
 
   const reply = (bodyObj, status = 200) => {
@@ -320,9 +338,6 @@ export async function POST(request) {
     return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
   }
 
-  // Same clock as the chat route: a provider that hangs must not spend the
-  // whole function, or the student waits a minute to be told «تعذّر».
-  const clock = budget()
   for (let i = 0; i < providers.length; i++) {
     const { paid, fn } = providers[i]
     if (i > 0 && !clock.canTry()) break
