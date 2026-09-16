@@ -10,6 +10,7 @@ import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { withDeadline, budget } from '@/lib/deadline'
 import { judgeAnswer } from '@/lib/answer-quality'
+import { explainFailure } from '@/lib/provider-errors'
 import { geminiGenerate } from '@/lib/gemini-model'
 import { groqChat } from '@/lib/groq-model'
 import { DEFAULT_POINTS } from '@/lib/ai-points'
@@ -626,6 +627,18 @@ export async function POST(request) {
   }
 
   console.error('[api/ai] all providers failed:', errors.join(' | '))
+
+  /**
+   * The apology now says WHY, and it is safe to say to anyone.
+   *
+   * Six identical words covered five different problems with five different
+   * fixes — no key, a rejected key, an exhausted quota, a dead model name, a
+   * provider that never answered — so telling them apart meant guessing, and
+   * this project spent days doing exactly that. explainFailure never echoes a
+   * provider's own text (that text quotes the request, and for Gemini the
+   * request carries the key), only its own fixed Arabic sentences.
+   */
+  const why = explainFailure(errors)
   // The apology stays the apology — for a student, a provider's error text is
   // noise. But it hid a plain scoping bug («grounding is not defined») behind
   // «جرّب بعد دقيقة» for as long as it took someone to ask, because the reason
@@ -633,7 +646,8 @@ export async function POST(request) {
   // gets the reason with the answer: a diagnosis he can act on without me.
   return reply(
     {
-      error: `عذراً، المساعد الذكي غير متاح الآن. جرّب مجدداً بعد دقيقة.`,
+      error: why.error,
+      kind: why.kind,
       ...(await adminDetail(errors)),
     },
     500
