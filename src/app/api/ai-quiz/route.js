@@ -8,6 +8,7 @@ import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { withDeadline, budget } from '@/lib/deadline'
+import { explainFailure } from '@/lib/provider-errors'
 import { geminiGenerate } from '@/lib/gemini-model'
 import { groqChat } from '@/lib/groq-model'
 
@@ -351,5 +352,7 @@ export async function POST(request) {
   // Why every provider failed, for the server log — a student gets the
   // apology, not the diagnosis.
   if (errors.length) console.error('[api/ai-quiz] no usable quiz:', errors.join(' | '))
-  return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
+  // Same sentence, same safety rule — see src/lib/provider-errors.js.
+  const why = explainFailure(errors)
+  return reply({ error: why.error, kind: why.kind }, 500)
 }
