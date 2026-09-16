@@ -1,7 +1,7 @@
 import { aiPerMinuteLimit, aiDailyLimit, callerKey } from '@/lib/rate-limit'
 import { deviceIdentity, paidQuotaExhausted, consumePaidQuota } from '@/lib/ai-quota'
 import { quizScope, isGeneral, resolveSubject } from '@/lib/ai-scope'
-import { QUIZ_SOURCES, resolveSource, clampQuestions } from '@/lib/quiz-options'
+import { QUIZ_SOURCES, resolveSource, clampQuestions, sanitiseQuiz } from '@/lib/quiz-options'
 import { isSubscribed } from '@/lib/ai-usage'
 import { ownerKey } from '@/lib/ai-points'
 import { modelScore } from '@/lib/model-rank'
@@ -338,19 +338,30 @@ export async function POST(request) {
     return reply({ error: 'المساعد الذكي غير مفعّل' }, 503)
   }
 
+  const errors = []
   for (let i = 0; i < providers.length; i++) {
-    const { paid, fn } = providers[i]
+    const { name, paid, fn } = providers[i]
     if (i > 0 && !clock.canTry()) break
     try {
-      const quiz = await withDeadline(fn(), clock.next(providers.length - i))
-      if (quiz && Array.isArray(quiz) && quiz.length > 0) {
+      const raw = await withDeadline(fn(), clock.next(providers.length - i))
+      // Valid JSON is not a valid quiz. See sanitiseQuiz: an answer index
+      // outside the options makes a question nobody can get right, and the
+      // route used to hand it straight to the student.
+      const { quiz, reason } = sanitiseQuiz(raw, count)
+      if (quiz.length > 0) {
         if (paid) await consumePaidQuota(request, deviceId)
         return reply(note ? { quiz, note } : { quiz })
       }
-    } catch {}
+      if (reason) errors.push(`${name}: ${reason}`)
+    } catch (err) {
+      errors.push(`${name}: ${err.message}`)
+    }
   }
 
   // Nothing was delivered, so nothing was owed: the free quiz goes back.
   await releaseTrial()
+  // Why every provider failed, for the server log — a student gets the
+  // apology, not the diagnosis.
+  if (errors.length) console.error('[api/ai-quiz] no usable quiz:', errors.join(' | '))
   return reply({ error: 'تعذّر توليد الاختبار، جرّب مجدداً' }, 500)
 }
