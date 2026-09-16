@@ -371,6 +371,6 @@ export async function POST(request) {
   // apology, not the diagnosis.
   if (errors.length) console.error('[api/ai-quiz] no usable quiz:', errors.join(' | '))
   // Same sentence, same safety rule — see src/lib/provider-errors.js.
-  const why = explainFailure(errors)
+  const why = explainFailure(errors, GEMINI_SET.length)
   return reply({ error: why.error, kind: why.kind }, 500)
 }

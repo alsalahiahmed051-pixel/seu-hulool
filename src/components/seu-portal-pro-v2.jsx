@@ -1749,10 +1749,27 @@ function AIChat({ subject, t, onChat, standalone = true, files = null, seed = ""
         try {
           setImage(c.toDataURL("image/jpeg", 0.82));
         } catch {
-          setImage(String(reader.result || ""));
+          onToast?.("تعذّر تجهيز هذه الصورة — جرّب لقطة شاشة لها", "warn");
         }
       };
-      img.onerror = () => setImage(String(reader.result || ""));
+      /**
+       * A format the browser cannot decode must not be SENT anyway.
+       *
+       * This used to fall back to the raw data URL, which is how an iPhone's
+       * HEIC photo — the camera's default format — travelled to the server
+       * whole, got silently dropped there for being an unreadable format, and
+       * left the model answering «حلّ السؤال في الصورة» with no image. The
+       * student saw a confident answer about an exercise that did not exist.
+       *
+       * The canvas above is also the converter: anything the browser CAN
+       * decode comes out as jpeg regardless of what went in. So reaching here
+       * means the browser could not read it at all, and the only honest move
+       * is to say so before anything is sent.
+       */
+      img.onerror = () => onToast?.(
+        "صيغة الصورة غير مدعومة في المتصفح. على الآيفون: الإعدادات ← الكاميرا ← الصيغ ← «الأكثر توافقاً» — أو أرسل لقطة شاشة للصورة.",
+        "warn", 8000
+      );
       img.src = String(reader.result || "");
     };
     reader.readAsDataURL(file);
