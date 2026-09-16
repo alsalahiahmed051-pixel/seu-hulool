@@ -147,3 +147,54 @@ export async function groqChat(key, messages, opts = {}, fetcher = fetch) {
 export function resetGroqModelCache() {
   cache = { at: 0, names: [] }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   SPEECH — the same rule, for the voice button
+   ══════════════════════════════════════════════════════════════ */
+
+/** Where transcription starts before Groq has been asked anything. */
+export const FALLBACK_SPEECH = ['whisper-large-v3-turbo', 'whisper-large-v3']
+
+let speechCache = { at: 0, names: [] }
+
+/** Speech models to try first — from memory, never over the network. */
+export function preferredSpeechModels() {
+  return speechCache.names.length && Date.now() - speechCache.at < TTL_MS
+    ? speechCache.names
+    : FALLBACK_SPEECH
+}
+
+/** Prefer a fast, current large Whisper; anything else is a last resort. */
+function speechScore(id) {
+  let s = 0
+  if (/whisper/i.test(id)) s += 100
+  if (/large/i.test(id)) s += 40
+  if (/turbo/i.test(id)) s += 20
+  if (/v3/i.test(id)) s += 10
+  if (/en$|english/i.test(id)) s -= 50 // an English-only model cannot hear Arabic
+  return s
+}
+
+/** Ask Groq which speech models this key can call today. */
+export async function discoverSpeechModels(key, fetcher = fetch) {
+  try {
+    const r = await fetcher(`${BASE}/models`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!r.ok) return []
+    const data = await r.json()
+    const usable = (data.data || [])
+      .map(m => String(m?.id || ''))
+      .filter(id => /whisper|transcribe|speech/i.test(id))
+      .sort((a, b) => speechScore(b) - speechScore(a))
+      .slice(0, 3)
+    if (!usable.length) return []
+    speechCache = { at: Date.now(), names: usable }
+    return usable
+  } catch {
+    return []
+  }
+}
+
+/** For tests: forget what was discovered. */
+export function resetSpeechModelCache() {
+  speechCache = { at: 0, names: [] }
+}
