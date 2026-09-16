@@ -8,6 +8,8 @@ import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { withDeadline, budget } from '@/lib/deadline'
+import { geminiGenerate } from '@/lib/gemini-model'
+import { groqChat } from '@/lib/groq-model'
 
 export const runtime = 'nodejs'
 // The platform kills a function at ten seconds unless told otherwise.
@@ -119,39 +121,25 @@ async function callOpenRouter(subject, count, source, grounding) {
 }
 
 async function callGroq(subject, count, source, grounding) {
-  // `llama3-70b-8192` was decommissioned by Groq, so every fallback through
-  // this list ended on a model that cannot answer — a wasted round trip at
-  // exactly the moment the first two had already failed. Both names left are
-  // current: the versatile one answers, the instant one is the quick retry.
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
-  const msgs = [{ role: 'system', content: buildQuizSystem(subject, grounding) }, { role: 'user', content: quizAsk(subject, count, source) }]
-  for (const model of models) {
-    try {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
-        body: JSON.stringify({ model, messages: msgs, max_tokens: quizTokens(count), temperature: 0.7 }),
-      })
-      const data = await r.json()
-      if (!r.ok) continue
-      const quiz = parseQuiz(data.choices?.[0]?.message?.content || '')
-      if (quiz) return quiz
-    } catch { continue }
-  }
-  throw new Error('all Groq models failed')
+  // No hardcoded names — see src/lib/groq-model.js. Groq decommissions
+  // models on its own schedule, and a name written into the source is a
+  // time bomb with the fuse set by someone else.
+  const text = await groqChat(GROQ_KEY, [
+    { role: 'system', content: buildQuizSystem(subject, grounding) },
+    { role: 'user', content: quizAsk(subject, count, source) },
+  ], { max_tokens: quizTokens(count), temperature: 0.7 })
+  return parseQuiz(text || '')
 }
 
 async function callGemini(subject, count, source, grounding) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`
   const body = {
     system_instruction: { parts: [{ text: buildQuizSystem(subject, grounding) }] },
     contents: [{ role: 'user', parts: [{ text: quizAsk(subject, count, source) }] }],
     generationConfig: { maxOutputTokens: quizTokens(count), temperature: 0.7 },
   }
-  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const data = await r.json()
-  if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
-  return parseQuiz(data.candidates?.[0]?.content?.parts?.[0]?.text || '')
+  // Self-healing name, exactly as in the chat route: a retired model answers
+  // 404 and geminiGenerate then asks Google what this key can call today.
+  return parseQuiz(await geminiGenerate(GEMINI_KEY, body) || '')
 }
 
 export async function POST(request) {

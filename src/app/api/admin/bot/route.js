@@ -4,6 +4,7 @@ import {
   botSystemPrompt, parseProposal, validateProposal, describeAction,
 } from '@/lib/admin-bot'
 import { geminiGenerate } from '@/lib/gemini-model'
+import { groqChat } from '@/lib/groq-model'
 
 export const runtime = 'nodejs'
 
@@ -26,18 +27,14 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
 
 async function ask(system, user) {
   if (GROQ_KEY && !GROQ_KEY.includes('placeholder')) {
-    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-        temperature: 0.1,
-        max_tokens: 900,
-      }),
-    })
-    const d = await r.json()
-    if (r.ok) return d.choices?.[0]?.message?.content || ''
+    // Self-healing name, as everywhere else — see src/lib/groq-model.js.
+    try {
+      const text = await groqChat(GROQ_KEY, [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ], { temperature: 0.1, max_tokens: 900 })
+      if (text) return text
+    } catch { /* fall through to the next provider, as before */ }
   }
   if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20) {
     try {
