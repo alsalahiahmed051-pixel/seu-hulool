@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/admin-guard'
 import { geminiGenerate, preferredModel } from '@/lib/gemini-model'
+import { groqChat, preferredModels as preferredGroqModels } from '@/lib/groq-model'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -70,18 +71,13 @@ function clean(e) {
 }
 
 async function askGroq() {
-  const r = await withTimeout('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEYS.Groq}` },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: PROBE }],
-      max_tokens: 16,
-    }),
-  })
-  const d = await r.json()
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${d.error?.message || ''}`)
-  return d.choices?.[0]?.message?.content
+  // The same self-healing path the site uses — and for this file especially.
+  // A self-test pinned to a hardcoded name reports «Groq معطّل» the day that
+  // name is decommissioned, while Groq itself is perfectly fine: the one tool
+  // built to end the guessing would be the thing sending you the wrong way.
+  const text = await groqChat(KEYS.Groq, [{ role: 'user', content: PROBE }],
+    { max_tokens: 16 }, withTimeout)
+  return text ? `${preferredGroqModels()[0]}: ${text}` : ''
 }
 
 async function askGemini() {

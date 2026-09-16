@@ -10,6 +10,8 @@ import { modelScore } from '@/lib/model-rank'
 import { contextFor } from '@/lib/retrieval'
 import { withDeadline, budget } from '@/lib/deadline'
 import { judgeAnswer } from '@/lib/answer-quality'
+import { geminiGenerate } from '@/lib/gemini-model'
+import { groqChat } from '@/lib/groq-model'
 import { DEFAULT_POINTS } from '@/lib/ai-points'
 
 export const runtime = 'nodejs'
@@ -192,37 +194,14 @@ async function callOpenRouter(subject, messages, grounding) {
 }
 
 async function callGroq(subject, messages, grounding) {
-  // try multiple models in sequence
-  // `llama3-70b-8192` was decommissioned by Groq, so every fallback through
-  // this list ended on a model that cannot answer — a wasted round trip at
-  // exactly the moment the first two had already failed. Both names left are
-  // current: the versatile one answers, the instant one is the quick retry.
-  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
-  for (const model of models) {
-    try {
-      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${GROQ_KEY}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: buildSystem(subject, grounding) },
-            ...messages,
-          ],
-          max_tokens: MAX_ANSWER_TOKENS,
-          temperature: 0.7,
-        }),
-      })
-      const data = await r.json()
-      if (!r.ok) continue
-      const text = data.choices?.[0]?.message?.content
-      if (text) return text
-    } catch { continue }
-  }
-  throw new Error('all Groq models failed')
+  // Also NOT a hardcoded name. `llama3-70b-8192` lived here until Groq
+  // decommissioned it, and replacing it by hand with two newer names was the
+  // same mistake with a later expiry date. groqChat asks Groq for its own
+  // catalogue when — and only when — the name is what was refused.
+  return groqChat(GROQ_KEY, [
+    { role: 'system', content: buildSystem(subject, grounding) },
+    ...messages,
+  ], { max_tokens: MAX_ANSWER_TOKENS, temperature: 0.7 })
 }
 
 /**
@@ -244,9 +223,8 @@ async function callGemini(subject, messages, grounding, image) {
     parts: [{ text: m.content }],
   }))
   const lastMsg = messages[messages.length - 1].content
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`
-  // gemini-2.0-flash reads images on the free tier, which is why the picture
-  // goes here rather than to the paid provider.
+  // Flash models read images on the free tier, which is why the picture goes
+  // here rather than to the paid provider.
   const img = image ? inlineImage(image) : null
   const lastParts = img
     ? [{ text: lastMsg }, { inline_data: img }]
@@ -254,16 +232,15 @@ async function callGemini(subject, messages, grounding, image) {
   const body = {
     system_instruction: { parts: [{ text: buildSystem(subject, grounding) }] },
     contents: [...history, { role: 'user', parts: lastParts }],
-    generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+    generationConfig: { maxOutputTokens: MAX_ANSWER_TOKENS, temperature: 0.7 },
   }
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const data = await r.json()
-  if (!r.ok) throw new Error(data.error?.message || 'Gemini error')
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+  // NOT a hardcoded model name. `gemini-2.0-flash` was written into this URL
+  // by hand, and Google retires models on its own schedule without asking —
+  // a retired name answers 404, which the site could only report as «المساعد
+  // الذكي غير متاح». geminiGenerate tries the name we trust, and when the
+  // NAME is what was refused it asks Google what this key can call today,
+  // retries, and caches the working name for an hour. See gemini-model.js.
+  const text = await geminiGenerate(GEMINI_KEY, body)
   if (!text) throw new Error('empty response from Gemini')
   return text
 }
