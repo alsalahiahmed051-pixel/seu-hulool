@@ -13,15 +13,31 @@ import { isUsable, cooldownLeft, noteFailure, noteSuccess } from '@/lib/provider
 import { parseQuiz } from '@/lib/quiz-parse'
 import { geminiGenerate } from '@/lib/gemini-model'
 import { groqChat } from '@/lib/groq-model'
+import { geminiKeys, groqKeys, openRouterKeys, anthropicKeys } from '@/lib/api-keys'
 
 export const runtime = 'nodejs'
 // The platform kills a function at ten seconds unless told otherwise.
 export const maxDuration = 60
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY
-const GROQ_KEY = process.env.GROQ_API_KEY
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GEMINI
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || process.env.OpenRouter
+/**
+ * Every key configured per provider, not just the first.
+ *
+ * A free ceiling is per KEY, and the owner's own diagnosis read «انتهت
+ * الحصّة المجانية» on every provider at once. A second `GEMINI_API_KEY_2`
+ * doubles the day's allowance with no other change. See src/lib/api-keys.js.
+ *
+ * `[0]` is kept for the places that only need to know whether a provider is
+ * configured at all; the CALLS get the whole set.
+ */
+const GEMINI_SET = geminiKeys()
+const GROQ_SET = groqKeys()
+const OPENROUTER_SET = openRouterKeys()
+const ANTHROPIC_SET = anthropicKeys()
+
+const ANTHROPIC_KEY = ANTHROPIC_SET[0] || ''
+const GROQ_KEY = GROQ_SET[0] || ''
+const GEMINI_KEY = GEMINI_SET[0] || ''
+const OPENROUTER_KEY = OPENROUTER_SET[0] || ''
 
 /**
  * Room for `count` questions.
@@ -121,7 +137,7 @@ async function callGroq(subject, count, source, grounding) {
   // No hardcoded names — see src/lib/groq-model.js. Groq decommissions
   // models on its own schedule, and a name written into the source is a
   // time bomb with the fuse set by someone else.
-  const text = await groqChat(GROQ_KEY, [
+  const text = await groqChat(GROQ_SET, [
     { role: 'system', content: buildQuizSystem(subject, grounding) },
     { role: 'user', content: quizAsk(subject, count, source) },
   ], { max_tokens: quizTokens(count), temperature: 0.7 })
@@ -136,7 +152,7 @@ async function callGemini(subject, count, source, grounding) {
   }
   // Self-healing name, exactly as in the chat route: a retired model answers
   // 404 and geminiGenerate then asks Google what this key can call today.
-  return parseQuiz(await geminiGenerate(GEMINI_KEY, body) || '')
+  return parseQuiz(await geminiGenerate(GEMINI_SET, body) || '')
 }
 
 export async function POST(request) {
@@ -303,13 +319,13 @@ export async function POST(request) {
   // So Gemini answers, and Groq is what catches the fall when Gemini's free
   // quota runs out — which is far better than the OpenRouter free catalogue
   // that used to catch it.
-  if (GEMINI_KEY && !GEMINI_KEY.includes('placeholder') && GEMINI_KEY.length > 20)
+  if (GEMINI_SET.length > 0)
     providers.push({ name: 'Gemini', paid: false, fn: () => callGemini(subject, count, effectiveSource, grounding) })
-  if (GROQ_KEY && !GROQ_KEY.includes('placeholder'))
+  if (GROQ_SET.length > 0)
     providers.push({ name: 'Groq', paid: false, fn: () => callGroq(subject, count, effectiveSource, grounding) })
-  if (OPENROUTER_KEY && !OPENROUTER_KEY.includes('placeholder'))
+  if (OPENROUTER_SET.length > 0)
     providers.push({ name: 'OpenRouter', paid: false, fn: () => callOpenRouter(subject, count, effectiveSource, grounding) })
-  if (ANTHROPIC_KEY && !ANTHROPIC_KEY.includes('placeholder') && !paidExhausted)
+  if (ANTHROPIC_SET.length > 0 && !paidExhausted)
     providers.push({ name: 'Anthropic', paid: true, fn: () => callAnthropic(subject, count, effectiveSource, grounding) })
 
   const reply = (bodyObj, status = 200) => {
